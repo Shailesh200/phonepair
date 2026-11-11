@@ -11,15 +11,13 @@ Live: [phonepair.vercel.app](https://phonepair.vercel.app)
 
 1. **Pairing by QR and a 6-character code, with auto-reconnect.** The laptop shows a QR code and the code next to it. The phone scans the QR (it opens `/j/` plus the code) or types the code. Codes are six characters drawn from an alphabet that leaves out `I`, `O`, `0`, and `1`. The laptop keeps its code in `sessionStorage`, so a reload uses the same code and the phone reconnects on its own. A ping goes out every 4 seconds. After 15 seconds of silence the phone redials, and the laptop goes back to waiting on that same code. If the old code is still held after 5 retries (about 12s), the laptop gets a new code and the phone needs to pair again.
 
-2. **Text and links, both ways.** Either device can send a note or a URL. Links in the text stay clickable, and both sides keep the thread.
+2. **Files and screenshots, both ways.** Drop files, pick them, or paste a screenshot. Transfers go in 64 KB chunks with a progress bar, in either direction. A pasted screenshot is named with the time it was sent. A received file can be saved on the other device.
 
-3. **Files and screenshots, both ways.** Drop files, pick them, or paste a screenshot. Transfers go in 64 KB chunks with a progress bar, in either direction. A pasted screenshot is named with the time it was sent. A received file can be saved on the other device.
+3. **Live clipboard.** A shared text box. Typing or pasting on one device shows up on the other, with a short history of recent clips. Links in a clip stay clickable.
 
-4. **Live clipboard.** A shared text box. Typing or pasting on one device shows up on the other, with a short history of recent clips.
+4. **Phone as a remote.** The phone is a trackpad for the laptop, with Prev and Next controls and a keyboard.
 
-5. **Phone as a remote.** The phone is a trackpad for the laptop, with Prev and Next controls and a keyboard.
-
-6. **Laptop screen on the phone.** View the laptop screen from the phone.
+5. **Laptop screen on the phone.** View the laptop screen from the phone.
 
 ## How it works
 
