@@ -5,9 +5,19 @@ import { Logo } from './core/ui'
 import { CodeEntry } from './features/pairing/CodeEntry'
 import { PhoneConnecting } from './features/pairing/PhoneConnecting'
 import { joinPath } from './features/pairing/relay'
+import type { SavedLaptop } from './remember/storage'
 import { phoneHostLabel } from './features/pairing/session'
 
-export function Phone({ ctx, page, setPage, onLeave }: { ctx: CoreCtx; page: string; setPage: (p: string) => void; onLeave: () => void }) {
+export function Phone({
+  ctx, page, setPage, onLeave, rememberMode, onRemember,
+}: {
+  ctx: CoreCtx
+  page: string
+  setPage: (p: string) => void
+  onLeave: () => void
+  rememberMode?: boolean
+  onRemember?: (lap: SavedLaptop) => void
+}) {
   const s = ctx.link.status
   const [dcIn, setDcIn] = useState<number | null>(null)
 
@@ -29,9 +39,10 @@ export function Phone({ ctx, page, setPage, onLeave }: { ctx: CoreCtx; page: str
   if (s === 'error') {
     return (
       <CodeEntry
-        error={ctx.link.error}
+        error={ctx.link.error || undefined}
         onClearError={() => {}}
         onCode={(c) => { location.assign(joinPath(c)) }}
+        onRemember={onRemember}
       />
     )
   }
@@ -67,6 +78,15 @@ export function Phone({ ctx, page, setPage, onLeave }: { ctx: CoreCtx; page: str
         {!cur ? (
           <div className="top">
             <Logo small />
+            <button
+              type="button"
+              className="iconbtn"
+              aria-label="Remember this laptop"
+              data-testid="remember-laptop"
+              onClick={() => ctx.send({ t: 'remember:ask' })}
+            >
+              <Icon n="heart" />
+            </button>
             <button
               className="iconbtn"
               aria-label="Disconnect"
@@ -126,6 +146,11 @@ function UndoBar({ seconds, onUndo }: { seconds: number; onUndo: () => void }) {
   )
 }
 
-export function PhoneEntry(props: { onCode: (c: string) => void; onHost?: () => void; error?: string }) {
+export function PhoneEntry(props: {
+  onCode: (c: string) => void
+  onHost?: () => void
+  onRemember?: (lap: SavedLaptop) => void
+  error?: string
+}) {
   return <CodeEntry {...props} />
 }

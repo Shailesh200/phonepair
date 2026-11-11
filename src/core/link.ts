@@ -21,6 +21,16 @@ import { guestUnavailableRetries, redialDelayMs } from '../features/pairing/reco
 import { linkTeardownSendsBye } from '../features/pairing/teardown'
 import { shouldCallPeerReconnect } from '../features/pairing/peerReconnect'
 import { rememberLastLaptop } from '../features/pairing/session'
+import { verifyHmac, hmacSha256 } from '../remember/crypto'
+import {
+  gateAllowsFeatureData,
+  gateMessageDisposition,
+  REMEMBER_PROOF_TIMEOUT_MS,
+  type RememberGatePhase,
+} from '../remember/gate'
+import { bytesFromB64, bytesToB64, listenPeerId, randomBytes } from '../remember/ids'
+import { hostHasPhones, loadHostStore, phoneKeyBytes } from '../remember/storage'
+import type { SavedLaptop } from '../remember/storage'
 
 export type { Role }
 export type Status = 'starting' | 'waiting' | 'connecting' | 'connected' | 'reconnecting' | 'error' | 'closed'
@@ -73,10 +83,26 @@ export class Link {
   private inFlightDial: DataConnection | null = null
   private dialHangTimer: number | null = null
   private lastPeerReconnectAt = 0
+  private dialTarget: string | null = null
+  private rememberGuestAuth: { phoneId: string; key: Uint8Array } | null = null
+  private rememberGate: RememberGatePhase = 'off'
+  private listenPeer: Peer | null = null
+  private listenRetry = 0
+  private authTimer: number | null = null
+  private authNonce: Uint8Array | null = null
+  private authPhone: { key: Uint8Array; name: string } | null = null
+  private rememberPhones: Map<string, { key: Uint8Array; name: string }> | null = null
+  private rememberFromListen = false
 
-  constructor(role: Role, code: string) {
+  constructor(role: Role, code: string, opts?: { rememberGuest?: SavedLaptop }) {
     this.role = role
     this.code = normalizePairCode(code)
+    if (opts?.rememberGuest) {
+      const g = opts.rememberGuest
+      this.dialTarget = listenPeerId(g.listenId)
+      this.rememberGuestAuth = { phoneId: g.phoneId, key: phoneKeyBytes(g) }
+      this.rememberGate = 'await-hello'
+    }
   }
   subscribe(l: Listener) { this.listeners.add(l); return () => { this.listeners.delete(l) } }
   onMessage(h: MsgHandler) { this.msgHandlers.add(h); return () => { this.msgHandlers.delete(h) } }
@@ -150,6 +176,48 @@ export class Link {
       console.warn('peer error', t, e)
     })
     this.timers.push(window.setInterval(() => this.tick(), 4000))
+    if (this.role === 'host') void this.bootstrapRememberListen(config)
+  }
+
+  refreshRememberListen(stopListen = false) {
+    if (this.authTimer) clearTimeout(this.authTimer)
+    this.authTimer = null
+    try { this.listenPeer?.destroy() } catch {}
+    this.listenPeer = null
+    if (stopListen) {
+      this.rememberPhones = null
+      this.listenRetry = 0
+      return
+    }
+    void this.bootstrapRememberListen()
+  }
+
+  private async bootstrapRememberListen(config?: RTCConfiguration) {
+    const store = loadHostStore()
+    if (!hostHasPhones(store) || !store) return
+    const rtc = config ?? (await loadRtcConfiguration())
+    if (this.destroyed) return
+    this.rememberPhones = new Map(
+      store.phones.map((p) => [p.id, { key: phoneKeyBytes(p), name: p.name }]),
+    )
+    const id = listenPeerId(store.listenId)
+    if (this.listenPeer && !this.listenPeer.destroyed) return
+    const peer = new Peer(id, { ...SIGNAL, config: rtc })
+    this.listenPeer = peer
+    peer.on('connection', (c) => {
+      if (this.role !== 'host' || this.destroyed) { try { c.close() } catch {}; return }
+      if (this.conn?.open && this.conn !== c) { try { c.close() } catch {}; return }
+      this.rememberFromListen = true
+      this.attachRememberHost(c)
+    })
+    peer.on('error', (e: any) => {
+      if (e?.type !== 'unavailable-id' || this.destroyed) return
+      this.listenRetry++
+      peer.destroy()
+      this.listenPeer = null
+      if (hostUnavailableIdGiveUp(this.listenRetry)) return
+      window.setTimeout(() => { if (!this.destroyed) void this.bootstrapRememberListen(rtc) }, hostUnavailableIdBackoffMs(this.listenRetry))
+    })
   }
 
   get hadGuest() {
@@ -316,7 +384,8 @@ export class Link {
     this.dropConn()
     this.set({ status: this.everConnected ? 'reconnecting' : 'connecting' })
     if (this.role === 'guest' && !this.connectingSince) this.connectingSince = Date.now()
-    const c = peer.connect(peerIdForCode(this.code), { reliable: true, serialization: 'binary' })
+    const target = this.dialTarget ?? peerIdForCode(this.code)
+    const c = peer.connect(target, { reliable: true, serialization: 'binary' })
     const ms = dialOpenTimeoutMs(isRelayOnly())
     this.inFlightDial = c
     this.pending = c
@@ -337,6 +406,10 @@ export class Link {
   }
 
   private attach(c: DataConnection) {
+    if (this.rememberGuestAuth) {
+      this.attachRememberGuest(c)
+      return
+    }
     if (this.role === 'guest' && this.conn && this.conn !== c && this.conn.open) {
       try { c.close() } catch {}
       return
@@ -364,23 +437,163 @@ export class Link {
     if (c.open) onOpen(); else c.on('open', onOpen)
     c.on('data', (m: any) => {
       if (c !== this.conn) return
-      this.lastSeen = Date.now()
+      this.dispatchPayload(m, c)
+    })
+    c.on('close', () => this.lost(c))
+    c.on('error', () => this.lost(c))
+  }
+
+  private dispatchPayload(m: any, c: DataConnection) {
+    if (!gateAllowsFeatureData(this.rememberGate)) {
+      if (gateMessageDisposition(this.rememberGate, String(m?.t ?? '')) === 'drop') return
+    }
+    this.lastSeen = Date.now()
+    if (!m || typeof m !== 'object') return
+    if (m.t === 'ping') return
+    if (m.t === 'hello') {
+      this.set({ remoteName: m.name })
+      if (this.role === 'guest' && this.code) rememberLastLaptop(m.name, this.code)
+      if (this.role === 'host' && c.open) {
+        try { c.send({ t: 'hello', name: deviceName() }) } catch {}
+      }
+      return
+    }
+    if (m.t === 'bye') {
+      this.set({ status: this.role === 'host' ? 'waiting' : 'closed' })
+      try { c.close() } catch {}
+      return
+    }
+    if (!gateAllowsFeatureData(this.rememberGate)) return
+    this.msgHandlers.forEach((h) => h(m))
+  }
+
+  private clearAuthTimer() {
+    if (this.authTimer) clearTimeout(this.authTimer)
+    this.authTimer = null
+  }
+
+  private armAuthTimeout(c: DataConnection) {
+    this.clearAuthTimer()
+    this.authTimer = window.setTimeout(() => this.failRememberAuth(c), REMEMBER_PROOF_TIMEOUT_MS)
+  }
+
+  private failRememberAuth(c: DataConnection) {
+    this.clearAuthTimer()
+    this.rememberGate = 'closed'
+    this.authNonce = null
+    this.authPhone = null
+    try { c.close() } catch {}
+    if (this.conn === c) this.dropConn()
+    if (this.role === 'host') {
+      this.rememberFromListen = false
+      this.set({ status: this.conn?.open ? 'connected' : 'waiting' })
+    } else {
+      this.set({ status: 'error', error: '' })
+    }
+  }
+
+  private promoteConnected(c: DataConnection, remoteHint?: string) {
+    if (c !== this.inFlightDial && c !== this.pending && c !== this.conn) return
+    this.lastSeen = Date.now()
+    this.everConnected = true
+    this.retry = 0
+    this.hostFails = 0
+    if (this.dialHangTimer) { clearTimeout(this.dialHangTimer); this.dialHangTimer = null }
+    this.inFlightDial = null
+    this.inFlightDialUntil = 0
+    this.pending = null
+    this.conn = c
+    if (this.hostGrace) { clearTimeout(this.hostGrace); this.hostGrace = null }
+    try { c.send({ t: 'hello', name: deviceName() }) } catch {}
+    if (remoteHint) this.set({ remoteName: remoteHint })
+    this.set({ status: 'connected', error: '' })
+    if (this.role === 'guest') {
+      if (this.code) rememberGuestPairedCode(this.code)
+      this.clearGuestWatchdog()
+    }
+  }
+
+  private attachRememberGuest(c: DataConnection) {
+    if (this.conn && this.conn !== c && this.conn.open) {
+      try { c.close() } catch {}
+      return
+    }
+    this.conn = c
+    const greet = () => {
+      if (c !== this.conn || !this.rememberGuestAuth) return
+      try { c.send({ t: 'remember:hello', phoneId: this.rememberGuestAuth.phoneId }) } catch {}
+      this.rememberGate = 'await-proof'
+      this.set({ status: this.everConnected ? 'reconnecting' : 'connecting' })
+    }
+    if (c.open) greet(); else c.on('open', greet)
+    c.on('data', async (m: any) => {
+      if (c !== this.conn) return
       if (!m || typeof m !== 'object') return
-      if (m.t === 'ping') return
-      if (m.t === 'hello') {
-        this.set({ remoteName: m.name })
-        if (this.role === 'guest') rememberLastLaptop(m.name, this.code)
-        if (this.role === 'host' && c.open) {
-          try { c.send({ t: 'hello', name: deviceName() }) } catch {}
+      if (m.t === 'remember:challenge' && typeof m.nonce === 'string' && this.rememberGuestAuth) {
+        const nonce = bytesFromB64(m.nonce)
+        const proof = await hmacSha256(this.rememberGuestAuth.key, nonce)
+        try { c.send({ t: 'remember:proof', proof: bytesToB64(proof) }) } catch {}
+        return
+      }
+      if (m.t === 'remember:ok') {
+        this.rememberGate = 'off'
+        this.promoteConnected(c)
+        return
+      }
+      if (m.t === 'hello' && this.rememberGate !== 'off') {
+        this.rememberGate = 'off'
+        this.promoteConnected(c, String(m.name ?? ''))
+        return
+      }
+      this.dispatchPayload(m, c)
+    })
+    c.on('close', () => this.lost(c))
+    c.on('error', () => this.lost(c))
+  }
+
+  private attachRememberHost(c: DataConnection) {
+    if (this.conn && this.conn !== c && this.conn.open) {
+      try { c.close() } catch {}
+      return
+    }
+    this.conn = c
+    this.rememberGate = 'await-hello'
+    if (!c.open) this.set({ status: 'connecting' })
+    this.armAuthTimeout(c)
+    c.on('data', async (m: any) => {
+      if (c !== this.conn) return
+      if (!m || typeof m !== 'object') return
+      if (m.t === 'remember:hello') {
+        const phoneId = String(m.phoneId ?? '')
+        const rec = this.rememberPhones?.get(phoneId)
+        if (!rec) {
+          this.failRememberAuth(c)
+          return
         }
+        this.authPhone = rec
+        const nonce = randomBytes(32)
+        this.authNonce = nonce
+        this.rememberGate = 'await-proof'
+        try { c.send({ t: 'remember:challenge', nonce: bytesToB64(nonce) }) } catch {}
+        this.armAuthTimeout(c)
         return
       }
-      if (m.t === 'bye') {
-        this.set({ status: this.role === 'host' ? 'waiting' : 'closed' })
-        try { c.close() } catch {}
+      if (m.t === 'remember:proof' && this.rememberGate === 'await-proof' && this.authNonce && this.authPhone) {
+        const proof = bytesFromB64(String(m.proof ?? ''))
+        const ok = await verifyHmac(this.authPhone.key, this.authNonce, proof)
+        if (!ok) {
+          this.failRememberAuth(c)
+          return
+        }
+        this.clearAuthTimer()
+        this.rememberGate = 'off'
+        this.authNonce = null
+        try { c.send({ t: 'remember:ok' }) } catch {}
+        this.promoteConnected(c, this.authPhone.name)
+        this.authPhone = null
         return
       }
-      this.msgHandlers.forEach((h) => h(m))
+      if (gateAllowsFeatureData(this.rememberGate)) this.dispatchPayload(m, c)
     })
     c.on('close', () => this.lost(c))
     c.on('error', () => this.lost(c))
@@ -492,6 +705,9 @@ export class Link {
     this.dialOnOpenPending = false
     this.releaseInFlightDial()
     this.closePending()
+    this.clearAuthTimer()
+    try { this.listenPeer?.destroy() } catch {}
+    this.listenPeer = null
     this.peer?.destroy()
   }
 }

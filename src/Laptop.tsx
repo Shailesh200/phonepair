@@ -4,6 +4,7 @@ import { Icon } from './core/icons'
 import { Logo, StatusPill } from './core/ui'
 import { QrCard } from './features/pairing/QrCard'
 import { useHostPairFlow } from './features/pairing/useHostPairFlow'
+import { RememberPrompt, SavedPhonesPanel } from './remember/ui'
 
 export function Laptop({ ctx }: { ctx: CoreCtx }) {
   const flow = useHostPairFlow(ctx.link)
@@ -12,6 +13,7 @@ export function Laptop({ ctx }: { ctx: CoreCtx }) {
 
   return <div className="laptop">
     {flow.showDashboard ? <Dashboard ctx={ctx} waitingPhone={waitingPhone} /> : <Landing ctx={ctx} cardPhase={flow.cardPhase} />}
+    <RememberPrompt ctx={ctx} />
     {flow.showDashboard && feats.map((f) => f.LaptopOverlay && <f.LaptopOverlay key={f.id} ctx={ctx} />)}
   </div>
 }
@@ -47,6 +49,7 @@ function Dashboard({ ctx, waitingPhone }: { ctx: CoreCtx; waitingPhone: boolean 
   return <div className="dash">
     <header className="nav"><Logo /><div className="row-g"><StatusPill link={ctx.link} /><button className="btn ghost" data-testid="disconnect" onClick={() => ctx.link.disconnect()}>Disconnect</button></div></header>
     {waitingPhone && <div className="banner warn dash-wait">Phone disconnected, waiting to reconnect</div>}
+    <SavedPhonesPanel ctx={ctx} />
     <div className="grid">
       <div className="col">{col('left')}</div>
       <div className="col">{col('right')}</div>

@@ -403,6 +403,17 @@ button.chip:active{transform:scale(.98)}
   .btn:active,.t:active,.iconbtn:active,button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.t.hi:hover{transform:none}
 }
 
+.remember-overlay{position:fixed;inset:0;background:rgba(8,12,20,.45);display:grid;place-items:center;z-index:50;padding:20px}
+.remember-modal{max-width:380px;padding:24px;display:flex;flex-direction:column;gap:14px}
+.remember-actions{display:flex;gap:10px;justify-content:flex-end}
+.remember-panel{margin:0 24px 16px;padding:16px 18px}
+.remember-panel h4{margin:0 0 10px;font-size:var(--fs-14)}
+.remember-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.remember-list li{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.remember-saved{margin-bottom:16px}
+.remember-saved .saved-h{margin:0 0 8px}
+.phone-page .top{display:flex;align-items:center;gap:8px}
+
 /* Text and Remote shells fit one viewport, padding included (border-box). */
 html:has(.text-phone),
 html:has(.pg.remote),

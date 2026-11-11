@@ -2,15 +2,19 @@ import React, { useRef } from 'react'
 import { Logo } from '../../core/ui'
 import { CodeBoxes } from './CodeBoxes'
 import { lastLaptopSession } from './session'
+import { SavedLaptopsList } from '../../remember/ui'
+import type { SavedLaptop } from '../../remember/storage'
 
 export function CodeEntry({
   onCode,
   onHost,
+  onRemember,
   error,
   onClearError,
 }: {
   onCode: (c: string) => void
   onHost?: () => void
+  onRemember?: (lap: SavedLaptop) => void
   error?: string
   onClearError?: () => void
 }) {
@@ -30,6 +34,7 @@ export function CodeEntry({
         <div className="entry-body">
           <h1>Pair with your laptop</h1>
           <p className="mut">Open <b>{location.host}</b> on your laptop, then scan the QR code with your camera, or type the 6-character code here.</p>
+          {onRemember && <SavedLaptopsList onPick={onRemember} />}
           {last && (
             <button
               type="button"
