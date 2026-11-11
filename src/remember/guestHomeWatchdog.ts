@@ -4,12 +4,12 @@ export function shouldFailRememberGuestHome(opts: {
   rememberGuest: boolean
   sessionPaired: boolean
   status: string
-  elapsedMs: number
-  limitMs: number
+  deadlineMs: number
+  now: number
 }): boolean {
   if (!opts.rememberGuest || opts.sessionPaired) return false
   if (opts.status === 'connected' || opts.status === 'error') return false
-  if (opts.elapsedMs <= opts.limitMs) return false
+  if (!opts.deadlineMs || opts.now < opts.deadlineMs) return false
   return true
 }
 

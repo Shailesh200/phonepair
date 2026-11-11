@@ -14,6 +14,7 @@ import { shouldTickBootstrapListen } from './listenGiveUp.ts'
 import { hostRememberListenOtherTab } from './rememberOtherTab.ts'
 import { guestForgetMatchesSavedLaptop } from './guestForgetMatch.ts'
 import { shouldFailRememberGuestHome } from './guestHomeWatchdog.ts'
+import { rememberGuestDeadlineArm, REMEMBER_GUEST_HOME_MS } from './rememberGuestDeadline.ts'
 import { hostAcceptsPhoneForget } from './hostForgetInbound.ts'
 import { guestForgetShouldSync } from './guestForgetSync.ts'
 import { connBlockedByRememberAuth } from './hostAuthSend.ts'
@@ -113,21 +114,51 @@ describe('remember denied routing', () => {
 
 describe('remember guest home watchdog', () => {
   it('does not fail home after the guest has paired the session', () => {
-    const limit = 8_000
+    const t0 = 1000
+    const deadline = t0 + REMEMBER_GUEST_HOME_MS
     assert.equal(shouldFailRememberGuestHome({
       rememberGuest: true,
       sessionPaired: true,
       status: 'reconnecting',
-      elapsedMs: limit + 1,
-      limitMs: limit,
+      deadlineMs: deadline,
+      now: deadline + 1,
     }), false)
     assert.equal(shouldFailRememberGuestHome({
       rememberGuest: true,
       sessionPaired: false,
       status: 'connecting',
-      elapsedMs: limit + 1,
-      limitMs: limit,
+      deadlineMs: deadline,
+      now: deadline + 1,
     }), true)
+  })
+})
+
+describe('remember guest deadline', () => {
+  it('keeps the original 8s cap across a mid-window redial', () => {
+    const t0 = 0
+    const deadline = rememberGuestDeadlineArm(0, t0, REMEMBER_GUEST_HOME_MS)
+    const atRedial = rememberGuestDeadlineArm(deadline, 5000, REMEMBER_GUEST_HOME_MS)
+    assert.equal(atRedial, deadline)
+    assert.equal(
+      shouldFailRememberGuestHome({
+        rememberGuest: true,
+        sessionPaired: false,
+        status: 'connecting',
+        deadlineMs: deadline,
+        now: 7999,
+      }),
+      false,
+    )
+    assert.equal(
+      shouldFailRememberGuestHome({
+        rememberGuest: true,
+        sessionPaired: false,
+        status: 'connecting',
+        deadlineMs: deadline,
+        now: 8000,
+      }),
+      true,
+    )
   })
 })
 

@@ -40,6 +40,7 @@ import { RememberHostAuth } from '../remember/hostAuth'
 import { connBlockedByRememberAuth, shouldAcceptIncomingCall, shouldLinkSend } from '../remember/hostAuthSend'
 import { hostAcceptsPhoneForget } from '../remember/hostForgetInbound'
 import { shouldFailRememberGuestHome } from '../remember/guestHomeWatchdog'
+import { rememberGuestDeadlineArm, REMEMBER_GUEST_HOME_MS } from '../remember/rememberGuestDeadline'
 import { bytesFromB64, bytesToB64, listenPeerId, randomBytes } from '../remember/ids'
 import {
   forgetGuestLaptopRecord,
@@ -57,8 +58,6 @@ export type { Role }
 export type Status = 'starting' | 'waiting' | 'connecting' | 'connected' | 'reconnecting' | 'error' | 'closed'
 
 const SIGNAL = { host: 'signal.167.233.223.123.sslip.io', port: 443, path: '/peerjs', secure: true, key: 'peerjs' }
-const REMEMBER_GUEST_HOME_MS = 8_000
-
 export { newPairCode as newCode, normalizePairCode as cleanCode } from '../features/pairing/code'
 
 export function deviceName(): string {
@@ -109,7 +108,7 @@ export class Link {
   private dialTarget: string | null = null
   private rememberGuestAuth: { phoneId: string; key: Uint8Array; listenId: string } | null = null
   private rememberGuestFailCount = 0
-  private rememberGuestSince = 0
+  private rememberGuestDeadlineMs = 0
   private listenPeer: Peer | null = null
   private connPeer: Peer | null = null
   private listenRetry = 0
@@ -177,9 +176,13 @@ export class Link {
     this.visibilityListener = () => document.removeEventListener('visibilitychange', onVis)
   }
 
-  private markRememberGuestDial() {
-    if (!this.rememberGuestAuth || this.everConnected) return
-    this.rememberGuestSince = Date.now()
+  private armRememberGuestDeadline() {
+    if (!this.rememberGuestAuth) return
+    this.rememberGuestDeadlineMs = rememberGuestDeadlineArm(
+      this.rememberGuestDeadlineMs,
+      Date.now(),
+      REMEMBER_GUEST_HOME_MS,
+    )
   }
 
   reloadRememberPhonesMap() {
@@ -200,6 +203,7 @@ export class Link {
   async start() {
     const config = await loadRtcConfiguration()
     if (this.destroyed) return
+    this.armRememberGuestDeadline()
     const id = this.role === 'host' ? peerIdForCode(this.code) : undefined
     const peer = id ? new Peer(id, { ...SIGNAL, config }) : new Peer({ ...SIGNAL, config })
     this.peer = peer
@@ -435,7 +439,6 @@ export class Link {
     this.dropConn()
     this.connectingSince = Date.now()
     this.set({ status: 'connecting', error: '' })
-    this.markRememberGuestDial()
     this.dial()
   }
 
@@ -563,7 +566,6 @@ export class Link {
     this.dropConn()
     this.set({ status: this.everConnected ? 'reconnecting' : 'connecting' })
     if (this.role === 'guest' && !this.connectingSince) this.connectingSince = Date.now()
-    this.markRememberGuestDial()
     const target = this.dialTarget ?? peerIdForCode(this.code)
     const c = peer.connect(target, { reliable: true, serialization: 'binary' })
     const ms = dialOpenTimeoutMs(isRelayOnly())
@@ -765,7 +767,7 @@ export class Link {
     if (fromListenPeer && rememberPhoneId) this.authenticatedRememberPhoneId = rememberPhoneId
     this.sessionPaired = true
     this.rememberGuestFailCount = 0
-    if (this.role === 'guest' && this.rememberGuestAuth) this.rememberGuestSince = 0
+    if (this.role === 'guest' && this.rememberGuestAuth) this.rememberGuestDeadlineMs = 0
     if (this.hostGrace) { clearTimeout(this.hostGrace); this.hostGrace = null }
     try { c.send({ t: 'hello', name: deviceName() }) } catch {}
     if (remoteHint) this.set({ remoteName: remoteHint })
@@ -799,7 +801,6 @@ export class Link {
         })
       } catch {}
       this.armAuthTimeout(c)
-      this.markRememberGuestDial()
       this.set({ status: this.everConnected ? 'reconnecting' : 'connecting' })
     }
     if (c.open) greet(); else c.on('open', greet)
@@ -900,14 +901,14 @@ export class Link {
   }
 
   private tickRememberGuestHome() {
-    if (!this.rememberGuestSince || this.destroyed) return
-    const elapsed = Date.now() - this.rememberGuestSince
+    if (!this.rememberGuestDeadlineMs || this.destroyed) return
+    const now = Date.now()
     if (!shouldFailRememberGuestHome({
       rememberGuest: !!this.rememberGuestAuth,
       sessionPaired: this.sessionPaired,
       status: this.status,
-      elapsedMs: elapsed,
-      limitMs: REMEMBER_GUEST_HOME_MS,
+      deadlineMs: this.rememberGuestDeadlineMs,
+      now,
     })) return
     this.failRememberGuestHome()
   }
@@ -922,7 +923,7 @@ export class Link {
     this.dropConn()
     if (this.dialWait) clearTimeout(this.dialWait)
     this.dialWait = null
-    this.rememberGuestSince = 0
+    this.rememberGuestDeadlineMs = 0
     if (this.role === 'guest') this.sessionPaired = false
     this.set({ status: 'error', error: MSG_REMEMBER_UNREACHABLE })
   }
