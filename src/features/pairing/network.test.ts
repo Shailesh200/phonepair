@@ -145,6 +145,8 @@ describe('relay stats', () => {
 })
 
 describe('ice server map', () => {
+  const TRAEFIK_TURNS_URL = 'turns:turn.167.233.223.123.sslip.io:443?transport=tcp'
+
   it('keeps every url from the turn api including tcp and turns', () => {
     const api = iceServersFromTurnApi([
       {
@@ -158,5 +160,20 @@ describe('ice server map', () => {
       },
     ])
     assert.equal(allIceUrls(api).length, 3)
+  })
+
+  it('preserves the Traefik TLS turns url from /api/turn', () => {
+    const api = iceServersFromTurnApi([
+      {
+        urls: [
+          'turn:167.233.223.123:3478?transport=udp',
+          'turn:167.233.223.123:3478?transport=tcp',
+          TRAEFIK_TURNS_URL,
+        ],
+        username: 'u',
+        credential: 'c',
+      },
+    ])
+    assert.ok(allIceUrls(api).includes(TRAEFIK_TURNS_URL))
   })
 })
