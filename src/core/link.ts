@@ -567,6 +567,7 @@ export class Link {
 
   async start() {
     this.clearTickTimers()
+    if (this.peer) this.ensureHostSignalRunner().rebindPeer()
     const config = await loadRtcConfiguration()
     if (this.destroyed) return
     this.bindNetworkWatchers()
@@ -643,6 +644,7 @@ export class Link {
         const delay = hostUnavailableIdBackoffForClaim(attempt, this.hostIdReclaimSince, this.everConnected)
         const keepConn = reclaim && !!this.conn?.open
         if (!keepConn) {
+          this.ensureHostSignalRunner().rebindPeer()
           try { peer.destroy() } catch {}
           this.peer = null
         }
@@ -697,6 +699,7 @@ export class Link {
     if (this.authTimer) clearTimeout(this.authTimer)
     this.authTimer = null
     if (stopListen) {
+      this.ensureListenForceRunner().rebindPeer()
       this.ensureListenForceRunner().endUnverifiedForcing()
       try { this.listenPeer?.destroy() } catch {}
       this.listenPeer = null
@@ -709,7 +712,10 @@ export class Link {
       return
     }
     const old = this.listenPeer
-    if (old) { try { old.destroy() } catch {} }
+    if (old) {
+      this.ensureListenForceRunner().rebindPeer()
+      try { old.destroy() } catch {}
+    }
     this.listenPeer = null
     void this.bootstrapRememberListen()
   }
@@ -753,7 +759,10 @@ export class Link {
     const id = listenPeerId(store.listenId)
     const peer = new Peer(id, { ...SIGNAL, config: rtc })
     const prev = this.listenPeer
-    if (prev && prev !== peer) { try { prev.destroy() } catch {} }
+    if (prev && prev !== peer) {
+      this.ensureListenForceRunner().rebindPeer()
+      try { prev.destroy() } catch {}
+    }
     this.listenPeer = peer
     this.listenPeerEverOpen = false
     this.listenBootstrapInFlight = false
@@ -801,6 +810,7 @@ export class Link {
         hostUnavailableIdBackoffMs,
       )
       this.listenBackoffUntil = t + delay
+      this.ensureListenForceRunner().rebindPeer()
       try { peer.destroy() } catch {}
       if (this.listenPeer === peer) this.listenPeer = null
       if (listenClaimShouldGiveUp(
@@ -835,6 +845,7 @@ export class Link {
     this.dropConn()
     try { this.conn?.open && this.conn.close() } catch {}
     this.conn = null
+    this.ensureHostSignalRunner().rebindPeer()
     this.peer?.destroy()
     this.peer = null
     this.retry = 0
@@ -873,6 +884,7 @@ export class Link {
     try { this.conn?.close() } catch {}
     this.conn = null
     this.closePending()
+    this.ensureHostSignalRunner().rebindPeer()
     this.peer?.destroy()
     this.peer = null
     this.code = newPairCode()

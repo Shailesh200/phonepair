@@ -166,6 +166,12 @@ export class ForceSignalRunner {
     this.clearTimers()
   }
 
+  /** Clear in-flight timers when the underlying Peer instance is swapped. */
+  rebindPeer() {
+    this.attempt = 0
+    this.clearTimers()
+  }
+
   hookOnline(peer: ForceSignalPeerStateExt, idReclaimCap = false) {
     if (this.stopped || peer.destroyed) return
     if (this.watchdogId != null) return
@@ -178,7 +184,7 @@ export class ForceSignalRunner {
     this.runForce(peer, idReclaimCap, 'online')
   }
 
-  hook(peer: ForceSignalPeerStateExt, idReclaimCap: boolean) {
+  hook(peer: ForceSignalPeerStateExt, idReclaimCap: boolean): void {
     if (this.stopped || peer.destroyed) return
     if (this.watchdogId != null || this.retryId != null) return
     const now = this.timers.now()

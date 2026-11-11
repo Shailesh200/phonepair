@@ -18,10 +18,16 @@ export function trackListenPeerSocketOpen(peer: Peer, onOpen?: () => void): void
 }
 
 export function peerAsForceSignal(peer: Peer): ForceSignalPeerStateExt {
-  return {
-    destroyed: peer.destroyed,
-    disconnected: peer.disconnected,
-    open: peer.open,
+  const bound: ForceSignalPeerStateExt = {
+    get destroyed() {
+      return peer.destroyed
+    },
+    get disconnected() {
+      return peer.disconnected
+    },
+    get open() {
+      return peer.open
+    },
     disconnect: () => {
       const rs = socketReadyState(peer)
       if (rs === WS_CONNECTING) ppDebugIncListenSocketClosedConnecting()
@@ -45,4 +51,5 @@ export function peerAsForceSignal(peer: Peer): ForceSignalPeerStateExt {
       return connectStarted.get(peer) ?? null
     },
   }
+  return bound
 }

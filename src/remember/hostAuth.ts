@@ -82,8 +82,16 @@ export class RememberHostAuth {
       if (verdict.reject) opts?.onReject?.(verdict.reject)
       return false
     }
-    if (verdict.supersedePending) this.clear()
+    if (verdict.supersedePending) this.supersedePendingAuth()
     return true
+  }
+
+  private supersedePendingAuth() {
+    const old = this.authPending?.conn
+    if (old) {
+      try { old.close() } catch {}
+    }
+    this.clear()
   }
 
   beginAuth(conn: RememberConn, mainConn: RememberConn | null, cb: HostAuthCallbacks, opts?: RememberAcceptOpts) {
