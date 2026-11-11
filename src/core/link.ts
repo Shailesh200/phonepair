@@ -21,7 +21,7 @@ import { isRelayOnly } from '../features/pairing/relay'
 import { hostUnavailableIdBackoffMs, hostUnavailableIdGiveUp } from '../features/pairing/hostClaim'
 import { guestUnavailableRetries, redialDelayMs } from '../features/pairing/reconnect'
 import { linkTeardownSendsBye } from '../features/pairing/teardown'
-import { ForceSignalRunner } from '../features/pairing/forceSignalReconnect'
+import { ForceSignalRunner, shouldForceSignalOnVisibility } from '../features/pairing/forceSignalReconnect'
 import { shouldCallPeerReconnect, shouldHostReconnect } from '../features/pairing/peerReconnect'
 import { rememberLastLaptop } from '../features/pairing/session'
 import { guestAcceptsRememberOk } from '../remember/guestAuth'
@@ -129,6 +129,7 @@ export class Link {
   private listenReclaimStartedAt: number | null = null
   private visibilityListener: (() => void) | null = null
   private networkListener: (() => void) | null = null
+  private listenDocumentHiddenAt: number | null = null
   private listenForceRunner: ForceSignalRunner | null = null
   private authenticatedRememberPhoneId: string | null = null
   private authTimer: number | null = null
@@ -182,20 +183,40 @@ export class Link {
     return this.role === 'host' && hostRememberListenOtherTab(this.listenGaveUp, loadHostStore())
   }
 
+  private listenSignalUnverified(): boolean {
+    if (this.role !== 'host' || !hostHasPhones(loadHostStore())) return false
+    if (this.isRememberConnOnListenPeer()) return false
+    const lp = this.listenPeer
+    if (!lp || lp.destroyed) return false
+    if (this.listenForceRunner?.isUnverifiedAfterDrop()) return true
+    return this.status === 'reconnecting' || this.status === 'waiting'
+  }
+
   private bindHostListenRearmWatchers() {
     if (this.role !== 'host') return
     if (!this.visibilityListener) {
       const onVis = () => {
-        if (document.visibilityState === 'visible') {
-          this.clearRememberListenGiveUp()
-          this.rearmRememberListenPeer()
+        if (document.visibilityState === 'hidden') {
+          this.listenDocumentHiddenAt = Date.now()
+          return
+        }
+        if (this.listenDocumentHiddenAt != null) {
+          const hiddenMs = Date.now() - this.listenDocumentHiddenAt
+          this.listenDocumentHiddenAt = null
+          if (shouldForceSignalOnVisibility(hiddenMs, this.listenSignalUnverified())) {
+            const lp = this.listenPeer
+            if (lp && !lp.destroyed) this.ensureListenForceRunner().hook(lp, false)
+          }
         }
       }
       document.addEventListener('visibilitychange', onVis)
       this.visibilityListener = () => document.removeEventListener('visibilitychange', onVis)
     }
     if (!this.networkListener) {
-      const onOnline = () => this.rearmRememberListenPeer()
+      const onOnline = () => {
+        const lp = this.listenPeer
+        if (lp && !lp.destroyed) this.ensureListenForceRunner().hookOnline(lp, false)
+      }
       window.addEventListener('online', onOnline)
       this.networkListener = () => window.removeEventListener('online', onOnline)
     }
@@ -214,14 +235,15 @@ export class Link {
 
   private tickListenSignalForce(lp: Peer) {
     if (!hostHasPhones(loadHostStore()) || lp.destroyed) return
-    const peerHealthy = lp.open && !lp.disconnected
+    const unverified = this.listenSignalUnverified()
+    const peerLooksHealthy = lp.open && !lp.disconnected && !unverified
     const active = shouldRearmListenPeer({
       role: 'host',
       hasPhones: true,
       status: this.status,
       listenMissingOrDead: !lp.open,
     })
-    this.ensureListenForceRunner().tick(lp, active, false, peerHealthy)
+    this.ensureListenForceRunner().tick(lp, active, false, peerLooksHealthy, unverified)
   }
 
   private rearmRememberListenPeer() {
@@ -231,6 +253,10 @@ export class Link {
     if (this.isRememberConnOnListenPeer()) {
       this.reloadRememberPhonesMap()
       return
+    }
+    if (!this.listenSignalUnverified()) {
+      const lpHealthy = this.listenPeer
+      if (lpHealthy?.open && !lpHealthy.disconnected) return
     }
     if (this.listenGaveUp) {
       if (this.listenOwnedBefore) this.clearRememberListenGiveUp()
@@ -423,7 +449,6 @@ export class Link {
       this.listenOwnedBefore = true
       this.listenReclaimStartedAt = null
       this.listenUnavailableFailures = 0
-      this.ensureListenForceRunner().onOpen()
     })
     peer.on('connection', (c) => {
       if (this.role !== 'host' || this.destroyed) { try { c.close() } catch {}; return }
@@ -439,6 +464,7 @@ export class Link {
       window.setTimeout(() => {
         const lp = this.listenPeer
         if (!lp || lp !== peer || this.destroyed) return
+        this.ensureListenForceRunner().onSignalingDrop()
         this.ensureListenForceRunner().hook(lp, false)
       }, 1500)
     })
@@ -843,6 +869,7 @@ export class Link {
     this.conn = c
     this.connPeer = fromListenPeer ? this.listenPeer : this.peer
     if (fromListenPeer && rememberPhoneId) this.authenticatedRememberPhoneId = rememberPhoneId
+    if (this.role === 'host' && fromListenPeer) this.ensureListenForceRunner().onPhoneConnected()
     this.sessionPaired = true
     this.rememberGuestFailCount = 0
     if (this.role === 'guest' && this.rememberGuestAuth) {
@@ -962,6 +989,9 @@ export class Link {
       this.dropConn()
     }
     if (this.role === 'host') {
+      if (hostHasPhones(loadHostStore()) && !this.isRememberConnOnListenPeer()) {
+        this.ensureListenForceRunner().onSignalingDrop()
+      }
       if (this.everConnected) {
         this.set({ status: 'reconnecting' })
         if (!this.hostGrace) {
@@ -969,14 +999,14 @@ export class Link {
             this.hostGrace = null
             if (!this.conn?.open && !this.destroyed) {
               this.set({ status: 'waiting' })
-              this.rearmRememberListenPeer()
+              if (this.listenSignalUnverified()) this.rearmRememberListenPeer()
             }
           }, 15000)
         }
-        this.rearmRememberListenPeer()
+        if (this.listenSignalUnverified()) this.rearmRememberListenPeer()
       } else {
         this.set({ status: 'waiting' })
-        this.rearmRememberListenPeer()
+        if (this.listenSignalUnverified()) this.rearmRememberListenPeer()
       }
     }
     else if (!this.hasInFlightDial()) {

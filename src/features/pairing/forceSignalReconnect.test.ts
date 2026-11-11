@@ -3,9 +3,15 @@ import assert from 'node:assert/strict'
 import {
   FORCE_SIGNAL_OPEN_WATCHDOG_MS,
   FORCE_SIGNAL_RECLAIM_MIN_MS,
+  FORCE_SIGNAL_VERIFY_CADENCE_MS,
+  FORCE_SIGNAL_VERIFY_FAST_PHASE_MS,
+  FORCE_SIGNAL_VERIFY_SLOW_CADENCE_MS,
   ForceSignalRunner,
+  forceSignalCadenceDue,
   forceSignalReconnect,
   forceReclaimExpired,
+  forceSignalUnverifiedIntervalMs,
+  shouldForceSignalOnVisibility,
   type ForceSignalPeerLike,
 } from './forceSignalReconnect.ts'
 
@@ -135,7 +141,7 @@ describe('forceSignalRunner stuck socket', () => {
     for (let i = 0; i < 9; i++) {
       t.value += 10_000
       mock.timers.tick(10_000)
-      runner.tick(peer, true, false, false)
+      runner.tick(peer, true, false, false, false)
     }
     assert.ok(peer.sockets.length > socketsAt75s)
     assert.ok(t.value >= 90_000)
@@ -191,5 +197,86 @@ describe('forceSignalRunner stuck socket', () => {
     assert.equal(peer.open, true)
     assert.ok(t.value - 20_000 <= 15_000)
     runner.stop()
+  })
+
+  it('cadence-forces a silent open socket and accepts phone connect to stop', () => {
+    mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    const peer = makeMockPeer()
+    const t = { value: 0 }
+    const runner = makeRunner(t)
+    runner.onSignalingDrop()
+    peer.open = true
+    peer.disconnected = false
+    const before = peer.sockets.length
+    t.value = FORCE_SIGNAL_VERIFY_CADENCE_MS
+    mock.timers.tick(FORCE_SIGNAL_VERIFY_CADENCE_MS)
+    runner.tick(peer, true, false, true, true)
+    assert.ok(peer.sockets.length > before)
+    let dataAccepted = false
+    const onPhone = () => {
+      dataAccepted = true
+      runner.onPhoneConnected()
+    }
+    onPhone()
+    assert.equal(dataAccepted, true)
+    assert.equal(runner.isUnverifiedAfterDrop(), false)
+    runner.stop()
+  })
+
+  it('opens a new socket within 15s after a 90s silent-open cut on restore', () => {
+    mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    const peer = makeMockPeer()
+    const t = { value: 0 }
+    const runner = makeRunner(t)
+    runner.onSignalingDrop()
+    peer.open = true
+    peer.disconnected = false
+    while (t.value < 90_000) {
+      t.value += FORCE_SIGNAL_VERIFY_CADENCE_MS
+      mock.timers.tick(FORCE_SIGNAL_VERIFY_CADENCE_MS)
+      runner.tick(peer, true, false, true, true)
+    }
+    const restoreAt = t.value
+    const socketsBefore = peer.sockets.length
+    runner.hookOnline(peer, false)
+    assert.ok(peer.sockets.length > socketsBefore)
+    assert.ok(t.value - restoreAt <= 15_000)
+    runner.onPhoneConnected()
+    runner.stop()
+  })
+
+  it('hookOnline during a pending backoff retry forces immediately', () => {
+    mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    const peer = makeMockPeer()
+    const t = { value: 0 }
+    const runner = makeRunner(t)
+    runner.hook(peer, false)
+    const n = peer.sockets.length
+    t.value += FORCE_SIGNAL_OPEN_WATCHDOG_MS
+    mock.timers.tick(FORCE_SIGNAL_OPEN_WATCHDOG_MS)
+    peer.open = true
+    peer.disconnected = false
+    const beforeOnline = peer.sockets.length
+    runner.hookOnline(peer, false)
+    assert.ok(peer.sockets.length > beforeOnline)
+    assert.ok(peer.sockets.length >= n + 1)
+    runner.stop()
+  })
+
+  it('uses 60s cadence after the first 5 minutes of unverified forcing', () => {
+    assert.equal(forceSignalUnverifiedIntervalMs(FORCE_SIGNAL_VERIFY_FAST_PHASE_MS - 1), FORCE_SIGNAL_VERIFY_CADENCE_MS)
+    assert.equal(forceSignalUnverifiedIntervalMs(FORCE_SIGNAL_VERIFY_FAST_PHASE_MS), FORCE_SIGNAL_VERIFY_SLOW_CADENCE_MS)
+    const drop = 0
+    assert.equal(forceSignalCadenceDue(drop, drop, drop + FORCE_SIGNAL_VERIFY_CADENCE_MS - 1), false)
+    assert.equal(forceSignalCadenceDue(drop, drop, drop + FORCE_SIGNAL_VERIFY_CADENCE_MS), true)
+    const lateDrop = 0
+    const lateNow = FORCE_SIGNAL_VERIFY_FAST_PHASE_MS + FORCE_SIGNAL_VERIFY_SLOW_CADENCE_MS
+    assert.equal(forceSignalCadenceDue(lateDrop, lateDrop, lateNow), true)
+  })
+
+  it('does not force visibility rearm when hidden under 30s even if unverified', () => {
+    assert.equal(shouldForceSignalOnVisibility(29_000, true), false)
+    assert.equal(shouldForceSignalOnVisibility(31_000, true), true)
+    assert.equal(shouldForceSignalOnVisibility(31_000, false), false)
   })
 })
