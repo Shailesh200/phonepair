@@ -65,7 +65,7 @@ function Row({ it }: { it: FileItem }) {
   </div>
 }
 
-function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
+function LaptopPanel({ ctx, children }: { ctx: CoreCtx; children?: React.ReactNode }) {
   const [drag, setDrag] = useState(false)
   const [all, setAll] = useState(false)
   const list = files.use()
@@ -86,6 +86,7 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
       <b>Drop files here to send to your phone</b>
       <small>or <u>browse</u>: photos, PDFs, anything. Paste a screenshot with Ctrl/⌘+V.</small>
     </label>
+    {children}
     <div className="card pad">
       <h3 className="h-row"><span>Recent transfers</span><button type="button" className="see-all" data-testid="see-all" onClick={() => setAll((v) => !v)}>{all && list.length > PREVIEW ? 'Show less' : 'See all'}</button></h3>
       {list.length === 0 ? <p className="mut small">Nothing yet. Files you send or receive show up here.</p> : <div className="list">{shown.map((it) => <Row key={it.id} it={it} />)}</div>}

@@ -118,13 +118,21 @@ function StudioStage() {
 
 function Dashboard({ ctx, waitingPhone }: { ctx: CoreCtx; waitingPhone: boolean }) {
   const feats = getFeatures().filter((f) => f.LaptopPanel)
-  const col = (c: 'left' | 'right') => feats.filter((f) => (f.laptopColumn ?? 'right') === c).map((f) => { const P = f.LaptopPanel!; return <P key={f.id} ctx={ctx} /> })
+  const files = feats.find((f) => f.id === 'files')
+  const screen = feats.find((f) => f.id === 'screen')
+  const rest = feats.filter((f) => f.id !== 'files' && f.id !== 'screen')
+  const panel = (f: (typeof feats)[number]) => { const P = f.LaptopPanel!; return <P key={f.id} ctx={ctx} /> }
+  const Files = files?.LaptopPanel as React.ComponentType<{ ctx: CoreCtx; children?: React.ReactNode }> | undefined
+  const Screen = screen?.LaptopPanel
   return <div className="dash">
     <header className="nav"><Logo /><div className="row-g"><StatusPill link={ctx.link} /><button className="btn ghost" data-testid="disconnect" onClick={() => ctx.link.disconnect()}>Disconnect</button></div></header>
     {waitingPhone && <div className="banner warn dash-wait">Phone disconnected, waiting to reconnect</div>}
     <div className="grid">
-      <div className="col">{col('left')}</div>
-      <div className="col">{col('right')}</div>
+      <div className="col">
+        {Files ? <Files ctx={ctx}>{Screen ? <Screen ctx={ctx} /> : null}</Files> : null}
+        {rest.filter((f) => f.laptopColumn === 'left').map(panel)}
+      </div>
+      <div className="col">{rest.filter((f) => (f.laptopColumn ?? 'right') === 'right').map(panel)}</div>
     </div>
   </div>
 }

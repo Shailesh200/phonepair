@@ -277,6 +277,13 @@
   max-width: none;
   margin: 0;
   flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--accent);
+}
+.dash .banner.pp-screen-banner svg { color: var(--accent); }
+@media (max-width: 520px) {
+  .dash .banner.pp-screen-banner > span { flex: 1 1 100%; }
 }
 .pp-tools button { text-align: center; line-height: 1.2; }
 @media (max-width: 360px) {
