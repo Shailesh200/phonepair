@@ -81,6 +81,7 @@ import { candidatePairUsesRelay } from '../features/pairing/relayStats'
 import { rememberLastLaptop } from '../features/pairing/session'
 import { guestAcceptsRememberOk } from '../remember/guestAuth'
 import { guestRememberIncomingAuthAction, guestRememberSwapOnPromote } from '../remember/guestRememberConn'
+import { guestRememberDialShouldClearOpenConn } from '../remember/guestDialStaleConn'
 import { peerForOutboundCall } from '../remember/callPeer'
 import { signPhoneProof } from '../remember/proof'
 import type { HostAuthFailReason } from '../remember/hostAuth'
@@ -1079,8 +1080,26 @@ export class Link {
     this.set({ status: 'error', error: err })
   }
 
+  private clearStaleConnForGuestRememberDial() {
+    if (!this.conn?.open || !this.rememberGuestAuth) return
+    const pc = this.peerConnectionOf(this.conn)
+    if (
+      !guestRememberDialShouldClearOpenConn({
+        rememberGuest: true,
+        status: this.status,
+        everConnected: this.everConnected,
+        dataConnOpen: true,
+        iceState: pc?.iceConnectionState ?? null,
+        lastSeen: this.lastSeen,
+        now: Date.now(),
+      })
+    ) return
+    try { this.conn.close() } catch {}
+  }
+
   private dial() {
     if (this.destroyed || this.status === 'error') return
+    this.clearStaleConnForGuestRememberDial()
     if (this.conn?.open) return
     if (this.hasInFlightDial()) return
     const peer = this.peer
