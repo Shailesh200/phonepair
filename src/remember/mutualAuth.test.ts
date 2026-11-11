@@ -8,24 +8,29 @@ describe('remember mutual auth', () => {
   it('rejects a forged ok with bad or missing hostProof', async () => {
     const key = randomBytes(32)
     const phoneNonce = randomBytes(32)
-    assert.equal(await guestAcceptsRememberOk({ t: 'remember:ok' }, key, phoneNonce), false)
-    assert.equal(await guestAcceptsRememberOk({ t: 'remember:ok', hostProof: bytesToB64(randomBytes(32)) }, key, phoneNonce), false)
+    const hostNonce = randomBytes(32)
+    assert.equal(await guestAcceptsRememberOk({ t: 'remember:ok' }, key, hostNonce, phoneNonce), false)
+    assert.equal(
+      await guestAcceptsRememberOk({ t: 'remember:ok', hostProof: bytesToB64(randomBytes(32)) }, key, hostNonce, phoneNonce),
+      false,
+    )
   })
 
   it('rejects reflected proofs (wrong domain)', async () => {
     const key = randomBytes(32)
     const phoneNonce = randomBytes(32)
     const hostNonce = randomBytes(32)
-    const phoneProof = await signPhoneProof(key, hostNonce)
-    assert.equal(await guestAcceptsRememberOk({ t: 'remember:ok', hostProof: bytesToB64(phoneProof) }, key, phoneNonce), false)
-    const hostProof = await signHostProof(key, phoneNonce)
-    assert.equal(await verifyPhoneProof(key, hostNonce, hostProof), false)
+    const phoneProof = await signPhoneProof(key, phoneNonce, hostNonce)
+    assert.equal(await guestAcceptsRememberOk({ t: 'remember:ok', hostProof: bytesToB64(phoneProof) }, key, hostNonce, phoneNonce), false)
+    const hostProof = await signHostProof(key, hostNonce, phoneNonce)
+    assert.equal(await verifyPhoneProof(key, phoneNonce, hostNonce, hostProof), false)
   })
 
   it('accepts a valid ok and opens verify path', async () => {
     const key = randomBytes(32)
     const phoneNonce = randomBytes(32)
-    const hostProof = await signHostProof(key, phoneNonce)
-    assert.equal(await guestAcceptsRememberOk({ t: 'remember:ok', hostProof: bytesToB64(hostProof) }, key, phoneNonce), true)
+    const hostNonce = randomBytes(32)
+    const hostProof = await signHostProof(key, hostNonce, phoneNonce)
+    assert.equal(await guestAcceptsRememberOk({ t: 'remember:ok', hostProof: bytesToB64(hostProof) }, key, hostNonce, phoneNonce), true)
   })
 })

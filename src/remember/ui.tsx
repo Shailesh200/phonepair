@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import type { CoreCtx } from '../core/bus'
-import { allowRemember, denyRemember, forgetGuestLaptop, forgetHostPhone, rememberPrompt } from './index'
+import { allowRemember, denyRemember, forgetGuestLaptopLocal, forgetHostPhone, rememberPrompt } from './index'
 import { loadGuestStore, loadHostStore } from './storage'
 import type { SavedLaptop } from './storage'
 
@@ -77,7 +77,7 @@ export function SavedLaptopsList({
               type="button"
               className="linkbtn"
               data-testid="saved-laptop-forget"
-              onClick={(e) => { e.stopPropagation(); forgetGuestLaptop(lap.listenId); bump((x) => x + 1) }}
+              onClick={(e) => { e.stopPropagation(); forgetGuestLaptopLocal(lap.listenId); bump((x) => x + 1) }}
             >
               Forget
             </button>
