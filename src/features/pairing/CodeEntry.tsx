@@ -41,6 +41,7 @@ export function CodeEntry({
           )}
           <form onSubmit={(e) => e.preventDefault()}>
             <CodeBoxes
+              key={error || 'fresh'}
               autoFocus
               onChange={() => onClearError?.()}
               onComplete={complete}

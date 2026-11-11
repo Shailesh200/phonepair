@@ -2,7 +2,11 @@ import Peer, { DataConnection, MediaConnection } from 'peerjs'
 
 import type { Role } from './bus'
 import { newPairCode, normalizePairCode, peerIdForCode } from '../features/pairing/code'
-import { classifyGuestPairError, guestErrorText, lastGuestPairedCode, rememberGuestPairedCode } from '../features/pairing/errors'
+import {
+  guestFailFastOnPeerUnavailable,
+  MSG_HOST_NOT_FOUND,
+  rememberGuestPairedCode,
+} from '../features/pairing/errors'
 import { loadRtcConfiguration } from '../features/pairing/ice'
 import {
   GUEST_CONNECTING_WATCHDOG_MS,
@@ -107,18 +111,17 @@ export class Link {
       if (t === 'peer-unavailable') {
         this.closePending()
         this.conn = null
-        this.retry++
-        const max = guestUnavailableRetries(this.everConnected)
-        if (this.retry > max && !this.everConnected) {
-          const reason = classifyGuestPairError({
-            code: this.code,
-            everConnectedThisSession: this.everConnected,
-            previouslyPairedCode: lastGuestPairedCode(),
-          })
-          this.set({ status: 'error', error: guestErrorText(reason) })
+        if (guestFailFastOnPeerUnavailable(this.role, this.everConnected)) {
+          this.failGuestHostNotFound()
           return
         }
-        this.set({ status: this.everConnected ? 'reconnecting' : 'connecting' })
+        this.retry++
+        const max = guestUnavailableRetries(this.everConnected)
+        if (this.retry > max) {
+          this.failGuestHostNotFound()
+          return
+        }
+        this.set({ status: 'reconnecting' })
         this.scheduleDial()
         return
       }
@@ -170,7 +173,7 @@ export class Link {
   }
 
   private redialGuestNow() {
-    if (this.role !== 'guest' || this.destroyed) return
+    if (this.role !== 'guest' || this.destroyed || this.status === 'error') return
     this.retry = 0
     if (this.dialWait) clearTimeout(this.dialWait)
     this.dialWait = null
@@ -209,7 +212,7 @@ export class Link {
   }
 
   private scheduleDial() {
-    if (this.dialWait) return
+    if (this.status === 'error' || this.dialWait) return
     const delay = redialDelayMs(this.retry, this.everConnected)
     if (delay <= 0) {
       this.dial()
@@ -240,8 +243,19 @@ export class Link {
     this.guestStallRetrying = false
   }
 
+  private failGuestHostNotFound() {
+    if (this.dialWait) clearTimeout(this.dialWait)
+    this.dialWait = null
+    this.clearGuestWatchdog()
+    this.dialOnOpenPending = false
+    this.closePending()
+    this.conn = null
+    this.retry = 0
+    this.set({ status: 'error', error: MSG_HOST_NOT_FOUND })
+  }
+
   private dial() {
-    if (this.destroyed) return
+    if (this.destroyed || this.status === 'error') return
     if (this.conn?.open) return
     const peer = this.peer
     if (!peer || peer.destroyed) return
@@ -340,7 +354,7 @@ export class Link {
   }
 
   private tickGuestWatchdog() {
-    if (this.role !== 'guest' || this.destroyed) return
+    if (this.role !== 'guest' || this.destroyed || this.status === 'error') return
     if (this.status !== 'connecting' || this.conn?.open) return
     if (!this.connectingSince) return
     if (Date.now() - this.connectingSince < GUEST_CONNECTING_WATCHDOG_MS) return

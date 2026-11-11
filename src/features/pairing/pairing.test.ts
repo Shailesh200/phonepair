@@ -1,7 +1,14 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { CODE_ALPHABET, isValidPairCode, normalizePairCode } from './code.ts'
-import { classifyGuestPairError, guestErrorText, MSG_CODE_EXPIRED, MSG_CODE_MISMATCH } from './errors.ts'
+import {
+  classifyGuestPairError,
+  guestErrorText,
+  guestFailFastOnPeerUnavailable,
+  MSG_CODE_EXPIRED,
+  MSG_CODE_MISMATCH,
+  MSG_HOST_NOT_FOUND,
+} from './errors.ts'
 import { fetchTurnPayload, TURN_FETCH_MS } from './turnFetch.ts'
 import { buildRtcConfiguration, mergeIceServers } from './peerConfig.ts'
 import { joinPathFor, withRelayQuery } from './relay.ts'
@@ -76,6 +83,11 @@ describe('redial backoff', () => {
 })
 
 describe('guest errors', () => {
+  it('fails fast on peer-unavailable for first-time guest dial', () => {
+    assert.equal(guestFailFastOnPeerUnavailable('guest', false), true)
+    assert.equal(guestFailFastOnPeerUnavailable('guest', true), false)
+    assert.match(MSG_HOST_NOT_FOUND, /Couldn't find that code/)
+  })
   it('uses mismatch copy by default', () => {
     const r = classifyGuestPairError({ code: 'ABCDEF', everConnectedThisSession: false, previouslyPairedCode: null })
     assert.equal(guestErrorText(r), MSG_CODE_MISMATCH)
