@@ -14,8 +14,15 @@ export function shouldExpireHostForceSignalInFlight(
   return now - forceStartedAt >= timeoutMs
 }
 
-export function shouldClearHostForceSignalOnPeerError(forceInFlight: boolean, samePeer: boolean): boolean {
-  return forceInFlight && samePeer
+export function shouldClearHostForceSignalOnPeerError(
+  forceInFlight: boolean,
+  samePeer: boolean,
+  errorType?: string,
+  reclaimActive?: boolean,
+): boolean {
+  if (!forceInFlight || !samePeer) return false
+  if (reclaimActive && errorType === 'unavailable-id') return false
+  return true
 }
 
 export type HostSignalReconnectPlan = 'skip' | 'reconnect' | 'disconnect-then-reconnect'

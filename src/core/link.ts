@@ -16,7 +16,12 @@ import {
   shouldDeferDialUntilPeerOpen,
 } from '../features/pairing/dialGuard'
 import { isRelayOnly } from '../features/pairing/relay'
-import { hostUnavailableIdBackoffMs, hostUnavailableIdGiveUp } from '../features/pairing/hostClaim'
+import {
+  ensureHostReclaimStarted,
+  hostUnavailableIdBackoffForClaim,
+  hostUnavailableIdShouldGiveUp,
+  shouldUseHostIdReclaimWindow,
+} from '../features/pairing/hostIdReclaim'
 import { guestUnavailableRetries, redialDelayMs } from '../features/pairing/reconnect'
 import { linkTeardownSendsBye } from '../features/pairing/teardown'
 import { shouldCallPeerReconnect, shouldHostReconnect } from '../features/pairing/peerReconnect'
@@ -32,15 +37,14 @@ import {
   shouldSkipHostDisconnectedHandler,
 } from '../features/pairing/hostSignalReconnect'
 import {
-  canAttemptIceRestart,
   canGuestIceRedial,
+  iceDisconnectedRedialDelayMs,
   isDataConnIceOfferer,
   iceTransportRecovered,
-  ICE_RESTART_RECOVERY_MS,
   shouldActOnIceNetworkChange,
-  shouldRedialAfterIceRestart,
+  shouldArmIceGraceTimer,
+  shouldRedialAfterDisconnectedGrace,
   shouldRedialImmediatelyOnIceFailed,
-  shouldRestartIce,
 } from '../features/pairing/iceRecovery'
 import { candidatePairUsesRelay } from '../features/pairing/relayStats'
 import { rememberLastLaptop } from '../features/pairing/session'
@@ -99,9 +103,9 @@ export class Link {
   private documentHiddenAt: number | null = null
   private networkWatchersCleanup: (() => void) | null = null
   private iceDisconnectedAt: number | null = null
-  private iceRestartAt = 0
-  private iceRestartInFlight = false
   private iceRedialTimer: number | null = null
+  private hostIdReclaimSince: number | null = null
+  private hostUnavailableRetry = 0
   private iceWatchCleanup: (() => void) | null = null
   private hostForceSignalInFlight = false
   private hostForceSignalStartedAt = 0
@@ -194,6 +198,8 @@ export class Link {
     if (plan === 'skip') return
     this.hostForceSignalInFlight = true
     this.hostForceSignalStartedAt = now
+    this.hostIdReclaimSince = now
+    this.hostUnavailableRetry = 0
     this.lastPeerReconnectAt = now
     this.armHostForceSignalTimeout(peer)
     try {
@@ -207,16 +213,18 @@ export class Link {
     }
   }
 
-  private clearIceRecovery() {
+  private clearIceGraceTimer() {
     if (this.iceRedialTimer) {
       clearTimeout(this.iceRedialTimer)
       this.iceRedialTimer = null
     }
+  }
+
+  private clearIceRecovery() {
+    this.clearIceGraceTimer()
     this.iceWatchCleanup?.()
     this.iceWatchCleanup = null
     this.iceDisconnectedAt = null
-    this.iceRestartAt = 0
-    this.iceRestartInFlight = false
   }
 
   private peerConnectionOf(c: DataConnection): RTCPeerConnection | null {
@@ -243,8 +251,15 @@ export class Link {
     if (!isDataConnIceOfferer(this.role) || this.destroyed) return
     const pc = this.conn ? this.peerConnectionOf(this.conn) : null
     if (!pc) return
-    if (!shouldActOnIceNetworkChange(pc.iceConnectionState)) return
-    this.maybeRestartIce(pc)
+    const state = pc.iceConnectionState
+    if (!shouldActOnIceNetworkChange(state)) return
+    if (state === 'disconnected' && this.iceDisconnectedAt == null) this.iceDisconnectedAt = Date.now()
+    if (shouldRedialImmediatelyOnIceFailed(state)) {
+      this.clearIceGraceTimer()
+      this.scheduleGuestIceRedial()
+      return
+    }
+    this.armIceGraceRedial(pc)
   }
 
   private scheduleGuestIceRedial() {
@@ -257,52 +272,45 @@ export class Link {
     this.scheduleDial()
   }
 
-  private maybeRestartIce(pc: RTCPeerConnection) {
+  private armIceGraceRedial(pc: RTCPeerConnection) {
+    if (!isDataConnIceOfferer(this.role) || this.destroyed) return
+    if (!shouldArmIceGraceTimer(!!this.iceRedialTimer, this.iceDisconnectedAt)) return
+    const since = this.iceDisconnectedAt!
+    const delay = iceDisconnectedRedialDelayMs(since, Date.now())
+    this.iceRedialTimer = window.setTimeout(() => {
+      this.iceRedialTimer = null
+      if (this.destroyed) return
+      const pcNow = this.conn ? this.peerConnectionOf(this.conn) : null
+      const state = pcNow?.iceConnectionState ?? 'disconnected'
+      if (shouldRedialAfterDisconnectedGrace(since, state, Date.now())) {
+        this.scheduleGuestIceRedial()
+      }
+    }, delay)
+  }
+
+  private handleGuestIce(pc: RTCPeerConnection) {
     const now = Date.now()
     const state = pc.iceConnectionState
     if (iceTransportRecovered(state)) {
+      this.clearIceGraceTimer()
       this.iceDisconnectedAt = null
       return
     }
     if (state === 'disconnected' && this.iceDisconnectedAt == null) this.iceDisconnectedAt = now
     if (!isDataConnIceOfferer(this.role)) return
     if (shouldRedialImmediatelyOnIceFailed(state)) {
+      this.clearIceGraceTimer()
       this.scheduleGuestIceRedial()
       return
     }
-    if (!shouldRestartIce(state, this.iceDisconnectedAt, now)) return
-    if (!canAttemptIceRestart(this.iceRestartInFlight, this.iceRestartAt, now)) return
-    void this.attemptIceRestart(pc)
-  }
-
-  private async attemptIceRestart(pc: RTCPeerConnection) {
-    // PeerJS 1.5.4 ignores new offers on an existing connection id; restartIce alone does not recover.
-    this.iceRestartInFlight = true
-    this.iceRestartAt = Date.now()
-    try {
-      pc.restartIce()
-    } catch {
-      this.iceRestartInFlight = false
-      return
-    }
-    this.iceRestartInFlight = false
-    void this.refreshConnRelay()
-    if (this.iceRedialTimer) clearTimeout(this.iceRedialTimer)
-    const restartAt = this.iceRestartAt
-    this.iceRedialTimer = window.setTimeout(() => {
-      this.iceRedialTimer = null
-      if (this.destroyed) return
-      if (shouldRedialAfterIceRestart(restartAt, pc.iceConnectionState, Date.now())) {
-        this.scheduleGuestIceRedial()
-      }
-    }, ICE_RESTART_RECOVERY_MS)
+    this.armIceGraceRedial(pc)
   }
 
   private wireIceRecovery(c: DataConnection) {
     this.clearIceRecovery()
     const pc = this.peerConnectionOf(c)
     if (!pc) return
-    const onIce = () => this.maybeRestartIce(pc)
+    const onIce = () => this.handleGuestIce(pc)
     pc.addEventListener('iceconnectionstatechange', onIce)
     const onPeerIce = () => onIce()
     c.on('iceStateChanged', onPeerIce)
@@ -310,6 +318,7 @@ export class Link {
       pc.removeEventListener('iceconnectionstatechange', onIce)
       c.off('iceStateChanged', onPeerIce)
     }
+    this.handleGuestIce(pc)
   }
 
   async start() {
@@ -322,6 +331,8 @@ export class Link {
     this.peer = peer
     peer.on('open', () => {
       this.clearHostForceSignalInFlight()
+      this.hostIdReclaimSince = null
+      this.hostUnavailableRetry = 0
       this.retry = 0
       if (this.role === 'host') {
         this.hostFails = 0
@@ -338,6 +349,14 @@ export class Link {
     peer.on('call', (call) => this.callHandlers.forEach((h) => h(call)))
     peer.on('disconnected', () => {
       if (this.destroyed) return
+      if (this.role === 'host' && this.everConnected) {
+        const now = Date.now()
+        const started = ensureHostReclaimStarted(true, this.hostIdReclaimSince, now)
+        if (started !== this.hostIdReclaimSince) {
+          this.hostIdReclaimSince = started
+          this.hostUnavailableRetry = 0
+        }
+      }
       const keepHostUi =
         this.role === 'host' && hostKeepsConnectedStatusOnSignalDrop(!!this.conn?.open)
       if (!keepHostUi) {
@@ -361,19 +380,54 @@ export class Link {
       }, 1500)
     })
     peer.on('error', (e: any) => {
-      if (shouldClearHostForceSignalOnPeerError(this.hostForceSignalInFlight, peer === this.peer)) {
-        this.clearHostForceSignalInFlight()
-      }
       const t = e?.type
       if (t === 'unavailable-id' && this.role === 'host') {
-        this.retry++
-        peer.destroy()
-        if (hostUnavailableIdGiveUp(this.retry)) {
-          this.set({ status: 'error', error: 'Could not claim this pairing code. Try again.' })
+        const now = Date.now()
+        this.hostIdReclaimSince = ensureHostReclaimStarted(
+          this.everConnected,
+          this.hostIdReclaimSince,
+          now,
+        )
+        const reclaim = shouldUseHostIdReclaimWindow(this.everConnected, this.hostIdReclaimSince)
+        const attempt = reclaim ? ++this.hostUnavailableRetry : ++this.retry
+        if (hostUnavailableIdShouldGiveUp(attempt, this.hostIdReclaimSince, now, this.everConnected)) {
+          this.hostIdReclaimSince = null
+          this.clearHostForceSignalInFlight()
+          const msg = reclaim
+            ? 'Could not reclaim this pairing code. Try again.'
+            : 'Could not claim this pairing code. Try again.'
+          this.set({ status: 'error', error: msg })
           return
         }
-        window.setTimeout(() => this.start(), hostUnavailableIdBackoffMs(this.retry))
+        const delay = hostUnavailableIdBackoffForClaim(attempt, this.hostIdReclaimSince, this.everConnected)
+        const keepConn = reclaim && !!this.conn?.open
+        if (!keepConn) {
+          try { peer.destroy() } catch {}
+          this.peer = null
+        }
+        window.setTimeout(() => {
+          if (this.destroyed) return
+          if (keepConn && peer === this.peer && !peer.destroyed) {
+            try {
+              if (peer.disconnected) peer.reconnect()
+              else {
+                peer.disconnect()
+                peer.reconnect()
+              }
+            } catch {}
+            return
+          }
+          if (!this.peer) void this.start()
+        }, delay)
         return
+      }
+      if (shouldClearHostForceSignalOnPeerError(
+        this.hostForceSignalInFlight,
+        peer === this.peer,
+        t,
+        shouldUseHostIdReclaimWindow(this.everConnected, this.hostIdReclaimSince),
+      )) {
+        this.clearHostForceSignalInFlight()
       }
       if (t === 'peer-unavailable') {
         this.releaseInFlightDial()

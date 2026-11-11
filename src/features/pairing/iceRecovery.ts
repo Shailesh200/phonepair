@@ -1,8 +1,7 @@
 export type LinkRole = 'host' | 'guest'
 
-export const ICE_DISCONNECTED_RESTART_MS = 3000
-export const ICE_RESTART_RECOVERY_MS = 10_000
-export const ICE_RESTART_MIN_GAP_MS = 2000
+/** Redial 13s after ICE first goes disconnected (3s unhealthy + 10s grace). */
+export const ICE_DISCONNECTED_GRACE_MS = 13_000
 
 export function isDataConnIceOfferer(role: LinkRole): boolean {
   return role === 'guest'
@@ -12,7 +11,7 @@ export function iceTransportRecovered(state: RTCIceConnectionState): boolean {
   return state === 'connected' || state === 'completed'
 }
 
-/** PeerJS 1.5.4 does not renegotiate on restartIce; redial is the real recovery path. */
+/** PeerJS 1.5.4 cannot renegotiate; full guest redial is the recovery path. */
 export function shouldRedialImmediatelyOnIceFailed(state: RTCIceConnectionState): boolean {
   return state === 'failed'
 }
@@ -21,14 +20,24 @@ export function shouldActOnIceNetworkChange(state: RTCIceConnectionState): boole
   return !iceTransportRecovered(state)
 }
 
-export function shouldRestartIce(
+export function iceGraceFireAt(disconnectedSince: number, graceMs = ICE_DISCONNECTED_GRACE_MS): number {
+  return disconnectedSince + graceMs
+}
+
+export function iceDisconnectedRedialDelayMs(disconnectedSince: number, now: number, graceMs = ICE_DISCONNECTED_GRACE_MS): number {
+  const remaining = iceGraceFireAt(disconnectedSince, graceMs) - now
+  return remaining > 0 ? remaining : 0
+}
+
+export function shouldRedialAfterDisconnectedGrace(
+  disconnectedSince: number,
   state: RTCIceConnectionState,
-  disconnectedSince: number | null,
   now: number,
-  disconnectMs = ICE_DISCONNECTED_RESTART_MS,
+  graceMs = ICE_DISCONNECTED_GRACE_MS,
 ): boolean {
-  if (state === 'disconnected' && disconnectedSince != null && now - disconnectedSince >= disconnectMs) return true
-  return false
+  if (iceTransportRecovered(state)) return false
+  if (disconnectedSince <= 0) return false
+  return now - disconnectedSince >= graceMs
 }
 
 export function canGuestIceRedial(hasInFlightDial: boolean, dialWait: boolean, destroyed: boolean): boolean {
@@ -36,19 +45,7 @@ export function canGuestIceRedial(hasInFlightDial: boolean, dialWait: boolean, d
   return true
 }
 
-export function shouldRedialAfterIceRestart(
-  restartAt: number,
-  state: RTCIceConnectionState,
-  now: number,
-  recoveryMs = ICE_RESTART_RECOVERY_MS,
-): boolean {
-  if (!restartAt) return false
-  if (now - restartAt < recoveryMs) return false
-  return !iceTransportRecovered(state)
-}
-
-export function canAttemptIceRestart(inFlight: boolean, lastRestartAt: number, now: number, minGapMs = ICE_RESTART_MIN_GAP_MS): boolean {
-  if (inFlight) return false
-  if (!lastRestartAt) return true
-  return now - lastRestartAt >= minGapMs
+export function shouldArmIceGraceTimer(graceTimerActive: boolean, disconnectedSince: number | null): boolean {
+  if (graceTimerActive || disconnectedSince == null) return false
+  return true
 }
