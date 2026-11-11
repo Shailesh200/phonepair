@@ -6,6 +6,7 @@ import { fetchTurnPayload, TURN_FETCH_MS } from './turnFetch.ts'
 import { buildRtcConfiguration, mergeIceServers } from './peerConfig.ts'
 import { joinPathFor, withRelayQuery } from './relay.ts'
 import { redialDelayMs } from './reconnect.ts'
+import { phoneHostLabel } from './session.ts'
 
 describe('pair code', () => {
   it('normalizes pasted spacing and dashes', () => {
@@ -19,6 +20,13 @@ describe('pair code', () => {
     assert.equal(isValidPairCode('ABCDEF'), true)
     assert.equal(CODE_ALPHABET.includes('I'), false)
     assert.equal(CODE_ALPHABET.includes('2'), true)
+  })
+})
+
+describe('phone host label', () => {
+  it('shows Connecting… until remoteName arrives', () => {
+    assert.equal(phoneHostLabel('', 'ABCDEF'), 'Connecting…')
+    assert.equal(phoneHostLabel('Mac', 'ABCDEF'), 'Mac')
   })
 })
 

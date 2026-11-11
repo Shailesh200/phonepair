@@ -16,3 +16,10 @@ export function lastLaptopSession(): { name: string; code: string } | null {
   } catch {}
   return null
 }
+
+export function phoneHostLabel(remoteName: string, pairCode: string): string {
+  if (remoteName) return remoteName
+  const last = lastLaptopSession()
+  if (last && last.code === pairCode) return last.name
+  return 'Connecting…'
+}
