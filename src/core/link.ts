@@ -2,8 +2,10 @@ import Peer, { DataConnection, MediaConnection } from 'peerjs'
 
 import type { Role } from './bus'
 import { newPairCode, normalizePairCode, peerIdForCode } from '../features/pairing/code'
+import { classifyGuestPairError, guestErrorText, lastGuestPairedCode, rememberGuestPairedCode } from '../features/pairing/errors'
 import { loadRtcConfiguration } from '../features/pairing/ice'
 import { guestUnavailableRetries, redialDelayMs } from '../features/pairing/reconnect'
+import { rememberLastLaptop } from '../features/pairing/session'
 
 export type { Role }
 export type Status = 'starting' | 'waiting' | 'connecting' | 'connected' | 'reconnecting' | 'error' | 'closed'
@@ -47,6 +49,8 @@ export class Link {
   private everConnected = false
   private pending: DataConnection | null = null
   private dialWait: number | null = null
+  private hostGrace: number | null = null
+  private hostFails = 0
 
   constructor(role: Role, code: string) {
     this.role = role
@@ -71,6 +75,7 @@ export class Link {
     peer.on('connection', (c) => {
       if (this.role !== 'host') { c.close(); return }
       if (this.conn && this.conn !== c) { try { this.conn.close() } catch {} }
+      if (!c.open) this.set({ status: 'connecting' })
       this.attach(c)
     })
     peer.on('call', (call) => this.callHandlers.forEach((h) => h(call)))
@@ -84,7 +89,10 @@ export class Link {
       if (t === 'unavailable-id' && this.role === 'host') {
         this.retry++
         peer.destroy()
-        if (this.retry > 4) { this.code = newPairCode(); sessionStorage.setItem('pp-code', this.code); this.retry = 0 }
+        if (this.retry > 4) {
+          this.set({ status: 'error', error: 'Could not claim this pairing code. Try again.' })
+          return
+        }
         window.setTimeout(() => this.start(), 2500)
         return
       }
@@ -94,7 +102,12 @@ export class Link {
         this.retry++
         const max = guestUnavailableRetries(this.everConnected)
         if (this.retry > max && !this.everConnected) {
-          this.set({ status: 'error', error: 'No laptop found with that code. Check the code and try again.' })
+          const reason = classifyGuestPairError({
+            code: this.code,
+            everConnectedThisSession: this.everConnected,
+            previouslyPairedCode: lastGuestPairedCode(),
+          })
+          this.set({ status: 'error', error: guestErrorText(reason) })
           return
         }
         this.set({ status: this.everConnected ? 'reconnecting' : 'connecting' })
@@ -102,6 +115,13 @@ export class Link {
         return
       }
       if (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed') {
+        if (this.role === 'host') {
+          this.hostFails++
+          if (this.hostFails > 3) {
+            this.set({ status: 'error', error: 'Connection problem. Try again.' })
+            return
+          }
+        }
         this.set({ status: this.everConnected ? 'reconnecting' : this.status, error: '' })
         if (this.role === 'guest' && this.peer && !this.conn?.open) this.scheduleDial()
         return
@@ -111,11 +131,48 @@ export class Link {
     this.timers.push(window.setInterval(() => this.tick(), 4000))
   }
 
+  get hadGuest() {
+    return this.role === 'host' && this.everConnected
+  }
+
+  async restartHost() {
+    if (this.role !== 'host' || this.destroyed) return
+    this.timers.forEach(clearInterval)
+    this.timers = []
+    if (this.dialWait) clearTimeout(this.dialWait)
+    this.dialWait = null
+    if (this.hostGrace) clearTimeout(this.hostGrace)
+    this.hostGrace = null
+    this.closePending()
+    try { this.conn?.close() } catch {}
+    this.conn = null
+    this.peer?.destroy()
+    this.peer = null
+    this.retry = 0
+    this.hostFails = 0
+    this.error = ''
+    this.set({ status: 'starting', remoteName: '' })
+    await this.start()
+  }
+
+  redialGuest() {
+    if (this.role !== 'guest' || this.destroyed) return
+    this.retry = 0
+    if (this.dialWait) clearTimeout(this.dialWait)
+    this.dialWait = null
+    this.closePending()
+    this.conn = null
+    this.set({ status: 'connecting', error: '' })
+    this.dial()
+  }
+
   async rollHostCode() {
     if (this.role !== 'host' || this.destroyed) return
     this.timers.forEach(clearInterval)
     this.timers = []
     if (this.dialWait) clearTimeout(this.dialWait)
+    if (this.hostGrace) clearTimeout(this.hostGrace)
+    this.hostGrace = null
     try { this.conn?.send({ t: 'bye' }) } catch {}
     try { this.conn?.close() } catch {}
     this.conn = null
@@ -139,6 +196,10 @@ export class Link {
   private scheduleDial() {
     if (this.dialWait) return
     const delay = redialDelayMs(this.retry, this.everConnected)
+    if (delay <= 0) {
+      this.dial()
+      return
+    }
     this.dialWait = window.setTimeout(() => {
       this.dialWait = null
       this.dial()
@@ -174,15 +235,25 @@ export class Link {
       this.lastSeen = Date.now()
       this.everConnected = true
       this.retry = 0
+      this.hostFails = 0
+      if (this.hostGrace) { clearTimeout(this.hostGrace); this.hostGrace = null }
       c.send({ t: 'hello', name: deviceName() })
       this.set({ status: 'connected', error: '' })
+      if (this.role === 'guest') rememberGuestPairedCode(this.code)
     }
     if (c.open) onOpen(); else c.on('open', onOpen)
     c.on('data', (m: any) => {
       this.lastSeen = Date.now()
       if (!m || typeof m !== 'object') return
       if (m.t === 'ping') return
-      if (m.t === 'hello') { this.set({ remoteName: m.name }); return }
+      if (m.t === 'hello') {
+        this.set({ remoteName: m.name })
+        if (this.role === 'guest') rememberLastLaptop(m.name, this.code)
+        if (this.role === 'host' && c.open) {
+          try { c.send({ t: 'hello', name: deviceName() }) } catch {}
+        }
+        return
+      }
       if (m.t === 'bye') {
         this.set({ status: this.role === 'host' ? 'waiting' : 'closed' })
         try { c.close() } catch {}
@@ -198,7 +269,19 @@ export class Link {
     if (this.conn !== c || this.destroyed) return
     if (this.status === 'closed') return
     this.conn = null
-    if (this.role === 'host') this.set({ status: 'waiting' })
+    if (this.role === 'host') {
+      if (this.everConnected) {
+        this.set({ status: 'reconnecting' })
+        if (!this.hostGrace) {
+          this.hostGrace = window.setTimeout(() => {
+            this.hostGrace = null
+            if (!this.conn?.open && !this.destroyed) this.set({ status: 'waiting' })
+          }, 15000)
+        }
+      } else {
+        this.set({ status: 'waiting' })
+      }
+    }
     else {
       this.set({ status: 'reconnecting' })
       this.scheduleDial()

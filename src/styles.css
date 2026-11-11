@@ -146,6 +146,23 @@ h3{font-size:15px;font-weight:700;margin-bottom:12px}
 .entry p{line-height:1.5}
 .entry form{margin-top:28px;display:flex;flex-direction:column;gap:14px}
 .code-input{width:100%;text-align:center;font-size:34px;font-weight:800;letter-spacing:.35em;padding:16px;border-radius:16px;border:1px solid var(--line);background:#fff;outline:none;text-transform:uppercase}
+.code-boxes{display:flex;justify-content:center;gap:8px;margin:8px 0 4px}
+.code-box{width:46px;height:54px;border-radius:12px;border:1px solid var(--line);background:var(--bg);text-align:center;font-weight:800;font-size:24px;letter-spacing:0;outline:none;text-transform:uppercase;padding:0}
+.code-box:focus{border-color:var(--a);box-shadow:0 0 0 3px var(--a2)}
+.code-boxes .code-box:nth-child(3){margin-right:8px}
+.code-click{cursor:pointer}.code-click:hover span{border-color:var(--a3)}
+.ok-tick{width:18px;height:18px;border-radius:50%;background:var(--ok);display:inline-block;position:relative;flex:none}
+.ok-tick::after{content:"";position:absolute;left:5px;top:3px;width:5px;height:9px;border:solid #fff;border-width:0 2.5px 2.5px 0;transform:rotate(45deg)}
+.qr-err{margin:12px 0 16px;display:flex;flex-direction:column;align-items:center;gap:10px}
+.wait .ok-tick+.ok-tick{display:none}
+.linkbtn.muted{color:var(--mut);text-decoration:none;font-weight:500}
+.linkbtn.muted:hover{color:var(--ink)}
+.linkbtn.sm,.refresh-link{font-size:13px;margin-top:0}
+.refresh-link{display:inline-flex;align-items:center;gap:6px}
+.reconnect-last{margin-bottom:8px}
+.slow-connect{margin-top:12px;display:flex;flex-direction:column;gap:10px;align-items:center;max-width:320px}
+.undo-bar{margin:8px 20px 0;padding:10px 14px;border-radius:12px;background:#FFFBEB;border:1px solid #FDE68A;display:flex;justify-content:space-between;align-items:center;font-size:14px;font-weight:600;color:#B45309}
+.dash-wait{max-width:1240px;width:calc(100% - 64px);margin:0 auto 10px;justify-content:center}
 .conn{margin:18px 20px 0;padding:14px 16px;display:flex;align-items:center;gap:14px;border-radius:18px}
 .lap{width:44px;height:44px;border-radius:12px;background:#ECFDF5;color:#047857;display:grid;place-items:center}.lap svg{width:22px;height:22px}
 .conn small{font-size:12px;color:var(--mut)}.conn b{display:block;font-size:16px;font-weight:700}

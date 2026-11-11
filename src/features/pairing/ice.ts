@@ -1,11 +1,11 @@
 import { isRelayOnly } from './relay'
-import { buildRtcConfiguration, mergeIceServers, type TurnPayload } from './peerConfig'
+import { buildRtcConfiguration, mergeIceServers } from './peerConfig'
+import { fetchTurnPayload } from './turnFetch'
+
+export { TURN_FETCH_MS, fetchTurnPayload } from './turnFetch'
 
 export async function loadRtcConfiguration(fetchTurn = fetch): Promise<RTCConfiguration> {
-  let payload: TurnPayload | null = null
-  try {
-    const r = await fetchTurn('/api/turn', { cache: 'no-store' })
-    if (r.ok) payload = await r.json()
-  } catch {}
-  return buildRtcConfiguration(mergeIceServers(payload), isRelayOnly())
+  const relayOnly = isRelayOnly()
+  const payload = await fetchTurnPayload(fetchTurn)
+  return buildRtcConfiguration(mergeIceServers(payload), relayOnly)
 }

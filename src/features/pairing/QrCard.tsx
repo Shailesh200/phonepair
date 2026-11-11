@@ -3,9 +3,22 @@ import QRCode from 'qrcode'
 import type { Link } from '../../core/link'
 import { Icon } from '../../core/icons'
 import { copyText } from '../../core/util'
+import type { QrCardPhase } from './useHostPairFlow'
 import { joinUrl } from './relay'
 
-export function QrCard({ link, onNewCode, onToast }: { link: Link; onNewCode: () => void; onToast: (t: string) => void }) {
+export function QrCard({
+  link,
+  onNewCode,
+  onTryAgain,
+  onToast,
+  phase,
+}: {
+  link: Link
+  onNewCode: () => void
+  onTryAgain: () => void
+  onToast: (t: string) => void
+  phase: QrCardPhase
+}) {
   const code = link.code
   const url = joinUrl(location.origin, code)
   const [qr, setQr] = useState('')
@@ -14,14 +27,23 @@ export function QrCard({ link, onNewCode, onToast }: { link: Link; onNewCode: ()
   }, [url])
 
   const s = link.status
-  const wait =
-    s === 'waiting' ? 'Waiting for your phone…'
-    : s === 'reconnecting' ? 'Reconnecting…'
-    : s === 'starting' ? 'Getting ready…'
-    : s === 'error' ? link.error
-    : 'Connecting…'
+  const isErr = s === 'error' && !!link.error
 
-  const copy = async (text: string, okMsg: string) => onToast((await copyText(text)) ? okMsg : 'Copy blocked by browser')
+  const statusLine = (() => {
+    if (isErr) return null
+    if (phase === 'paired') return { spin: false, tick: true, text: 'Paired' }
+    if (phase === 'found') {
+      const name = link.remoteName
+      return { spin: true, tick: false, text: name ? `Phone found, connecting… · ${name}` : 'Phone found, connecting…' }
+    }
+    if (s === 'waiting') return { spin: true, tick: false, text: 'Waiting for your phone…' }
+    if (s === 'reconnecting') return { spin: true, tick: false, text: 'Reconnecting…' }
+    if (s === 'starting') return { spin: true, tick: false, text: 'Getting ready…' }
+    if (s === 'connecting') return { spin: true, tick: false, text: link.remoteName ? `Phone found, connecting… · ${link.remoteName}` : 'Phone found, connecting…' }
+    return { spin: true, tick: false, text: 'Connecting…' }
+  })()
+
+  const copyCode = async () => onToast((await copyText(code)) ? 'Code copied' : 'Copy blocked by browser')
 
   return (
     <section className="qr-card card">
@@ -29,15 +51,33 @@ export function QrCard({ link, onNewCode, onToast }: { link: Link; onNewCode: ()
         {qr ? <img src={qr} alt={`QR code for ${url}`} data-testid="qr" /> : <div className="qr-ph" />}
         <span className="qr-mark"><span className="mark"><span /><span /></span></span>
       </div>
-      <p className="wait"><span className={'spin' + (s === 'waiting' || s === 'reconnecting' ? '' : ' paused')} />{wait}</p>
+      {isErr ? (
+        <div className="qr-err" role="alert">
+          <p className="err">{link.error}</p>
+          <button type="button" className="btn sm" onClick={onTryAgain}>Try again</button>
+        </div>
+      ) : statusLine && (
+        <p className="wait">
+          {statusLine.tick
+            ? <span className="ok-tick" aria-hidden />
+            : <span className={statusLine.spin ? 'spin' : 'spin paused'} />}
+          {statusLine.text}
+        </p>
+      )}
       <p className="mut small">or type this code at <b>{location.host}</b> on your phone</p>
-      <div className="code" data-testid="pair-code" aria-label={`Pairing code ${code}`}>
+      <div
+        className="code code-click"
+        data-testid="pair-code"
+        role="button"
+        tabIndex={0}
+        aria-label={`Pairing code ${code}. Click to copy.`}
+        onClick={copyCode}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copyCode() } }}
+      >
         {code.split('').map((c, i) => <span key={i}>{c}</span>)}
       </div>
       <div className="qr-actions">
-        <button type="button" className="btn ghost sm" onClick={() => copy(code, 'Code copied')}>Copy code</button>
-        <button type="button" className="btn ghost sm" onClick={() => copy(url, 'Link copied')}>Copy link</button>
-        <button type="button" className="btn soft sm" data-testid="new-code" onClick={onNewCode}>New code</button>
+        <button type="button" className="linkbtn muted sm refresh-link" data-testid="new-code" onClick={onNewCode}>New code</button>
       </div>
       <p className="mut small lock" id="privacy"><Icon n="lock" /> Direct device-to-device · end-to-end encrypted</p>
     </section>

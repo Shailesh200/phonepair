@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useRef } from 'react'
 import { Logo } from '../../core/ui'
-import { isValidPairCode, normalizePairCode } from './code'
+import { CodeBoxes } from './CodeBoxes'
+import { lastLaptopSession } from './session'
 
 export function CodeEntry({
   onCode,
@@ -13,20 +14,13 @@ export function CodeEntry({
   error?: string
   onClearError?: () => void
 }) {
-  const [v, setV] = useState('')
   const sent = useRef('')
-  const ok = isValidPairCode(v)
+  const last = lastLaptopSession()
 
-  useEffect(() => {
-    if (!ok || sent.current === v) return
-    sent.current = v
-    onCode(v)
-  }, [ok, v, onCode])
-
-  const onInput = (raw: string) => {
-    onClearError?.()
-    sent.current = ''
-    setV(normalizePairCode(raw))
+  const complete = (code: string) => {
+    if (sent.current === code) return
+    sent.current = code
+    onCode(code)
   }
 
   return (
@@ -36,24 +30,29 @@ export function CodeEntry({
         <div className="entry-body">
           <h1>Pair with your laptop</h1>
           <p className="mut">Open <b>{location.host}</b> on your laptop, then scan the QR code with your camera, or type the 6-character code here.</p>
-          <form onSubmit={(e) => { e.preventDefault(); if (ok) onCode(v) }}>
-            <input
-              data-testid="code-input"
-              className="code-input"
-              value={v}
-              onChange={(e) => onInput(e.target.value)}
-              onPaste={(e) => { e.preventDefault(); onInput(e.clipboardData.getData('text')) }}
-              placeholder="ABC123"
-              autoCapitalize="characters"
-              autoComplete="off"
-              spellCheck={false}
-              inputMode="text"
-              maxLength={6}
+          {last && (
+            <button
+              type="button"
+              className="btn ghost big reconnect-last"
+              onClick={() => complete(last.code)}
+            >
+              Reconnect to {last.name}
+            </button>
+          )}
+          <form onSubmit={(e) => e.preventDefault()}>
+            <CodeBoxes
+              autoFocus
+              onChange={() => onClearError?.()}
+              onComplete={complete}
             />
             {error && <p className="err" role="alert">{error}</p>}
-            <button data-testid="code-join" className="btn big" type="submit" disabled={!ok}>Connect</button>
+            <button data-testid="code-join" className="btn big hidden" type="submit" tabIndex={-1}>Connect</button>
           </form>
-          {onHost && <button type="button" className="linkbtn" onClick={onHost}>Use this device as the laptop side instead</button>}
+          {onHost && (
+            <button type="button" className="linkbtn muted" onClick={onHost}>
+              Use this device as the laptop side instead
+            </button>
+          )}
         </div>
       </div>
     </div>
