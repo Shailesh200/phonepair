@@ -341,12 +341,6 @@ button.chip:active{transform:scale(.98)}
 .nav2.tall .btn{min-height:150px;font-size:22px}
 .clicker-help{padding:22px;display:flex;gap:14px;align-items:center;color:var(--muted);font-size:var(--fs-14)}.clicker-help svg{color:var(--accent-ink)}
 .kb{width:100%;padding:14px;min-height:52px;font-size:var(--fs-16)}
-.mic-viz{padding:40px 20px;display:flex;flex-direction:column;align-items:center;gap:12px;color:var(--accent-ink)}.mic-viz p{color:var(--muted);font-size:var(--fs-14)}
-.scan-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.scan-pg{position:relative;aspect-ratio:3/4;border-radius:var(--radius-12);overflow:hidden;border:1px solid var(--line)}
-.scan-pg img{width:100%;height:100%;object-fit:cover;max-width:none}
-.scan-pg span{position:absolute;left:6px;bottom:6px;background:var(--ink);color:var(--bg);font-size:11px;font-weight:700;border-radius:6px;padding:2px 6px}
-.scan-pg button{position:absolute;right:4px;top:4px;width:44px;height:44px;border-radius:var(--radius-12);background:rgba(255,255,255,.92);display:grid;place-items:center;color:#0F172A}.scan-pg button svg{width:16px;height:16px}
 .screen-box{border-radius:18px;background:#0F172A;overflow:hidden;border:6px solid #0F172A;touch-action:none;aspect-ratio:16/10;display:flex;align-items:center;justify-content:center}
 .screen-box:fullscreen{border:0;border-radius:0}
 .screen-inner{width:100%;height:100%;transform-origin:center;display:flex;align-items:center;justify-content:center}

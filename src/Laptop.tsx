@@ -22,13 +22,13 @@ function Landing({ ctx, cardPhase }: { ctx: CoreCtx; cardPhase: ReturnType<typeo
     <main className="hero">
       <section className="hero-l">
         <h1>Your phone and laptop,<br /><span>paired in one scan.</span></h1>
-        <p className="lead">Send files, share clipboard, use your phone as a remote, webcam or scanner. Right in the browser.</p>
+        <p className="lead">Send files, share clipboard, use your phone as a remote. Right in the browser.</p>
         <ol className="steps" id="how">
           <li><b>1</b><div><strong>Open camera</strong><small>on your phone</small></div></li>
           <li><b>2</b><div><strong>Scan</strong><small>the code here</small></div></li>
           <li><b>3</b><div><strong>Done</strong><small>you're paired</small></div></li>
         </ol>
-        <div className="chips landing-chips">{[['file', 'Files'], ['clip', 'Clipboard'], ['pointer', 'Remote'], ['camera', 'Webcam'], ['scan', 'Scanner'], ['screen', 'Screen view']].map(([i, t]) => <span key={t} className="chip static"><Icon n={i} />{t}</span>)}</div>
+        <div className="chips landing-chips">{[['file', 'Files'], ['clip', 'Clipboard'], ['pointer', 'Remote'], ['screen', 'Screen view']].map(([i, t]) => <span key={t} className="chip static"><Icon n={i} />{t}</span>)}</div>
       </section>
       <QrCard
         link={ctx.link}
