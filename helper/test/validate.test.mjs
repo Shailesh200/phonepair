@@ -12,8 +12,11 @@ import {
 } from '../dist/validate.js'
 
 test('origins are an exact allowlist', () => {
-  assert.equal(originAllowed('https://phonepair.vercel.app'), true)
-  assert.equal(originAllowed('http://localhost:5173'), true)
+  assert.equal(originAllowed('https://phonepair.vercel.app', {}), true)
+  assert.equal(originAllowed('http://localhost:5173', {}), false)
+  assert.equal(originAllowed('http://localhost:5173', { PHONEPAIR_DEV: '1' }), true)
+  assert.equal(originAllowed('http://localhost:5173', { PHONEPAIR_DEV: 'true' }), false)
+  assert.equal(originAllowed('http://localhost:5173', { PHONEPAIR_DEV: '0' }), false)
   for (const origin of [
     undefined,
     null,
@@ -27,7 +30,7 @@ test('origins are an exact allowlist', () => {
     'http://localhost:5173/',
     'null',
   ]) {
-    assert.equal(originAllowed(origin), false, String(origin))
+    assert.equal(originAllowed(origin, { PHONEPAIR_DEV: '1' }), false, String(origin))
   }
 })
 

@@ -88,11 +88,26 @@ test('preflight allows private network access only for known origins', async (t)
   assert.equal(ok.status, 204)
   assert.equal(ok.headers.get('access-control-allow-private-network'), 'true')
   assert.equal(ok.headers.get('access-control-allow-origin'), ORIGIN)
+  const prev = process.env.PHONEPAIR_DEV
+  t.after(() => {
+    if (prev === undefined) delete process.env.PHONEPAIR_DEV
+    else process.env.PHONEPAIR_DEV = prev
+  })
+  delete process.env.PHONEPAIR_DEV
   const local = await fetch(`http://${LOOPBACK}:${helper.port}`, {
     method: 'OPTIONS',
     headers: { Origin: 'http://localhost:5173', 'Access-Control-Request-Method': 'GET' },
   })
-  assert.equal(local.headers.get('access-control-allow-private-network'), 'true')
+  assert.equal(local.status, 403)
+  assert.equal(local.headers.get('access-control-allow-private-network'), null)
+  process.env.PHONEPAIR_DEV = '1'
+  const dev = await fetch(`http://${LOOPBACK}:${helper.port}`, {
+    method: 'OPTIONS',
+    headers: { Origin: 'http://localhost:5173', 'Access-Control-Request-Method': 'GET' },
+  })
+  assert.equal(dev.status, 204)
+  assert.equal(dev.headers.get('access-control-allow-private-network'), 'true')
+  delete process.env.PHONEPAIR_DEV
   const bad = await fetch(`http://${LOOPBACK}:${helper.port}`, {
     method: 'OPTIONS',
     headers: { Origin: 'https://evil.test', 'Access-Control-Request-Private-Network': 'true' },
@@ -253,8 +268,22 @@ test('a held button is released after a message gap', async (t) => {
   ws.close()
 })
 
-test('localhost dev origin can pair', async (t) => {
+test('localhost dev origin can pair only when PHONEPAIR_DEV=1', async (t) => {
+  const prev = process.env.PHONEPAIR_DEV
+  t.after(() => {
+    if (prev === undefined) delete process.env.PHONEPAIR_DEV
+    else process.env.PHONEPAIR_DEV = prev
+  })
+  delete process.env.PHONEPAIR_DEV
   const { helper } = await boot(t)
+  const blocked = connect(helper.port, 'http://localhost:5173')
+  const blockedResult = await new Promise((resolve) => {
+    blocked.once('open', () => resolve('open'))
+    blocked.once('error', () => resolve('error'))
+    blocked.once('unexpected-response', () => resolve('unexpected'))
+  })
+  assert.notEqual(blockedResult, 'open')
+  process.env.PHONEPAIR_DEV = '1'
   const ws = connect(helper.port, 'http://localhost:5173')
   await opened(ws)
   ws.send(JSON.stringify({ t: 'pair', code: '042817' }))

@@ -4,10 +4,12 @@ export const MAX_DELTA = 2000
 export const MAX_TEXT = 500
 export const MAX_MODS = 4
 
-export const ALLOWED_ORIGINS = [
+export const PRODUCTION_ORIGINS = [
   'https://phonepair.vercel.app',
-  'http://localhost:5173',
 ] as const
+
+/** Allowed only when PHONEPAIR_DEV=1. Never on in the shipped helper. */
+export const DEV_ORIGIN = 'http://localhost:5173'
 
 const NAMED_KEYS = new Set([
   'ArrowUp',
@@ -40,8 +42,14 @@ export type InputMsg = MoveMsg | ClickMsg | ScrollMsg | KeyMsg | TypeMsg | AbsMs
 
 export type Parsed<T> = { ok: true; msg: T } | { ok: false }
 
-export function originAllowed(origin: string | undefined | null): boolean {
-  return typeof origin === 'string' && (ALLOWED_ORIGINS as readonly string[]).includes(origin)
+export function devOriginEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.PHONEPAIR_DEV === '1'
+}
+
+export function originAllowed(origin: string | undefined | null, env: NodeJS.ProcessEnv = process.env): boolean {
+  if (typeof origin !== 'string') return false
+  if ((PRODUCTION_ORIGINS as readonly string[]).includes(origin)) return true
+  return origin === DEV_ORIGIN && devOriginEnabled(env)
 }
 
 export function isPrintableChar(ch: string): boolean {

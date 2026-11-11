@@ -14,6 +14,12 @@ npm ci
 npm start
 ```
 
+The shipped helper accepts only `https://phonepair.vercel.app`. To use it with the local app at `http://localhost:5173`, start it with the dev flag. That flag is off unless you set it:
+
+```bash
+PHONEPAIR_DEV=1 npm start
+```
+
 The terminal prints a 6-digit pairing code and `CONTROL OFF`.
 
 macOS will not let the helper move the pointer until Accessibility permission is granted. If that permission is missing, the helper prints instructions and input is rejected by the system. Grant it, then start the helper again:
@@ -26,7 +32,7 @@ Windows and Linux may work through the same input library. The permission check 
 
 ## Turn on control
 
-1. On the laptop, open PhonePair (`http://localhost:5173` for local development, or the production site) and pair the phone.
+1. On the laptop, open PhonePair and pair the phone. Local development is `http://localhost:5173` with the helper started as `PHONEPAIR_DEV=1 npm start`. The production site does not need that flag.
 2. In the Remote card, turn on **Full laptop**, enter the 6-digit code, and wait until the card says **Connected**.
 3. Share the **entire screen** (the monitor), not a window or a browser tab.
 4. On the phone, open Screen view. The Control toggle is off until it is switched on.
