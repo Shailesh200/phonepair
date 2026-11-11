@@ -1,7 +1,7 @@
 import React from 'react'
 import { CoreCtx, getFeatures } from './core/bus'
 import { Icon } from './core/icons'
-import { Logo, StatusPill } from './core/ui'
+import { Logo, StatusRow } from './core/ui'
 import { QrCard } from './features/pairing/QrCard'
 import { useHostPairFlow } from './features/pairing/useHostPairFlow'
 
@@ -45,7 +45,7 @@ function Dashboard({ ctx, waitingPhone }: { ctx: CoreCtx; waitingPhone: boolean 
   const feats = getFeatures().filter((f) => f.LaptopPanel)
   const col = (c: 'left' | 'right') => feats.filter((f) => (f.laptopColumn ?? 'right') === c).map((f) => { const P = f.LaptopPanel!; return <P key={f.id} ctx={ctx} /> })
   return <div className="dash">
-    <header className="nav"><Logo /><div className="row-g"><StatusPill link={ctx.link} /><button className="btn ghost" data-testid="disconnect" onClick={() => ctx.link.disconnect()}>Disconnect</button></div></header>
+    <header className="nav"><Logo /><div className="row-g"><StatusRow link={ctx.link} /><button className="btn ghost" data-testid="disconnect" onClick={() => ctx.link.disconnect()}>Disconnect</button></div></header>
     {waitingPhone && <div className="banner warn dash-wait">Phone disconnected, waiting to reconnect</div>}
     <div className="grid">
       <div className="col">{col('left')}</div>

@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useReducer, useState } from 'react'
 import { CoreCtx, getFeatures } from './core/bus'
 import { Icon } from './core/icons'
-import { Logo } from './core/ui'
+import { ConnRelayNote, Logo } from './core/ui'
 import { CodeEntry } from './features/pairing/CodeEntry'
 import { PhoneConnecting } from './features/pairing/PhoneConnecting'
 import { joinPath } from './features/pairing/relay'
@@ -10,6 +10,8 @@ import { phoneHostLabel } from './features/pairing/session'
 export function Phone({ ctx, page, setPage, onLeave }: { ctx: CoreCtx; page: string; setPage: (p: string) => void; onLeave: () => void }) {
   const s = ctx.link.status
   const [dcIn, setDcIn] = useState<number | null>(null)
+  const [, bump] = useReducer((x: number) => x + 1, 0)
+  useEffect(() => ctx.link.subscribe(bump), [ctx.link])
 
   useEffect(() => { const h = () => setPage(history.state?.p || 'home'); window.addEventListener('popstate', h); return () => window.removeEventListener('popstate', h) }, [setPage])
   const back = () => { if (history.state?.p) history.back(); else setPage('home') }
@@ -80,7 +82,10 @@ export function Phone({ ctx, page, setPage, onLeave }: { ctx: CoreCtx; page: str
           <div className="top">
             <button className="iconbtn" aria-label="Back" data-testid="back" onClick={back}><Icon n="back" /></button>
             <b className="ttl">{cur.title}</b>
-            <span className={'pill sm' + (s === 'connected' ? '' : ' warn')}>{s === 'connected' ? hostLabel : '…'}</span>
+            <div className="row-g status-row">
+              <span className={'pill sm' + (s === 'connected' ? '' : ' warn')}>{s === 'connected' ? hostLabel : '…'}</span>
+              <ConnRelayNote link={ctx.link} />
+            </div>
           </div>
         )}
         {dcIn !== null && dcIn > 0 && (
@@ -93,7 +98,10 @@ export function Phone({ ctx, page, setPage, onLeave }: { ctx: CoreCtx; page: str
               <span className="lap"><Icon n="screen" /></span>
               <div className="conn-txt">
                 <small>Connected to</small>
-                <b data-testid="status">{hostLabel}</b>
+                <div className="row-g status-row">
+                  <b data-testid="status">{hostLabel}</b>
+                  <ConnRelayNote link={ctx.link} />
+                </div>
               </div>
               <span className={'dot' + (s === 'connected' ? '' : ' off')} aria-hidden />
             </div>
