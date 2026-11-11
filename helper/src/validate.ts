@@ -11,6 +11,16 @@ export const PRODUCTION_ORIGINS = [
 /** Allowed only when PHONEPAIR_DEV=1. Never on in the shipped helper. */
 export const DEV_ORIGIN = 'http://localhost:5173'
 
+/**
+ * null follows PHONEPAIR_DEV. false forces the dev origin off, which the
+ * packaged desktop app sets so the variable is never honoured.
+ */
+let devOriginForce: boolean | null = null
+
+export function setDevOriginEnabled(enabled: boolean | null): void {
+  devOriginForce = enabled
+}
+
 const NAMED_KEYS = new Set([
   'ArrowUp',
   'ArrowDown',
@@ -43,6 +53,7 @@ export type InputMsg = MoveMsg | ClickMsg | ScrollMsg | KeyMsg | TypeMsg | AbsMs
 export type Parsed<T> = { ok: true; msg: T } | { ok: false }
 
 export function devOriginEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (devOriginForce !== null) return devOriginForce
   return env.PHONEPAIR_DEV === '1'
 }
 

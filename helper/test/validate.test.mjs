@@ -9,7 +9,18 @@ import {
   originAllowed,
   parseInput,
   parsePair,
+  setDevOriginEnabled,
 } from '../dist/validate.js'
+
+test('a packaged helper never honours PHONEPAIR_DEV', () => {
+  setDevOriginEnabled(false)
+  try {
+    assert.equal(originAllowed('http://localhost:5173', { PHONEPAIR_DEV: '1' }), false)
+    assert.equal(originAllowed('https://phonepair.vercel.app', { PHONEPAIR_DEV: '1' }), true)
+  } finally {
+    setDevOriginEnabled(null)
+  }
+})
 
 test('origins are an exact allowlist', () => {
   assert.equal(originAllowed('https://phonepair.vercel.app', {}), true)

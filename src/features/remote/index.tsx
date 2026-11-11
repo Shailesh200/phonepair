@@ -459,10 +459,18 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
         </div>
         <button type="button" className={'switch' + (armed ? ' on' : '')} role="switch" aria-checked={armed} aria-label="Full laptop" data-testid="full-laptop-toggle" onClick={toggle}><span /></button>
       </div>
-      {link.status !== 'connected' && <input className="helper-code" data-testid="helper-code" inputMode="numeric" autoComplete="off" spellCheck={false} maxLength={6} placeholder="6-digit code" aria-label="Helper code" value={code} onChange={(e) => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setNote('') }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); toggle() } }} />}
+      {link.status !== 'connected' && <>
+        <p className="mut small" data-testid="helper-hint">Download the PhonePair Helper, open it, and type the 6-digit code it shows.</p>
+        <p className="helper-downloads">
+          <a className="linkbtn sm" href="https://github.com/Shailesh200/phonepair/releases/latest" target="_blank" rel="noreferrer" data-testid="download-mac">Download for Mac</a>
+          <a className="linkbtn sm" href="https://github.com/Shailesh200/phonepair/releases/latest" target="_blank" rel="noreferrer" data-testid="download-win">Download for Windows</a>
+        </p>
+        <input className="helper-code" data-testid="helper-code" inputMode="numeric" autoComplete="off" spellCheck={false} maxLength={6} placeholder="6-digit code" aria-label="Helper code" value={code} onChange={(e) => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setNote('') }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); toggle() } }} />
+      </>}
       {note ? <p className="err">{note}</p> : null}
     </div>
-    <p className="mut small">{link.status === 'connected' ? 'Your phone controls the whole laptop. Turn Full laptop off to keep control inside this tab.' : 'Pointer, clicks, scroll, and keys from your phone stay inside this tab.'}</p>
+    <p className="mut small helper-dev-note" data-testid="helper-dev-note">For developers: <code>cd helper && npm start</code></p>
+    {link.status === 'connected' ? <p className="mut small">Your phone controls the whole laptop. Turn Full laptop off to keep control inside this tab.</p> : null}
   </div>
 }
 
