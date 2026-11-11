@@ -19,6 +19,7 @@ import { isRelayOnly } from '../features/pairing/relay'
 import { hostUnavailableIdBackoffMs, hostUnavailableIdGiveUp } from '../features/pairing/hostClaim'
 import { guestUnavailableRetries, redialDelayMs } from '../features/pairing/reconnect'
 import { linkTeardownSendsBye } from '../features/pairing/teardown'
+import { shouldCallPeerReconnect } from '../features/pairing/peerReconnect'
 import { rememberLastLaptop } from '../features/pairing/session'
 
 export type { Role }
@@ -71,6 +72,7 @@ export class Link {
   private inFlightDialUntil = 0
   private inFlightDial: DataConnection | null = null
   private dialHangTimer: number | null = null
+  private lastPeerReconnectAt = 0
 
   constructor(role: Role, code: string) {
     this.role = role
@@ -102,7 +104,7 @@ export class Link {
     peer.on('disconnected', () => {
       if (this.destroyed) return
       this.set({ status: this.everConnected ? 'reconnecting' : this.status })
-      window.setTimeout(() => { if (!this.destroyed && peer.disconnected && !peer.destroyed) peer.reconnect() }, 1500)
+      window.setTimeout(() => this.tryGuestPeerReconnect(peer), 1500)
     })
     peer.on('error', (e: any) => {
       const t = e?.type
@@ -431,8 +433,28 @@ export class Link {
     this.redialGuestNow()
   }
 
+  private guestPeerReconnectSnapshot(peer: Peer) {
+    return {
+      role: this.role,
+      disconnected: peer.disconnected,
+      peerDestroyed: peer.destroyed,
+      linkDestroyed: this.destroyed,
+      lastPeerReconnectAt: this.lastPeerReconnectAt,
+    }
+  }
+
+  private tryGuestPeerReconnect(peer: Peer) {
+    if (this.role !== 'guest' || !shouldCallPeerReconnect(this.guestPeerReconnectSnapshot(peer))) return
+    this.lastPeerReconnectAt = Date.now()
+    try { peer.reconnect() } catch {}
+  }
+
   private tick() {
     this.tickGuestWatchdog()
+    const peer = this.peer
+    if (this.role === 'guest' && peer && peer.disconnected && !peer.destroyed && !this.destroyed) {
+      this.tryGuestPeerReconnect(peer)
+    }
     const c = this.conn
     if (c?.open) {
       try { c.send({ t: 'ping' }) } catch {}
