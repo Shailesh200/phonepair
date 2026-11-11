@@ -1,4 +1,4 @@
-// Laptop screen on the phone. Messages: screen:request, screen:stop, screen:prev, screen:next
+// Laptop screen on the phone. Messages: screen:request, screen:stop. Page turns use remote:nav.
 import React, { useEffect, useRef, useState } from 'react'
 import type { MediaConnection } from 'peerjs'
 import { createStore, registerFeature, onMessage, onCall, CoreCtx } from '../../core/bus'
@@ -313,9 +313,9 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
       <div><b>Turn your phone sideways</b><small>for a bigger view · pinch to zoom</small></div>
     </div>
     <div className="pp-bottom">
-      <button className="pp-nav" aria-label="Previous" data-testid="screen-prev" onClick={() => ctx.send({ t: 'screen:prev' })}><Icon n="back" /></button>
+      <button className="pp-nav" aria-label="Previous" data-testid="screen-prev" onClick={() => ctx.send({ t: 'remote:nav', dir: 'prev' })}><Icon n="back" /></button>
       <button className="pp-stop" data-testid="stop-viewing" onClick={stopViewing}><Icon n="x" />Stop viewing</button>
-      <button className="pp-nav" aria-label="Next" data-testid="screen-next" onClick={() => ctx.send({ t: 'screen:next' })}><Icon n="next" /></button>
+      <button className="pp-nav" aria-label="Next" data-testid="screen-next" onClick={() => ctx.send({ t: 'remote:nav', dir: 'next' })}><Icon n="next" /></button>
     </div>
   </div>
 }
@@ -336,14 +336,6 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
       <small>{on ? 'Your phone is viewing' : 'Show this screen on phone'}</small>
     </button>
   </>
-}
-
-function navMessage(dir: 'prev' | 'next') {
-  return onMessage(dir === 'prev' ? 'screen:prev' : 'screen:next', (_m, ctx) => {
-    if (ctx.role !== 'host') return
-    window.dispatchEvent(new CustomEvent('pp-screen-nav', { detail: dir }))
-    ctx.toast(dir === 'prev' ? 'Previous' : 'Next')
-  })
 }
 
 registerFeature({
@@ -393,10 +385,9 @@ registerFeature({
       requested.set(true)
       c.toast('Your phone wants to view this screen')
     })
-    const offPrev = navMessage('prev')
-    const offNext = navMessage('next')
+    const unsubLink = ctx.link.subscribe(() => { if (!ctx.link.connected) { stopSharing(ctx, false); clearIncoming() } })
     return () => {
-      offCall(); offStop(); offReq(); offPrev(); offNext()
+      offCall(); offStop(); offReq(); unsubLink()
       stopSharing(ctx, false)
       clearIncoming()
       requested.set(false)
