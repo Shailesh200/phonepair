@@ -19,13 +19,11 @@ Live: [phonepair.vercel.app](https://phonepair.vercel.app)
 
 5. **Phone as a remote.** The phone is a trackpad for the laptop, with Prev and Next controls and a keyboard.
 
-6. **Phone as a camera, microphone, and scanner.** The laptop can use the phone's camera, mic, or a document scan. Picture and sound travel as a one-way WebRTC media call.
-
-7. **Laptop screen on the phone.** View the laptop screen from the phone.
+6. **Laptop screen on the phone.** View the laptop screen from the phone.
 
 ## How it works
 
-Both sides run in the browser. After pairing they talk over WebRTC: data channels carry messages, files, and clipboard text, and media calls carry camera, mic, and screen. [PeerJS](https://peerjs.com/) opens those connections.
+Both sides run in the browser. After pairing they talk over WebRTC: data channels carry messages, files, and clipboard text, and media calls carry the screen only. [PeerJS](https://peerjs.com/) opens those connections.
 
 A PeerJS signalling server introduces the two browsers so they can negotiate the session. The laptop's peer id is `phonepair-` plus the pairing code in lowercase.
 
