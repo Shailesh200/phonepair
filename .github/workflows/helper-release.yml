@@ -32,14 +32,18 @@ jobs:
         id: sign
         env:
           CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_BODY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           set -euo pipefail
-          if [ -n "${CSC_LINK_SECRET}" ]; then
+          if [ -n "${CSC_LINK_SECRET}" ] && [ -n "${CSC_KEY_PASSWORD}" ] && [ -n "${APPLE_API_KEY_BODY}" ] && [ -n "${APPLE_API_KEY_ID}" ] && [ -n "${APPLE_API_ISSUER}" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "CSC_LINK is set. The Mac build will be signed and notarized."
+            echo "Apple signing secrets are present. The Mac build will be signed and notarized."
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "CSC_LINK is empty. Building unsigned (CSC_IDENTITY_AUTO_DISCOVERY=false)."
+            echo "Apple signing secrets are incomplete. Building unsigned with ad-hoc identity (CSC_IDENTITY_AUTO_DISCOVERY=false)."
           fi
 
       - name: Prepare Apple signing credentials
