@@ -165,23 +165,25 @@ export class Link {
   }
 
   private hostCodeSignalForceActive(peer: Peer): boolean {
-    if (this.role !== 'host' || this.destroyed || peer.destroyed || peer.open) return false
+    if (this.role !== 'host' || this.destroyed || peer.destroyed) return false
     if (this.status === 'reconnecting' || this.status === 'waiting') return true
     return shouldHostReconnectHalfOpen(this.role, this.destroyed, peer.open, !!this.conn?.open)
   }
 
   private tickHostCodeSignalForce(peer: Peer) {
-    const reclaim = shouldUseHostIdReclaimWindow(this.everConnected, this.hostIdReclaimSince)
-    this.ensureHostSignalRunner().tick(peer, this.hostCodeSignalForceActive(peer), reclaim)
+    const peerHealthy = peer.open && !peer.disconnected
+    this.ensureHostSignalRunner().tick(
+      peer,
+      this.hostCodeSignalForceActive(peer),
+      false,
+      peerHealthy,
+    )
   }
 
   private forceHostPeerSignalReconnect() {
     const peer = this.peer
     if (!peer || peer.destroyed || this.destroyed) return
-    const now = Date.now()
-    this.hostIdReclaimSince = ensureHostReclaimStarted(this.everConnected, this.hostIdReclaimSince, now)
-    const reclaim = shouldUseHostIdReclaimWindow(this.everConnected, this.hostIdReclaimSince)
-    this.ensureHostSignalRunner().hook(peer, reclaim)
+    this.ensureHostSignalRunner().hook(peer, false)
   }
 
   private clearIceGraceTimer() {
