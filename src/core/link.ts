@@ -40,7 +40,6 @@ import {
   listenClaimShouldGiveUp,
   shouldRearmListenPeer,
 } from '../remember/listenIdReclaim'
-import { shouldForceListenPeerReconnect } from '../remember/listenRearm'
 import { guestForgetMatchesSavedLaptop } from '../remember/guestForgetMatch'
 import { REMEMBER_PROOF_TIMEOUT_MS, type RememberGatePhase } from '../remember/gate'
 import { RememberHostAuth } from '../remember/hostAuth'
@@ -214,14 +213,15 @@ export class Link {
   }
 
   private tickListenSignalForce(lp: Peer) {
-    if (!hostHasPhones(loadHostStore()) || lp.destroyed || lp.open) return
+    if (!hostHasPhones(loadHostStore()) || lp.destroyed) return
+    const peerHealthy = lp.open && !lp.disconnected
     const active = shouldRearmListenPeer({
       role: 'host',
       hasPhones: true,
       status: this.status,
       listenMissingOrDead: !lp.open,
     })
-    this.ensureListenForceRunner().tick(lp, active, this.listenOwnedBefore)
+    this.ensureListenForceRunner().tick(lp, active, false, peerHealthy)
   }
 
   private rearmRememberListenPeer() {
@@ -238,11 +238,8 @@ export class Link {
     }
     const lp = this.listenPeer
     if (lp && !lp.destroyed) {
-      if (lp.open && !lp.disconnected) return
-      if (shouldForceListenPeerReconnect(lp.destroyed, lp.disconnected, lp.open)) {
-        this.ensureListenForceRunner().hook(lp, this.listenOwnedBefore)
-        return
-      }
+      this.ensureListenForceRunner().hook(lp, false)
+      return
     }
     if (lp && !lp.destroyed) {
       try { lp.destroy() } catch {}
@@ -423,13 +420,8 @@ export class Link {
     this.listenPeer = peer
     this.listenBootstrapInFlight = false
     peer.on('open', () => {
-      const t = Date.now()
       this.listenOwnedBefore = true
-      this.listenReclaimStartedAt = ensureListenReclaimStarted(
-        this.listenOwnedBefore,
-        this.listenReclaimStartedAt,
-        t,
-      )
+      this.listenReclaimStartedAt = null
       this.listenUnavailableFailures = 0
       this.ensureListenForceRunner().onOpen()
     })
@@ -447,7 +439,7 @@ export class Link {
       window.setTimeout(() => {
         const lp = this.listenPeer
         if (!lp || lp !== peer || this.destroyed) return
-        this.ensureListenForceRunner().hook(lp, this.listenOwnedBefore)
+        this.ensureListenForceRunner().hook(lp, false)
       }, 1500)
     })
     peer.on('error', (e: any) => {

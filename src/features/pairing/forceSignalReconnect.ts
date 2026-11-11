@@ -28,8 +28,9 @@ export function forceSignalReconnectBackoffMs(attempt: number): number {
   return 10_000
 }
 
-export function signalPeerNeedsForce(peer: ForceSignalPeerLike): boolean {
-  if (peer.destroyed || peer.open) return false
+export function signalPeerNeedsForce(peer: ForceSignalPeerLike, peerHealthy: boolean): boolean {
+  if (peer.destroyed) return false
+  if (peer.open && peerHealthy) return false
   return true
 }
 
@@ -43,6 +44,8 @@ export type ForceSignalTimers = {
   clearTimeout: (id: number | null) => void
   now: () => number
 }
+
+type ForceMode = 'hook' | 'tick'
 
 export class ForceSignalRunner {
   private attempt = 0
@@ -76,41 +79,44 @@ export class ForceSignalRunner {
 
   onOpen() {
     this.attempt = 0
+    this.reclaimStartedAt = null
     this.clearTimers()
   }
 
-  hook(peer: ForceSignalPeerLike, reclaimActive: boolean) {
+  /**
+   * Explicit triggers (half-open, online, visibility, link-lost): force even when peer.open.
+   * @param idReclaimCap when true, stop after FORCE_SIGNAL_RECLAIM_MIN_MS (unavailable-id only — not used for network outage).
+   */
+  hook(peer: ForceSignalPeerLike, idReclaimCap: boolean) {
     if (this.stopped || peer.destroyed) return
+    if (this.watchdogId != null || this.retryId != null) return
     const now = this.timers.now()
-    if (reclaimActive) this.reclaimStartedAt ??= now
-    if (reclaimActive && forceReclaimExpired(this.reclaimStartedAt, now, this.reclaimMinMs)) return
-    if (peer.open) {
-      this.onOpen()
-      return
-    }
+    if (idReclaimCap) this.reclaimStartedAt ??= now
+    if (idReclaimCap && forceReclaimExpired(this.reclaimStartedAt, now, this.reclaimMinMs)) return
     this.clearTimers()
     this.attempt = 0
-    this.runForce(peer, reclaimActive)
+    this.runForce(peer, idReclaimCap, 'hook')
   }
 
-  tick(peer: ForceSignalPeerLike, active: boolean, reclaimActive: boolean) {
+  /** Routine poll: skip only when the signal peer looks healthy (open and not disconnected). */
+  tick(peer: ForceSignalPeerLike, active: boolean, idReclaimCap: boolean, peerHealthy: boolean) {
     if (this.stopped || !active || peer.destroyed) return
-    if (peer.open) {
+    if (peer.open && peerHealthy) {
       this.onOpen()
       return
     }
     const now = this.timers.now()
-    if (reclaimActive) {
+    if (idReclaimCap) {
       this.reclaimStartedAt ??= now
       if (forceReclaimExpired(this.reclaimStartedAt, now, this.reclaimMinMs)) return
     }
-    if (!signalPeerNeedsForce(peer)) return
+    if (!signalPeerNeedsForce(peer, peerHealthy)) return
     if (this.watchdogId != null || this.retryId != null) return
-    this.runForce(peer, reclaimActive)
+    this.runForce(peer, idReclaimCap, 'tick')
   }
 
-  private runForce(peer: ForceSignalPeerLike, reclaimActive: boolean) {
-    if (peer.open || peer.destroyed || this.stopped) return
+  private runForce(peer: ForceSignalPeerLike, idReclaimCap: boolean, mode: ForceMode) {
+    if (peer.destroyed || this.stopped) return
     this.attempt += 1
     forceSignalReconnect(peer)
     if (this.watchdogId != null) {
@@ -119,9 +125,10 @@ export class ForceSignalRunner {
     }
     this.watchdogId = this.timers.setTimeout(() => {
       this.watchdogId = null
-      if (peer.open || peer.destroyed || this.stopped) return
+      if (peer.destroyed || this.stopped) return
+      if (mode === 'tick' && peer.open) return
       const now = this.timers.now()
-      if (reclaimActive && forceReclaimExpired(this.reclaimStartedAt, now, this.reclaimMinMs)) return
+      if (idReclaimCap && forceReclaimExpired(this.reclaimStartedAt, now, this.reclaimMinMs)) return
       const delay = forceSignalReconnectBackoffMs(this.attempt)
       if (this.retryId != null) {
         this.timers.clearTimeout(this.retryId)
@@ -129,9 +136,10 @@ export class ForceSignalRunner {
       }
       this.retryId = this.timers.setTimeout(() => {
         this.retryId = null
-        if (peer.open || peer.destroyed || this.stopped) return
-        if (reclaimActive && forceReclaimExpired(this.reclaimStartedAt, this.timers.now(), this.reclaimMinMs)) return
-        this.runForce(peer, reclaimActive)
+        if (peer.destroyed || this.stopped) return
+        if (mode === 'tick' && peer.open) return
+        if (idReclaimCap && forceReclaimExpired(this.reclaimStartedAt, this.timers.now(), this.reclaimMinMs)) return
+        this.runForce(peer, idReclaimCap, mode)
       }, delay)
     }, FORCE_SIGNAL_OPEN_WATCHDOG_MS)
   }

@@ -173,6 +173,18 @@ describe('remember listen reclaim', () => {
   it('still gives up at two failures on a first-ever listen claim', () => {
     assert.equal(listenClaimShouldGiveUp(2, 1, false, null, 0), true)
   })
+
+  it('retries ID-TAKEN more than 75s after listen open (reclaim starts at failure not open)', () => {
+    const failureAt = 80_000
+    assert.equal(
+      listenClaimShouldGiveUp(2, 1, true, failureAt, failureAt + 1000),
+      false,
+    )
+    assert.equal(
+      listenClaimShouldGiveUp(2, 1, true, failureAt, failureAt + LISTEN_ID_RECLAIM_MIN_MS),
+      true,
+    )
+  })
 })
 
 describe('remember listen rearm', () => {
