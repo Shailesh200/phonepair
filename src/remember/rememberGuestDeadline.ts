@@ -4,3 +4,12 @@ export function rememberGuestDeadlineArm(existingDeadlineMs: number, now: number
   if (existingDeadlineMs > 0) return existingDeadlineMs
   return now + limitMs
 }
+
+export function rememberGuestDeadlineApplies(
+  rememberGuest: boolean,
+  rememberEverAuthed: boolean,
+  sessionPaired: boolean,
+): boolean {
+  if (!rememberGuest || rememberEverAuthed || sessionPaired) return false
+  return true
+}

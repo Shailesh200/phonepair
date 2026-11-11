@@ -14,7 +14,13 @@ import { shouldTickBootstrapListen } from './listenGiveUp.ts'
 import { hostRememberListenOtherTab } from './rememberOtherTab.ts'
 import { guestForgetMatchesSavedLaptop } from './guestForgetMatch.ts'
 import { shouldFailRememberGuestHome } from './guestHomeWatchdog.ts'
-import { rememberGuestDeadlineArm, REMEMBER_GUEST_HOME_MS } from './rememberGuestDeadline.ts'
+import { rememberGuestDeadlineArm, rememberGuestDeadlineApplies, REMEMBER_GUEST_HOME_MS } from './rememberGuestDeadline.ts'
+import {
+  listenClaimShouldGiveUp,
+  listenReclaimIdBackoffMs,
+  shouldRearmListenPeer,
+  LISTEN_ID_RECLAIM_MIN_MS,
+} from './listenIdReclaim.ts'
 import { hostAcceptsPhoneForget } from './hostForgetInbound.ts'
 import { guestForgetShouldSync } from './guestForgetSync.ts'
 import { connBlockedByRememberAuth } from './hostAuthSend.ts'
@@ -113,6 +119,22 @@ describe('remember denied routing', () => {
 })
 
 describe('remember guest home watchdog', () => {
+  it('keeps redialing past 8s once the guest has authenticated', () => {
+    const t0 = 1000
+    const deadline = t0 + REMEMBER_GUEST_HOME_MS
+    assert.equal(
+      shouldFailRememberGuestHome({
+        rememberGuest: true,
+        sessionPaired: false,
+        rememberEverAuthed: true,
+        status: 'reconnecting',
+        deadlineMs: deadline,
+        now: deadline + 60_000,
+      }),
+      false,
+    )
+  })
+
   it('does not fail home after the guest has paired the session', () => {
     const t0 = 1000
     const deadline = t0 + REMEMBER_GUEST_HOME_MS
@@ -133,7 +155,52 @@ describe('remember guest home watchdog', () => {
   })
 })
 
+describe('remember listen reclaim', () => {
+  it('keeps retrying past two unavailable-id failures when the id was owned before', () => {
+    const t0 = 0
+    assert.equal(listenClaimGiveUp(2, 1), true)
+    assert.equal(
+      listenClaimShouldGiveUp(2, 1, true, t0, t0 + 10_000),
+      false,
+    )
+    assert.equal(
+      listenClaimShouldGiveUp(2, 1, true, t0, t0 + LISTEN_ID_RECLAIM_MIN_MS),
+      true,
+    )
+    assert.equal(listenReclaimIdBackoffMs(5), 10_000)
+  })
+
+  it('still gives up at two failures on a first-ever listen claim', () => {
+    assert.equal(listenClaimShouldGiveUp(2, 1, false, null, 0), true)
+  })
+})
+
+describe('remember listen rearm', () => {
+  it('re-arms while waiting with saved phones', () => {
+    assert.equal(
+      shouldRearmListenPeer({ role: 'host', hasPhones: true, status: 'waiting', listenMissingOrDead: false }),
+      true,
+    )
+    assert.equal(
+      shouldRearmListenPeer({ role: 'guest', hasPhones: true, status: 'waiting', listenMissingOrDead: true }),
+      false,
+    )
+  })
+})
+
 describe('remember guest deadline', () => {
+  it('does not apply after the guest has authenticated once', () => {
+    assert.equal(rememberGuestDeadlineApplies(true, true, false), false)
+    assert.equal(rememberGuestDeadlineApplies(true, false, false), true)
+  })
+
+  it('arms at tap time before any later config fetch', () => {
+    const atTap = rememberGuestDeadlineArm(0, 100, REMEMBER_GUEST_HOME_MS)
+    const afterFetch = rememberGuestDeadlineArm(atTap, 5000, REMEMBER_GUEST_HOME_MS)
+    assert.equal(afterFetch, atTap)
+    assert.equal(atTap, 100 + REMEMBER_GUEST_HOME_MS)
+  })
+
   it('keeps the original 8s cap across a mid-window redial', () => {
     const t0 = 0
     const deadline = rememberGuestDeadlineArm(0, t0, REMEMBER_GUEST_HOME_MS)

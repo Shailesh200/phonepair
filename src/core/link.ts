@@ -21,6 +21,7 @@ import { isRelayOnly } from '../features/pairing/relay'
 import { hostUnavailableIdBackoffMs, hostUnavailableIdGiveUp } from '../features/pairing/hostClaim'
 import { guestUnavailableRetries, redialDelayMs } from '../features/pairing/reconnect'
 import { linkTeardownSendsBye } from '../features/pairing/teardown'
+import { ForceSignalRunner } from '../features/pairing/forceSignalReconnect'
 import { shouldCallPeerReconnect, shouldHostReconnect } from '../features/pairing/peerReconnect'
 import { rememberLastLaptop } from '../features/pairing/session'
 import { guestAcceptsRememberOk } from '../remember/guestAuth'
@@ -32,8 +33,14 @@ import { shouldTickBootstrapListen } from '../remember/listenGiveUp'
 import { hostRememberListenOtherTab } from '../remember/rememberOtherTab'
 import {
   canOpenRememberListenSocket,
-  listenClaimGiveUp,
 } from '../remember/rememberListenClaim'
+import {
+  ensureListenReclaimStarted,
+  listenBackoffForClaim,
+  listenClaimShouldGiveUp,
+  shouldRearmListenPeer,
+} from '../remember/listenIdReclaim'
+import { shouldForceListenPeerReconnect } from '../remember/listenRearm'
 import { guestForgetMatchesSavedLaptop } from '../remember/guestForgetMatch'
 import { REMEMBER_PROOF_TIMEOUT_MS, type RememberGatePhase } from '../remember/gate'
 import { RememberHostAuth } from '../remember/hostAuth'
@@ -109,6 +116,7 @@ export class Link {
   private rememberGuestAuth: { phoneId: string; key: Uint8Array; listenId: string } | null = null
   private rememberGuestFailCount = 0
   private rememberGuestDeadlineMs = 0
+  private rememberGuestEverAuthed = false
   private listenPeer: Peer | null = null
   private connPeer: Peer | null = null
   private listenRetry = 0
@@ -118,9 +126,12 @@ export class Link {
   private listenSocketsOpened = 0
   private listenUnavailableFailures = 0
   private listenSocketOpenTimes: number[] = []
+  private listenOwnedBefore = false
+  private listenReclaimStartedAt: number | null = null
   private visibilityListener: (() => void) | null = null
+  private networkListener: (() => void) | null = null
+  private listenForceRunner: ForceSignalRunner | null = null
   private authenticatedRememberPhoneId: string | null = null
-  private listenLastReconnectAt = 0
   private authTimer: number | null = null
   private authPending: {
     conn: DataConnection
@@ -138,6 +149,11 @@ export class Link {
       const g = opts.rememberGuest
       this.dialTarget = listenPeerId(g.listenId)
       this.rememberGuestAuth = { phoneId: g.phoneId, key: phoneKeyBytes(g), listenId: g.listenId }
+      this.rememberGuestDeadlineMs = rememberGuestDeadlineArm(
+        0,
+        Date.now(),
+        REMEMBER_GUEST_HOME_MS,
+      )
     }
   }
 
@@ -167,22 +183,73 @@ export class Link {
     return this.role === 'host' && hostRememberListenOtherTab(this.listenGaveUp, loadHostStore())
   }
 
-  private bindVisibilityListenRetry() {
-    if (this.visibilityListener || this.role !== 'host') return
-    const onVis = () => {
-      if (document.visibilityState === 'visible') this.clearRememberListenGiveUp()
+  private bindHostListenRearmWatchers() {
+    if (this.role !== 'host') return
+    if (!this.visibilityListener) {
+      const onVis = () => {
+        if (document.visibilityState === 'visible') {
+          this.clearRememberListenGiveUp()
+          this.rearmRememberListenPeer()
+        }
+      }
+      document.addEventListener('visibilitychange', onVis)
+      this.visibilityListener = () => document.removeEventListener('visibilitychange', onVis)
     }
-    document.addEventListener('visibilitychange', onVis)
-    this.visibilityListener = () => document.removeEventListener('visibilitychange', onVis)
+    if (!this.networkListener) {
+      const onOnline = () => this.rearmRememberListenPeer()
+      window.addEventListener('online', onOnline)
+      this.networkListener = () => window.removeEventListener('online', onOnline)
+    }
   }
 
-  private armRememberGuestDeadline() {
-    if (!this.rememberGuestAuth) return
-    this.rememberGuestDeadlineMs = rememberGuestDeadlineArm(
-      this.rememberGuestDeadlineMs,
-      Date.now(),
-      REMEMBER_GUEST_HOME_MS,
-    )
+  private ensureListenForceRunner(): ForceSignalRunner {
+    if (!this.listenForceRunner) {
+      this.listenForceRunner = new ForceSignalRunner({
+        setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+        clearTimeout: (id) => { if (id != null) window.clearTimeout(id) },
+        now: () => Date.now(),
+      })
+    }
+    return this.listenForceRunner
+  }
+
+  private tickListenSignalForce(lp: Peer) {
+    if (!hostHasPhones(loadHostStore()) || lp.destroyed || lp.open) return
+    const active = shouldRearmListenPeer({
+      role: 'host',
+      hasPhones: true,
+      status: this.status,
+      listenMissingOrDead: !lp.open,
+    })
+    this.ensureListenForceRunner().tick(lp, active, this.listenOwnedBefore)
+  }
+
+  private rearmRememberListenPeer() {
+    if (this.role !== 'host' || this.destroyed) return
+    const store = loadHostStore()
+    if (!hostHasPhones(store)) return
+    if (this.isRememberConnOnListenPeer()) {
+      this.reloadRememberPhonesMap()
+      return
+    }
+    if (this.listenGaveUp) {
+      if (this.listenOwnedBefore) this.clearRememberListenGiveUp()
+      else return
+    }
+    const lp = this.listenPeer
+    if (lp && !lp.destroyed) {
+      if (lp.open && !lp.disconnected) return
+      if (shouldForceListenPeerReconnect(lp.destroyed, lp.disconnected, lp.open)) {
+        this.ensureListenForceRunner().hook(lp, this.listenOwnedBefore)
+        return
+      }
+    }
+    if (lp && !lp.destroyed) {
+      try { lp.destroy() } catch {}
+    }
+    this.listenPeer = null
+    if (Date.now() < this.listenBackoffUntil) return
+    void this.bootstrapRememberListen()
   }
 
   reloadRememberPhonesMap() {
@@ -203,7 +270,6 @@ export class Link {
   async start() {
     const config = await loadRtcConfiguration()
     if (this.destroyed) return
-    this.armRememberGuestDeadline()
     const id = this.role === 'host' ? peerIdForCode(this.code) : undefined
     const peer = id ? new Peer(id, { ...SIGNAL, config }) : new Peer({ ...SIGNAL, config })
     this.peer = peer
@@ -288,7 +354,7 @@ export class Link {
     })
     this.timers.push(window.setInterval(() => this.tick(), 4000))
     if (this.role === 'host') {
-      this.bindVisibilityListenRetry()
+      this.bindHostListenRearmWatchers()
       void this.bootstrapRememberListen(config)
     }
   }
@@ -318,7 +384,7 @@ export class Link {
     if (!hostHasPhones(store) || !store) return
     if (this.listenGaveUp || this.listenBootstrapInFlight) return
     if (Date.now() < this.listenBackoffUntil) return
-    if (this.listenPeer && !this.listenPeer.destroyed) return
+    if (this.listenPeer && !this.listenPeer.destroyed && this.listenPeer.open) return
     this.listenBootstrapInFlight = true
     const rtc = config ?? (await loadRtcConfiguration())
     if (this.destroyed || this.listenGaveUp) {
@@ -329,7 +395,7 @@ export class Link {
       this.listenBootstrapInFlight = false
       return
     }
-    if (this.listenPeer && !this.listenPeer.destroyed) {
+    if (this.listenPeer && !this.listenPeer.destroyed && this.listenPeer.open) {
       this.listenBootstrapInFlight = false
       return
     }
@@ -337,7 +403,8 @@ export class Link {
       store.phones.map((p) => [p.id, { key: phoneKeyBytes(p), name: p.name }]),
     )
     const now = Date.now()
-    if (!canOpenRememberListenSocket(
+    const listenReclaiming = this.listenOwnedBefore && this.listenReclaimStartedAt != null
+    if (!listenReclaiming && !canOpenRememberListenSocket(
       this.listenSocketsOpened,
       this.listenGaveUp,
       this.listenSocketOpenTimes,
@@ -355,6 +422,17 @@ export class Link {
     if (prev && prev !== peer) { try { prev.destroy() } catch {} }
     this.listenPeer = peer
     this.listenBootstrapInFlight = false
+    peer.on('open', () => {
+      const t = Date.now()
+      this.listenOwnedBefore = true
+      this.listenReclaimStartedAt = ensureListenReclaimStarted(
+        this.listenOwnedBefore,
+        this.listenReclaimStartedAt,
+        t,
+      )
+      this.listenUnavailableFailures = 0
+      this.ensureListenForceRunner().onOpen()
+    })
     peer.on('connection', (c) => {
       if (this.role !== 'host' || this.destroyed) { try { c.close() } catch {}; return }
       if (!this.rememberHostAuth.canAcceptConnection(c, this.conn)) {
@@ -369,27 +447,35 @@ export class Link {
       window.setTimeout(() => {
         const lp = this.listenPeer
         if (!lp || lp !== peer || this.destroyed) return
-        if (shouldHostReconnect({
-          role: 'host',
-          linkDestroyed: this.destroyed,
-          samePeer: true,
-          disconnected: lp.disconnected,
-          peerDestroyed: lp.destroyed,
-        })) {
-          this.listenLastReconnectAt = Date.now()
-          try { lp.reconnect() } catch {}
-        }
+        this.ensureListenForceRunner().hook(lp, this.listenOwnedBefore)
       }, 1500)
     })
     peer.on('error', (e: any) => {
       if (e?.type !== 'unavailable-id' || this.destroyed) return
+      const t = Date.now()
+      this.listenReclaimStartedAt = ensureListenReclaimStarted(
+        this.listenOwnedBefore,
+        this.listenReclaimStartedAt,
+        t,
+      )
       this.listenRetry++
       this.listenUnavailableFailures++
-      const delay = hostUnavailableIdBackoffMs(this.listenRetry)
-      this.listenBackoffUntil = Date.now() + delay
+      const delay = listenBackoffForClaim(
+        this.listenRetry,
+        this.listenOwnedBefore,
+        this.listenReclaimStartedAt,
+        hostUnavailableIdBackoffMs,
+      )
+      this.listenBackoffUntil = t + delay
       try { peer.destroy() } catch {}
       if (this.listenPeer === peer) this.listenPeer = null
-      if (listenClaimGiveUp(this.listenUnavailableFailures, this.listenSocketsOpened)) {
+      if (listenClaimShouldGiveUp(
+        this.listenUnavailableFailures,
+        this.listenSocketsOpened,
+        this.listenOwnedBefore,
+        this.listenReclaimStartedAt,
+        t,
+      )) {
         this.markListenGaveUp()
         return
       }
@@ -727,7 +813,7 @@ export class Link {
       return
     }
     this.rememberGuestFailCount++
-    if (this.rememberGuestFailCount >= 3) {
+    if (!this.rememberGuestEverAuthed && !this.sessionPaired && this.rememberGuestFailCount >= 3) {
       this.releaseInFlightDial()
       if (this.dialWait) clearTimeout(this.dialWait)
       this.dialWait = null
@@ -767,7 +853,10 @@ export class Link {
     if (fromListenPeer && rememberPhoneId) this.authenticatedRememberPhoneId = rememberPhoneId
     this.sessionPaired = true
     this.rememberGuestFailCount = 0
-    if (this.role === 'guest' && this.rememberGuestAuth) this.rememberGuestDeadlineMs = 0
+    if (this.role === 'guest' && this.rememberGuestAuth) {
+      this.rememberGuestEverAuthed = true
+      this.rememberGuestDeadlineMs = 0
+    }
     if (this.hostGrace) { clearTimeout(this.hostGrace); this.hostGrace = null }
     try { c.send({ t: 'hello', name: deviceName() }) } catch {}
     if (remoteHint) this.set({ remoteName: remoteHint })
@@ -886,11 +975,16 @@ export class Link {
         if (!this.hostGrace) {
           this.hostGrace = window.setTimeout(() => {
             this.hostGrace = null
-            if (!this.conn?.open && !this.destroyed) this.set({ status: 'waiting' })
+            if (!this.conn?.open && !this.destroyed) {
+              this.set({ status: 'waiting' })
+              this.rearmRememberListenPeer()
+            }
           }, 15000)
         }
+        this.rearmRememberListenPeer()
       } else {
         this.set({ status: 'waiting' })
+        this.rearmRememberListenPeer()
       }
     }
     else if (!this.hasInFlightDial()) {
@@ -906,6 +1000,7 @@ export class Link {
     if (!shouldFailRememberGuestHome({
       rememberGuest: !!this.rememberGuestAuth,
       sessionPaired: this.sessionPaired,
+      rememberEverAuthed: this.rememberGuestEverAuthed,
       status: this.status,
       deadlineMs: this.rememberGuestDeadlineMs,
       now,
@@ -993,17 +1088,8 @@ export class Link {
       })
     ) {
       void this.bootstrapRememberListen()
-    } else if (this.role === 'host' && lp && lp.disconnected && !lp.destroyed && shouldHostReconnect({
-      role: 'host',
-      linkDestroyed: this.destroyed,
-      samePeer: true,
-      disconnected: lp.disconnected,
-      peerDestroyed: lp.destroyed,
-    })) {
-      if (Date.now() - this.listenLastReconnectAt >= 1500) {
-        this.listenLastReconnectAt = Date.now()
-        try { lp.reconnect() } catch {}
-      }
+    } else if (this.role === 'host' && lp && !lp.destroyed) {
+      this.tickListenSignalForce(lp)
     }
     const c = this.conn
     if (c?.open) {
@@ -1053,6 +1139,10 @@ export class Link {
   destroy() {
     this.visibilityListener?.()
     this.visibilityListener = null
+    this.networkListener?.()
+    this.networkListener = null
+    this.listenForceRunner?.stop()
+    this.listenForceRunner = null
     this.destroyed = true
     this.timers.forEach(clearInterval)
     if (this.dialWait) clearTimeout(this.dialWait)
