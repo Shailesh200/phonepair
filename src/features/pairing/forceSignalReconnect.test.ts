@@ -279,4 +279,52 @@ describe('forceSignalRunner stuck socket', () => {
     assert.equal(shouldForceSignalOnVisibility(31_000, true), true)
     assert.equal(shouldForceSignalOnVisibility(31_000, false), false)
   })
+
+  it('peer open after a hook stops watchdog backoff while unverified (cadence only)', () => {
+    mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    const peer = makeMockPeer()
+    const t = { value: 0 }
+    const runner = makeRunner(t)
+    runner.onSignalingDrop()
+    runner.hook(peer, false)
+    const afterHook = peer.sockets.length
+    peer.open = true
+    peer.disconnected = false
+    runner.onOpen()
+    t.value += 8_000
+    mock.timers.tick(8_000)
+    assert.equal(peer.sockets.length, afterHook)
+    t.value = FORCE_SIGNAL_VERIFY_CADENCE_MS
+    runner.tick(peer, true, false, true, true)
+    assert.ok(peer.sockets.length > afterHook)
+    runner.stop()
+  })
+
+  it('does not force over 10 minutes without a signaling drop', () => {
+    const peer = makeMockPeer()
+    peer.open = true
+    peer.disconnected = false
+    const runner = makeRunner({ value: 0 })
+    const n0 = peer.sockets.length
+    for (let i = 0; i < 600; i += 1) {
+      runner.tick(peer, true, false, true, false)
+    }
+    assert.equal(peer.sockets.length, n0)
+    runner.stop()
+  })
+
+  it('endUnverifiedForcing ends unverified cadence after a deliberate disconnect', () => {
+    const peer = makeMockPeer()
+    const runner = makeRunner({ value: 0 })
+    runner.onSignalingDrop()
+    assert.equal(runner.isUnverifiedAfterDrop(), true)
+    runner.endUnverifiedForcing()
+    assert.equal(runner.isUnverifiedAfterDrop(), false)
+    peer.open = true
+    peer.disconnected = false
+    const before = peer.sockets.length
+    runner.tick(peer, true, false, true, true)
+    assert.equal(peer.sockets.length, before)
+    runner.stop()
+  })
 })

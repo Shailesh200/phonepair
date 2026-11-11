@@ -322,9 +322,7 @@ export class Link {
     const peer = id ? new Peer(id, { ...SIGNAL, config }) : new Peer({ ...SIGNAL, config })
     this.peer = peer
     peer.on('open', () => {
-      if (this.role === 'host' && this.conn?.open) {
-        this.ensureHostSignalRunner().onPhoneConnected()
-      }
+      if (this.role === 'host') this.ensureHostSignalRunner().onOpen()
       this.hostIdReclaimSince = null
       this.hostUnavailableRetry = 0
       this.retry = 0
@@ -663,6 +661,7 @@ export class Link {
         return
       }
       if (m.t === 'bye') {
+        if (this.role === 'host') this.ensureHostSignalRunner().endUnverifiedForcing()
         this.set({ status: this.role === 'host' ? 'waiting' : 'closed' })
         try { c.close() } catch {}
         return
@@ -778,6 +777,7 @@ export class Link {
     if (linkTeardownSendsBye('disconnect')) {
       try { this.conn?.send({ t: 'bye' }) } catch {}
     }
+    if (this.role === 'host') this.ensureHostSignalRunner().endUnverifiedForcing()
     this.set({ status: this.role === 'host' ? 'waiting' : 'closed' })
     const c = this.conn
     this.conn = null
