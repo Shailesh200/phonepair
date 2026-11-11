@@ -6,6 +6,8 @@ import { originAllowed, parseInput, parseJson, parsePair, type InputMsg, type Mo
 
 export const LOOPBACK = '127.0.0.1'
 export const DEFAULT_PORTS = [47811, 47812, 47813, 47814]
+/** A button we pressed is released when no input arrives for this long. */
+export const BUTTON_GAP_MS = 3000
 
 export type Injector = {
   move(dx: number, dy: number): Promise<void>
@@ -13,6 +15,11 @@ export type Injector = {
   scroll(dx: number, dy: number): Promise<void>
   key(key: string, mods: Mod[]): Promise<void>
   type(text: string): Promise<void>
+  abs(x: number, y: number): Promise<void>
+  btn(btn: 'left' | 'right', state: 'down' | 'up'): Promise<void>
+  dbl(): Promise<void>
+  /** Release the button this session pressed. No-op when nothing is held. */
+  release(): Promise<void>
 }
 
 export type RunningHelper = {
@@ -28,6 +35,7 @@ export type StartOptions = {
   log?: (line: string) => void
   now?: () => number
   authTimeoutMs?: number
+  gapMs?: number
 }
 
 const REJECT_REASON = ['code', 'locked', 'busy'] as const
@@ -116,6 +124,15 @@ async function apply(inject: Injector, msg: InputMsg) {
     case 'type':
       await inject.type(msg.text)
       return
+    case 'abs':
+      await inject.abs(msg.x, msg.y)
+      return
+    case 'btn':
+      await inject.btn(msg.btn, msg.state)
+      return
+    case 'dbl':
+      await inject.dbl()
+      return
   }
 }
 
@@ -153,10 +170,55 @@ export async function startHelper(opts: StartOptions): Promise<RunningHelper> {
   const log = opts.log ?? ((line) => console.log(line))
   const now = opts.now ?? (() => Date.now())
   const authTimeoutMs = opts.authTimeoutMs ?? 5000
+  const gapMs = opts.gapMs ?? BUTTON_GAP_MS
   const gate: Gate = createGate()
   let active: WebSocket | null = null
   let paired = false
   let warned = false
+  let heldBtn: 'left' | 'right' | null = null
+  let gapTimer: ReturnType<typeof setTimeout> | null = null
+
+  const clearGap = () => {
+    if (!gapTimer) return
+    clearTimeout(gapTimer)
+    gapTimer = null
+  }
+
+  const failInput = () => {
+    if (warned) return
+    warned = true
+    log('Input was rejected by the operating system. On macOS, grant Accessibility in System Settings > Privacy & Security > Accessibility.')
+  }
+
+  const releaseHeld = () => {
+    clearGap()
+    heldBtn = null
+    if (!paired) return
+    void opts.inject.release().catch(failInput)
+  }
+
+  const armGap = () => {
+    clearGap()
+    if (!heldBtn) return
+    gapTimer = setTimeout(() => {
+      gapTimer = null
+      releaseHeld()
+    }, gapMs)
+  }
+
+  const noteInput = (msg: InputMsg) => {
+    if (msg.t === 'btn' && msg.state === 'down') {
+      heldBtn = msg.btn
+      armGap()
+      return
+    }
+    if (msg.t === 'btn' && msg.state === 'up' && heldBtn === msg.btn) {
+      heldBtn = null
+      clearGap()
+      return
+    }
+    if (heldBtn) armGap()
+  }
 
   const server = createServer((req, res) => {
     if (req.method === 'OPTIONS') {
@@ -221,6 +283,8 @@ export async function startHelper(opts: StartOptions): Promise<RunningHelper> {
         clearTimeout(authTimer)
         if (active === ws) {
           active = null
+          // Disconnect and unpair both close this single session.
+          releaseHeld()
           controlOff()
         }
       })
@@ -255,11 +319,8 @@ export async function startHelper(opts: StartOptions): Promise<RunningHelper> {
         if (!parsed.ok) return
         const input = parseInput(parsed.msg)
         if (!input.ok) return
-        void apply(opts.inject, input.msg).catch(() => {
-          if (warned) return
-          warned = true
-          log('Input was rejected by the operating system. On macOS, grant Accessibility in System Settings > Privacy & Security > Accessibility.')
-        })
+        noteInput(input.msg)
+        void apply(opts.inject, input.msg).catch(failInput)
       })
     })
   })
@@ -277,6 +338,8 @@ export async function startHelper(opts: StartOptions): Promise<RunningHelper> {
     port,
     host: LOOPBACK,
     close() {
+      clearGap()
+      heldBtn = null
       return new Promise((resolve) => {
         const timer = setTimeout(() => resolve(), 1000)
         for (const client of wss.clients) {

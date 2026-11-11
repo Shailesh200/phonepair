@@ -51,6 +51,19 @@ function sendHelper(msg: object) {
   return true
 }
 
+export function helperConnected() {
+  return helperReady()
+}
+
+export function forwardHelper(msg: object) {
+  return sendHelper(msg)
+}
+
+export function subscribeHelper(listener: () => void) {
+  helper.listeners.add(listener)
+  return () => { helper.listeners.delete(listener) }
+}
+
 function closeHelperSocket() {
   const ws = helper.ws
   helper.ws = null

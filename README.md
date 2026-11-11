@@ -43,7 +43,7 @@ The laptop's PhonePair tab already receives the phone's remote events. While Ful
 - The WebSocket origin must be `https://phonepair.vercel.app` or `http://localhost:5173`. Any other origin is rejected. For local development, open the app at `http://localhost:5173`.
 - A Chrome Private Network Access preflight is answered with `Access-Control-Allow-Private-Network: true`.
 - Every message is checked. Mouse and scroll deltas are clamped. Keys must be an arrow, Enter, Escape, Tab, Backspace, Space, Page Up, Page Down, a printable character, or a modifier (`cmd`, `ctrl`, `alt`, `shift`). Anything else is dropped.
-- The helper only injects mouse move, click, scroll, and key events. It does not run a shell or open files.
+- The helper only injects mouse move, click, scroll, and key events, plus absolute moves and button presses for screen control. It does not run a shell or open files.
 
 ### Install and run on macOS
 
@@ -62,6 +62,10 @@ Windows and Linux may work through the same input library, as a best effort. The
 ### Turn it off
 
 Turn off **Full laptop** on the laptop card, or press Ctrl+C in the helper terminal. The helper prints `CONTROL OFF`, the phone badge goes away, and remote events stay inside the PhonePair tab again.
+
+### Screen control
+
+Screen control is inside the laptop screen view, and only while Full laptop is connected. The phone can move the pointer when the shared track is the entire screen (`displaySurface === 'monitor'`). A window or tab share stays view-only: the laptop says "Share your entire screen to control it" and does not forward pointer events. v1 moves the pointer on the primary display only. While the phone is controlling, the laptop shows "Phone is controlling this laptop" with Stop. Stop or Esc ends that session. See `docs/screen-control.md`.
 
 ## Known limits
 

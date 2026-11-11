@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import test from 'node:test'
 import WebSocket from 'ws'
-import { LOOPBACK, startHelper } from '../dist/server.js'
+import { BUTTON_GAP_MS, LOOPBACK, startHelper } from '../dist/server.js'
 
 const ORIGIN = 'https://phonepair.vercel.app'
 
@@ -15,6 +15,10 @@ function injector() {
     async scroll(dx, dy) { calls.push(['scroll', dx, dy]) },
     async key(key, mods) { calls.push(['key', key, mods]) },
     async type(text) { calls.push(['type', text]) },
+    async abs(x, y) { calls.push(['abs', x, y]) },
+    async btn(btn, state) { calls.push(['btn', btn, state]) },
+    async dbl() { calls.push(['dbl']) },
+    async release() { calls.push(['release']) },
   }
 }
 
@@ -28,6 +32,7 @@ async function boot(t, opts = {}) {
     log: (line) => logs.push(line),
     now: opts.now ?? (() => opts.clock ?? 5_000_000),
     authTimeoutMs: opts.authTimeoutMs ?? 400,
+    gapMs: opts.gapMs,
   })
   t.after(() => helper.close())
   assert.equal(helper.host, LOOPBACK)
@@ -193,6 +198,59 @@ test('a taken port falls through to the next loopback port', async (t) => {
   const { helper } = await boot(t, { ports: [busy, 0] })
   assert.notEqual(helper.port, busy)
   assert.equal(helper.host, LOOPBACK)
+})
+
+test('absolute points are clamped and unknown buttons are dropped', async (t) => {
+  const { helper, inject } = await boot(t)
+  const ws = connect(helper.port)
+  await opened(ws)
+  ws.send(JSON.stringify({ t: 'pair', code: '042817' }))
+  assert.deepEqual(await onceMessage(ws), { t: 'paired' })
+  ws.send(JSON.stringify({ t: 'abs', x: -4, y: 0.25 }))
+  ws.send(JSON.stringify({ t: 'btn', btn: 'middle', state: 'down' }))
+  ws.send(JSON.stringify({ t: 'btn', btn: 'left', state: 'nope' }))
+  ws.send(JSON.stringify({ t: 'dbl' }))
+  ws.send(JSON.stringify({ t: 'file', path: '/etc/passwd' }))
+  await waitFor(() => inject.calls.length >= 2)
+  assert.deepEqual(inject.calls, [
+    ['abs', 0, 0.25],
+    ['dbl'],
+  ])
+  ws.close()
+})
+
+test('a held button is released on disconnect and unpair', async (t) => {
+  const { helper, inject, logs } = await boot(t)
+  const ws = connect(helper.port)
+  await opened(ws)
+  ws.send(JSON.stringify({ t: 'pair', code: '042817' }))
+  assert.deepEqual(await onceMessage(ws), { t: 'paired' })
+  ws.send(JSON.stringify({ t: 'btn', btn: 'left', state: 'down' }))
+  await waitFor(() => inject.calls.some((call) => call[0] === 'btn'))
+  assert.equal(inject.calls.some((call) => call[0] === 'release'), false)
+  ws.close()
+  await waitFor(() => inject.calls.some((call) => call[0] === 'release'))
+  await waitFor(() => logs.includes('CONTROL OFF'))
+  assert.equal(helper.host, LOOPBACK)
+})
+
+test('a held button is released after a message gap', async (t) => {
+  assert.equal(BUTTON_GAP_MS, 3000)
+  const gapMs = 350
+  const { helper, inject } = await boot(t, { gapMs })
+  const ws = connect(helper.port)
+  await opened(ws)
+  ws.send(JSON.stringify({ t: 'pair', code: '042817' }))
+  assert.deepEqual(await onceMessage(ws), { t: 'paired' })
+  ws.send(JSON.stringify({ t: 'btn', btn: 'right', state: 'down' }))
+  await waitFor(() => inject.calls.some((call) => call[0] === 'btn'))
+  const mark = Date.now()
+  ws.send(JSON.stringify({ t: 'abs', x: 0.5, y: 0.5 }))
+  await new Promise((resolve) => setTimeout(resolve, 120))
+  assert.equal(inject.calls.some((call) => call[0] === 'release'), false)
+  await waitFor(() => inject.calls.some((call) => call[0] === 'release'), 1000)
+  assert.ok(Date.now() - mark >= gapMs - 50)
+  ws.close()
 })
 
 test('localhost dev origin can pair', async (t) => {
