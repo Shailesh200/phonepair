@@ -1,6 +1,5 @@
 import React from 'react'
 import { CoreCtx, getFeatures } from './core/bus'
-import { Icon } from './core/icons'
 import { Logo, StatusPill } from './core/ui'
 import { QrCard } from './features/pairing/QrCard'
 import { useHostPairFlow } from './features/pairing/useHostPairFlow'
@@ -18,18 +17,16 @@ export function Laptop({ ctx }: { ctx: CoreCtx }) {
 
 function Landing({ ctx, cardPhase }: { ctx: CoreCtx; cardPhase: ReturnType<typeof useHostPairFlow>['cardPhase'] }) {
   return <div className="landing">
-    <header className="nav"><Logo /><nav><a href="#how">How it works</a><a href="#privacy">Privacy</a><span className="pill soft">No app. No sign-up.</span></nav></header>
-    <main className="hero">
-      <section className="hero-l">
-        <h1>Your phone and laptop,<br /><span>paired in one scan.</span></h1>
-        <p className="lead">Send files, share clipboard, use your phone as a remote. Right in the browser.</p>
-        <ol className="steps" id="how">
-          <li><b>1</b><div><strong>Open camera</strong><small>on your phone</small></div></li>
-          <li><b>2</b><div><strong>Scan</strong><small>the code here</small></div></li>
-          <li><b>3</b><div><strong>Done</strong><small>you're paired</small></div></li>
-        </ol>
-        <div className="chips landing-chips">{[['file', 'Files'], ['clip', 'Clipboard'], ['pointer', 'Remote'], ['screen', 'Screen view']].map(([i, t]) => <span key={t} className="chip static"><Icon n={i} />{t}</span>)}</div>
-      </section>
+    <header className="nav">
+      <Logo />
+      <nav><a href="#how">How it works</a></nav>
+    </header>
+    <div className="landing-copy">
+      <h1>Your phone.<br />On your laptop.</h1>
+      <p className="lead">Scan the code. Send files, text, and a remote — right in the browser.</p>
+    </div>
+    <div className="stage-row" id="how">
+      <StudioStage />
       <QrCard
         link={ctx.link}
         phase={cardPhase}
@@ -37,7 +34,36 @@ function Landing({ ctx, cardPhase }: { ctx: CoreCtx; cardPhase: ReturnType<typeo
         onTryAgain={() => ctx.link.restartHost()}
         onToast={ctx.toast}
       />
-    </main>
+    </div>
+    <footer className="landing-foot">
+      Works in any browser<span className="sep">·</span><span id="privacy">Direct and encrypted</span><span className="sep">·</span>Free
+    </footer>
+  </div>
+}
+
+function StudioStage() {
+  return <div className="art" aria-hidden="true">
+    <div className="art-laptop">
+      <div className="art-lid">
+        <div className="art-cam" />
+        <div className="art-screen">
+          <div className="art-os-bar"><span className="art-os-dot" /><span className="art-os-dot" /><span className="art-os-dot" /></div>
+          <div className="art-os-win" /><div className="art-os-side" />
+        </div>
+      </div>
+      <div className="art-base" />
+    </div>
+    <div className="art-fly">
+      <div className="art-trail" />
+      <div className="art-file">
+        <div className="art-file-img" />
+        <div className="art-file-cap">IMG_2041.jpg</div>
+      </div>
+    </div>
+    <div className="art-phone">
+      <div className="art-island" />
+      <div className="art-ph-screen" />
+    </div>
   </div>
 }
 

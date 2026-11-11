@@ -60,7 +60,7 @@ function Row({ it }: { it: FileItem }) {
       <small>{fmtSize(it.size)}</small>
       {busy && <div className="bar" data-testid="file-progress"><span style={{ width: `${Math.max(0, Math.round(it.progress * 100))}%` }} /></div>}
     </div>
-    {failed && <span className="tag" style={{ background: '#FEF2F2', color: 'var(--red)' }}>Failed</span>}
+    {failed && <span className="tag bad">Failed</span>}
     {done && <button type="button" className={'tag' + (it.dir === 'in' ? ' ok' : '')} data-testid="download" data-name={it.name} onClick={() => { if (it.url) download(it.url, it.name) }}>{it.dir === 'in' ? 'Received' : 'Sent'}</button>}
   </div>
 }
@@ -87,7 +87,7 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
       <small>or <u>browse</u>: photos, PDFs, anything. Paste a screenshot with Ctrl/⌘+V.</small>
     </label>
     <div className="card pad">
-      <h3 className="h-row"><span>Recent transfers</span><button type="button" data-testid="see-all" onClick={() => setAll((v) => !v)} style={{ color: 'var(--a)', fontWeight: 600, fontSize: 13 }}>{all && list.length > PREVIEW ? 'Show less' : 'See all'}</button></h3>
+      <h3 className="h-row"><span>Recent transfers</span><button type="button" className="see-all" data-testid="see-all" onClick={() => setAll((v) => !v)}>{all && list.length > PREVIEW ? 'Show less' : 'See all'}</button></h3>
       {list.length === 0 ? <p className="mut small">Nothing yet. Files you send or receive show up here.</p> : <div className="list">{shown.map((it) => <Row key={it.id} it={it} />)}</div>}
     </div>
   </>
@@ -101,7 +101,7 @@ function JustReceived({ it }: { it: FileItem }) {
       {img ? <img src={it.url} alt="" onError={() => setBroken(true)} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 8 }} /> : <Icon n={isImage(it) ? 'image' : 'file'} />}
     </i>
     <div><small>Just received</small><b className="fname">{it.name}</b></div>
-    <button type="button" data-testid="just-received-open" onClick={() => { if (it.url) download(it.url, it.name) }} style={{ color: 'var(--a)', fontWeight: 700, fontSize: 14 }}>Open</button>
+    <button type="button" className="see-all" data-testid="just-received-open" onClick={() => { if (it.url) download(it.url, it.name) }}>Open</button>
   </div>
 }
 

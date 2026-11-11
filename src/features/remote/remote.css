@@ -1,9 +1,9 @@
 /* Phone remote page. Selectors stay stronger than the shell stylesheet. */
 .pg.remote { gap: 0; padding-top: 16px; }
 
-.pg.remote .seg { background: #EBEDF4; border-radius: 14px; padding: 4px; }
-.pg.remote .seg button { font-weight: 600; font-size: 14px; padding: 10px 0; border-radius: 10px; }
-.pg.remote .seg button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .08); }
+.pg.remote .seg { background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; padding: 4px; }
+.pg.remote .seg button { font-weight: 600; font-size: 15px; padding: 10px 0; border-radius: 10px; color: var(--muted); }
+.pg.remote .seg button.on { background: var(--surface); color: var(--ink); box-shadow: none; }
 
 .pg.remote .pad-area {
   position: relative;
@@ -14,9 +14,10 @@
   margin-top: 14px;
   border-radius: 24px;
   overflow: hidden;
-  background-color: #fff;
-  background-image: radial-gradient(#DADDEA 1px, transparent 1px), linear-gradient(160deg, #fff, #F1F3FA);
-  background-size: 18px 18px, auto;
+  background-color: var(--surface);
+  background-image: radial-gradient(rgba(255,255,255,0.16) 1px, transparent 1px);
+  background-size: 18px 18px;
+  border: 1px solid var(--line);
   touch-action: none;
 }
 
@@ -27,7 +28,7 @@
   right: 0;
   padding: 0 52px;
   text-align: center;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.5;
   color: var(--mut);
   pointer-events: none;
@@ -40,8 +41,8 @@
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: rgba(79, 70, 229, .18);
-  box-shadow: 0 0 0 14px rgba(79, 70, 229, .07);
+  background: rgba(198, 244, 50, .22);
+  box-shadow: 0 0 0 14px rgba(198, 244, 50, .08);
   transform: translate(-50%, -50%);
   pointer-events: none;
   z-index: 1;
@@ -54,7 +55,8 @@
   bottom: 40px;
   width: 30px;
   border-radius: 15px;
-  background: #EEF0F6;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
   color: var(--mut);
   display: grid;
   place-items: center;
@@ -63,7 +65,7 @@
   cursor: ns-resize;
 }
 .pg.remote .pad-scroll svg { width: 16px; height: 16px; color: var(--mut); }
-.pg.remote .pad-scroll.on { background: #E2E5F0; }
+.pg.remote .pad-scroll.on { background: rgba(198, 244, 50, 0.16); color: var(--accent); }
 
 .pg.remote .clicks { margin-top: 10px; }
 .pg.remote .clicks .btn {
@@ -84,7 +86,7 @@
   gap: 8px;
 }
 .pg.remote .nav2 .btn svg { width: 22px; height: 22px; }
-.pg.remote .nav2 .btn:not(.soft) { box-shadow: 0 12px 24px -10px rgba(79, 70, 229, .6); }
+.pg.remote .nav2 .btn:not(.soft) { box-shadow: 0 12px 24px -12px rgba(198, 244, 50, .45); }
 .pg.remote .nav2.tall .btn { min-height: 150px; height: auto; font-size: 22px; }
 
 .pg.remote .kb-btn.btn {
@@ -97,7 +99,7 @@
   font-weight: 700;
   gap: 10px;
 }
-.pg.remote .kb-btn.btn svg { width: 22px; height: 22px; color: var(--a); }
+.pg.remote .kb-btn.btn svg { width: 22px; height: 22px; color: var(--accent); }
 .pg.remote .kb-form { margin-top: 10px; }
 
 .pg.remote .clicker-help { margin-top: 14px; }
