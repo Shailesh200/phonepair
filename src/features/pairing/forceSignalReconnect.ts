@@ -118,11 +118,15 @@ export class ForceSignalRunner {
   }
 
   onPhoneConnected() {
+    this.endUnverifiedForcing()
+    this.attempt = 0
+    this.reclaimStartedAt = null
+  }
+
+  endUnverifiedForcing() {
     this.unverifiedAfterDrop = false
     this.dropStartedAt = null
     this.lastCadenceAt = null
-    this.attempt = 0
-    this.reclaimStartedAt = null
     this.clearTimers()
   }
 
@@ -173,7 +177,7 @@ export class ForceSignalRunner {
 
     const now = this.timers.now()
     if (unverified && peer.open && !peer.disconnected) {
-      if (this.dropStartedAt == null) this.onSignalingDrop()
+      if (this.dropStartedAt == null) return
       if (
         forceSignalCadenceDue(this.dropStartedAt, this.lastCadenceAt, now)
         && this.watchdogId == null
@@ -184,6 +188,8 @@ export class ForceSignalRunner {
       }
       return
     }
+
+    if (unverified) return
 
     if (idReclaimCap) {
       this.reclaimStartedAt ??= now
@@ -198,6 +204,7 @@ export class ForceSignalRunner {
     if (peer.destroyed || this.stopped) return
     this.attempt += 1
     forceSignalReconnect(peer)
+    if (mode === 'cadence') return
     if (this.watchdogId != null) {
       this.timers.clearTimeout(this.watchdogId)
       this.watchdogId = null

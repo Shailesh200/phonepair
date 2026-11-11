@@ -184,12 +184,7 @@ export class Link {
   }
 
   private listenSignalUnverified(): boolean {
-    if (this.role !== 'host' || !hostHasPhones(loadHostStore())) return false
-    if (this.isRememberConnOnListenPeer()) return false
-    const lp = this.listenPeer
-    if (!lp || lp.destroyed) return false
-    if (this.listenForceRunner?.isUnverifiedAfterDrop()) return true
-    return this.status === 'reconnecting' || this.status === 'waiting'
+    return !!this.listenForceRunner?.isUnverifiedAfterDrop()
   }
 
   private bindHostListenRearmWatchers() {
@@ -386,6 +381,7 @@ export class Link {
     if (this.authTimer) clearTimeout(this.authTimer)
     this.authTimer = null
     if (stopListen) {
+      this.ensureListenForceRunner().endUnverifiedForcing()
       try { this.listenPeer?.destroy() } catch {}
       this.listenPeer = null
       this.rememberPhones = null
@@ -449,6 +445,7 @@ export class Link {
       this.listenOwnedBefore = true
       this.listenReclaimStartedAt = null
       this.listenUnavailableFailures = 0
+      this.ensureListenForceRunner().onOpen()
     })
     peer.on('connection', (c) => {
       if (this.role !== 'host' || this.destroyed) { try { c.close() } catch {}; return }
@@ -769,6 +766,7 @@ export class Link {
       return
     }
     if (m.t === 'bye') {
+      if (this.role === 'host') this.ensureListenForceRunner().endUnverifiedForcing()
       this.set({ status: this.role === 'host' ? 'waiting' : 'closed' })
       try { c.close() } catch {}
       return
@@ -1151,6 +1149,7 @@ export class Link {
     if (linkTeardownSendsBye('disconnect')) {
       try { this.conn?.send({ t: 'bye' }) } catch {}
     }
+    if (this.role === 'host') this.ensureListenForceRunner().endUnverifiedForcing()
     this.set({ status: this.role === 'host' ? 'waiting' : 'closed' })
     if (this.role === 'guest') this.sessionPaired = false
     const c = this.conn
