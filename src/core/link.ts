@@ -1,14 +1,18 @@
 import Peer, { DataConnection, MediaConnection } from 'peerjs'
 
 import type { Role } from './bus'
+import { newPairCode, normalizePairCode, peerIdForCode } from '../features/pairing/code'
+import { classifyGuestPairError, guestErrorText, lastGuestPairedCode, rememberGuestPairedCode } from '../features/pairing/errors'
+import { loadRtcConfiguration } from '../features/pairing/ice'
+import { guestUnavailableRetries, redialDelayMs } from '../features/pairing/reconnect'
+import { rememberLastLaptop } from '../features/pairing/session'
+
 export type { Role }
 export type Status = 'starting' | 'waiting' | 'connecting' | 'connected' | 'reconnecting' | 'error' | 'closed'
 
 const SIGNAL = { host: 'signal.167.233.223.123.sslip.io', port: 443, path: '/peerjs', secure: true, key: 'peerjs' }
-const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-export const newCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => ALPHA[b % ALPHA.length]).join('')
-export const cleanCode = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)
-const peerIdFor = (code: string) => 'phonepair-' + code.toLowerCase()
+
+export { newPairCode as newCode, normalizePairCode as cleanCode } from '../features/pairing/code'
 
 export function deviceName(): string {
   const ua = navigator.userAgent
@@ -22,16 +26,6 @@ export function deviceName(): string {
   return 'Device'
 }
 export const isPhoneUA = () => /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
-
-async function iceConfig(): Promise<RTCConfiguration> {
-  const relay = new URLSearchParams(location.search).get('relay') === '1'
-  let iceServers: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }]
-  try {
-    const r = await fetch('/api/turn', { cache: 'no-store' })
-    if (r.ok) iceServers = (await r.json()).iceServers
-  } catch {}
-  return { iceServers, iceTransportPolicy: relay ? 'relay' : 'all' }
-}
 
 type Listener = () => void
 type MsgHandler = (m: any) => void
@@ -53,10 +47,14 @@ export class Link {
   private retry = 0
   private destroyed = false
   private everConnected = false
+  private pending: DataConnection | null = null
+  private dialWait: number | null = null
+  private hostGrace: number | null = null
+  private hostFails = 0
 
   constructor(role: Role, code: string) {
     this.role = role
-    this.code = code
+    this.code = normalizePairCode(code)
   }
   subscribe(l: Listener) { this.listeners.add(l); return () => { this.listeners.delete(l) } }
   onMessage(h: MsgHandler) { this.msgHandlers.add(h); return () => { this.msgHandlers.delete(h) } }
@@ -64,9 +62,9 @@ export class Link {
   private set(s: Partial<Link>) { Object.assign(this, s); this.listeners.forEach((l) => l()) }
 
   async start() {
-    const config = await iceConfig()
+    const config = await loadRtcConfiguration()
     if (this.destroyed) return
-    const id = this.role === 'host' ? peerIdFor(this.code) : undefined
+    const id = this.role === 'host' ? peerIdForCode(this.code) : undefined
     const peer = id ? new Peer(id, { ...SIGNAL, config }) : new Peer({ ...SIGNAL, config })
     this.peer = peer
     peer.on('open', () => {
@@ -77,33 +75,55 @@ export class Link {
     peer.on('connection', (c) => {
       if (this.role !== 'host') { c.close(); return }
       if (this.conn && this.conn !== c) { try { this.conn.close() } catch {} }
+      if (!c.open) this.set({ status: 'connecting' })
       this.attach(c)
     })
     peer.on('call', (call) => this.callHandlers.forEach((h) => h(call)))
     peer.on('disconnected', () => {
       if (this.destroyed) return
+      this.set({ status: this.everConnected ? 'reconnecting' : this.status })
       window.setTimeout(() => { if (!this.destroyed && peer.disconnected && !peer.destroyed) peer.reconnect() }, 1500)
     })
     peer.on('error', (e: any) => {
       const t = e?.type
       if (t === 'unavailable-id' && this.role === 'host') {
-        // our code is still held by an old tab/session: retry a few times then roll a new code
         this.retry++
         peer.destroy()
-        if (this.retry > 4) { this.code = newCode(); sessionStorage.setItem('pp-code', this.code); this.retry = 0 }
+        if (this.retry > 4) {
+          this.set({ status: 'error', error: 'Could not claim this pairing code. Try again.' })
+          return
+        }
         window.setTimeout(() => this.start(), 2500)
         return
       }
       if (t === 'peer-unavailable') {
+        this.closePending()
         this.conn = null
         this.retry++
-        if (this.retry > 8 && !this.everConnected) { this.set({ status: 'error', error: 'No laptop found with that code. Check the code and try again.' }); return }
+        const max = guestUnavailableRetries(this.everConnected)
+        if (this.retry > max && !this.everConnected) {
+          const reason = classifyGuestPairError({
+            code: this.code,
+            everConnectedThisSession: this.everConnected,
+            previouslyPairedCode: lastGuestPairedCode(),
+          })
+          this.set({ status: 'error', error: guestErrorText(reason) })
+          return
+        }
         this.set({ status: this.everConnected ? 'reconnecting' : 'connecting' })
-        window.setTimeout(() => this.dial(), 2000)
+        this.scheduleDial()
         return
       }
       if (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed') {
+        if (this.role === 'host') {
+          this.hostFails++
+          if (this.hostFails > 3) {
+            this.set({ status: 'error', error: 'Connection problem. Try again.' })
+            return
+          }
+        }
         this.set({ status: this.everConnected ? 'reconnecting' : this.status, error: '' })
+        if (this.role === 'guest' && this.peer && !this.conn?.open) this.scheduleDial()
         return
       }
       console.warn('peer error', t, e)
@@ -111,31 +131,134 @@ export class Link {
     this.timers.push(window.setInterval(() => this.tick(), 4000))
   }
 
+  get hadGuest() {
+    return this.role === 'host' && this.everConnected
+  }
+
+  async restartHost() {
+    if (this.role !== 'host' || this.destroyed) return
+    this.timers.forEach(clearInterval)
+    this.timers = []
+    if (this.dialWait) clearTimeout(this.dialWait)
+    this.dialWait = null
+    if (this.hostGrace) clearTimeout(this.hostGrace)
+    this.hostGrace = null
+    this.closePending()
+    try { this.conn?.close() } catch {}
+    this.conn = null
+    this.peer?.destroy()
+    this.peer = null
+    this.retry = 0
+    this.hostFails = 0
+    this.error = ''
+    this.set({ status: 'starting', remoteName: '' })
+    await this.start()
+  }
+
+  redialGuest() {
+    if (this.role !== 'guest' || this.destroyed) return
+    this.retry = 0
+    if (this.dialWait) clearTimeout(this.dialWait)
+    this.dialWait = null
+    this.closePending()
+    this.conn = null
+    this.set({ status: 'connecting', error: '' })
+    this.dial()
+  }
+
+  async rollHostCode() {
+    if (this.role !== 'host' || this.destroyed) return
+    this.timers.forEach(clearInterval)
+    this.timers = []
+    if (this.dialWait) clearTimeout(this.dialWait)
+    if (this.hostGrace) clearTimeout(this.hostGrace)
+    this.hostGrace = null
+    try { this.conn?.send({ t: 'bye' }) } catch {}
+    try { this.conn?.close() } catch {}
+    this.conn = null
+    this.closePending()
+    this.peer?.destroy()
+    this.peer = null
+    this.code = newPairCode()
+    sessionStorage.setItem('pp-code', this.code)
+    this.retry = 0
+    this.everConnected = false
+    this.set({ status: 'starting', error: '', remoteName: '' })
+    await this.start()
+  }
+
+  private closePending() {
+    if (!this.pending) return
+    try { this.pending.close() } catch {}
+    this.pending = null
+  }
+
+  private scheduleDial() {
+    if (this.dialWait) return
+    const delay = redialDelayMs(this.retry, this.everConnected)
+    if (delay <= 0) {
+      this.dial()
+      return
+    }
+    this.dialWait = window.setTimeout(() => {
+      this.dialWait = null
+      this.dial()
+    }, delay)
+  }
+
   private dial() {
     if (this.destroyed || !this.peer || this.peer.disconnected) return
     if (this.conn?.open) return
+    if (this.pending && !this.pending.open) this.closePending()
     this.set({ status: this.everConnected ? 'reconnecting' : 'connecting' })
-    const c = this.peer.connect(peerIdFor(this.code), { reliable: true, serialization: 'binary' })
+    const c = this.peer.connect(peerIdForCode(this.code), { reliable: true, serialization: 'binary' })
+    this.pending = c
     this.attach(c)
-    window.setTimeout(() => { if (!this.destroyed && this.conn === c && !c.open) { this.conn = null; try { c.close() } catch {}; this.dial() } }, 12000)
+    window.setTimeout(() => {
+      if (!this.destroyed && this.conn === c && !c.open) {
+        this.conn = null
+        try { c.close() } catch {}
+        if (this.pending === c) this.pending = null
+        if (this.role === 'guest' && !this.destroyed) this.scheduleDial()
+      }
+    }, 12000)
   }
 
   private attach(c: DataConnection) {
+    if (this.role === 'guest' && this.conn && this.conn !== c && this.conn.open) {
+      try { c.close() } catch {}
+      return
+    }
     this.conn = c
+    if (this.pending === c) this.pending = null
     const onOpen = () => {
       this.lastSeen = Date.now()
       this.everConnected = true
       this.retry = 0
+      this.hostFails = 0
+      if (this.hostGrace) { clearTimeout(this.hostGrace); this.hostGrace = null }
       c.send({ t: 'hello', name: deviceName() })
       this.set({ status: 'connected', error: '' })
+      if (this.role === 'guest') rememberGuestPairedCode(this.code)
     }
     if (c.open) onOpen(); else c.on('open', onOpen)
     c.on('data', (m: any) => {
       this.lastSeen = Date.now()
       if (!m || typeof m !== 'object') return
       if (m.t === 'ping') return
-      if (m.t === 'hello') { this.set({ remoteName: m.name }); return }
-      if (m.t === 'bye') { this.set({ status: this.role === 'host' ? 'waiting' : 'closed' }); try { c.close() } catch {}; return }
+      if (m.t === 'hello') {
+        this.set({ remoteName: m.name })
+        if (this.role === 'guest') rememberLastLaptop(m.name, this.code)
+        if (this.role === 'host' && c.open) {
+          try { c.send({ t: 'hello', name: deviceName() }) } catch {}
+        }
+        return
+      }
+      if (m.t === 'bye') {
+        this.set({ status: this.role === 'host' ? 'waiting' : 'closed' })
+        try { c.close() } catch {}
+        return
+      }
       this.msgHandlers.forEach((h) => h(m))
     })
     c.on('close', () => this.lost(c))
@@ -146,8 +269,23 @@ export class Link {
     if (this.conn !== c || this.destroyed) return
     if (this.status === 'closed') return
     this.conn = null
-    if (this.role === 'host') this.set({ status: 'waiting' })
-    else { this.set({ status: 'reconnecting' }); window.setTimeout(() => this.dial(), 1000) }
+    if (this.role === 'host') {
+      if (this.everConnected) {
+        this.set({ status: 'reconnecting' })
+        if (!this.hostGrace) {
+          this.hostGrace = window.setTimeout(() => {
+            this.hostGrace = null
+            if (!this.conn?.open && !this.destroyed) this.set({ status: 'waiting' })
+          }, 15000)
+        }
+      } else {
+        this.set({ status: 'waiting' })
+      }
+    }
+    else {
+      this.set({ status: 'reconnecting' })
+      this.scheduleDial()
+    }
   }
 
   private tick() {
@@ -155,8 +293,8 @@ export class Link {
     if (c?.open) {
       try { c.send({ t: 'ping' }) } catch {}
       if (Date.now() - this.lastSeen > 15000) { try { c.close() } catch {}; this.lost(c) }
-    } else if (this.role === 'guest' && this.status === 'reconnecting' && this.peer && !this.peer.disconnected) {
-      this.dial()
+    } else if (this.role === 'guest' && (this.status === 'reconnecting' || this.status === 'connecting') && this.peer && !this.peer.disconnected) {
+      if (!this.dialWait) this.scheduleDial()
     }
   }
 
@@ -181,6 +319,8 @@ export class Link {
   destroy() {
     this.destroyed = true
     this.timers.forEach(clearInterval)
+    if (this.dialWait) clearTimeout(this.dialWait)
+    this.closePending()
     try { this.conn?.send({ t: 'bye' }) } catch {}
     this.peer?.destroy()
   }
