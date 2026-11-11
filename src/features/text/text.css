@@ -181,6 +181,13 @@
 }
 .text-round svg { width: 18px; height: 18px; }
 
+.phone-page:has(.text-phone) > .top {
+  position: sticky;
+  top: 0;
+  z-index: 45;
+  background: var(--bg);
+  padding-bottom: 10px;
+}
 .text-sr {
   position: absolute;
   width: 1px;
