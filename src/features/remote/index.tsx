@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { CoreCtx, onMessage, registerFeature, useMessage } from '../../core/bus'
 import { Icon } from '../../core/icons'
 import { CopyBtn } from '../../core/ui'
+import { helperProbeTimeout, settleHelperProbe, type HelperProbeSocket } from './helperProbe'
 import './remote.css'
 
 const MOVE_GAIN = 1.6
@@ -14,6 +15,7 @@ type Btn = 'left' | 'right'
 type Tab = 'trackpad' | 'clicker' | 'pointer'
 
 const HELPER_PORTS = [47811, 47812, 47813, 47814]
+const HELPER_DOWN_NOTE = "Couldn't reach the helper. Make sure it's running, and click Allow if Chrome asks about local network access, then try again."
 type HelperStatus = 'off' | 'connecting' | 'connected'
 type HelperResult = 'connected' | 'rejected' | 'down' | 'cancelled'
 
@@ -26,6 +28,7 @@ const helper = {
   listeners: new Set<() => void>(),
 }
 let helperJob = 0
+let helperConnects = 0
 
 function emitHelper() {
   helper.listeners.forEach((fn) => fn())
@@ -88,61 +91,41 @@ function printableRun(text: string) {
   }).join('')
 }
 
-function tryHelperPort(port: number, code: string, mine: number): Promise<'connected' | 'rejected' | 'down'> {
-  return new Promise((resolve) => {
-    let ws: WebSocket
-    try { ws = new WebSocket(`ws://127.0.0.1:${port}`) } catch { resolve('down'); return }
-    let settled = false
-    const finish = (result: 'connected' | 'rejected' | 'down') => {
-      if (settled) return
-      settled = true
-      window.clearTimeout(timer)
-      if (result !== 'connected') {
-        ws.onopen = null
-        ws.onmessage = null
-        ws.onerror = null
-        ws.onclose = null
-        try { ws.close() } catch { /* ignore */ }
+function tryHelperPort(port: number, code: string, mine: number, attempt: number, portIndex: number): Promise<'connected' | 'rejected' | 'down'> {
+  let ws: WebSocket
+  try { ws = new WebSocket(`ws://127.0.0.1:${port}`) } catch { return Promise.resolve('down') }
+  return settleHelperProbe({
+    code,
+    mine,
+    currentJob: () => helperJob,
+    timeoutMs: helperProbeTimeout(attempt, portIndex),
+    socket: ws as unknown as HelperProbeSocket,
+    setTimer: (fn, ms) => window.setTimeout(fn, ms),
+    clearTimer: (id) => { window.clearTimeout(id) },
+    onPaired: () => {
+      helper.ws = ws
+      ws.onclose = () => {
+        if (helper.ws !== ws) return
+        helper.ws = null
+        helper.status = 'off'
+        emitHelper()
       }
-      resolve(result)
-    }
-    const timer = window.setTimeout(() => finish('down'), 900)
-    ws.onerror = () => finish('down')
-    ws.onclose = () => finish('down')
-    ws.onopen = () => {
-      if (mine !== helperJob) { finish('down'); return }
-      try { ws.send(JSON.stringify({ t: 'pair', code })) } catch { finish('down') }
-    }
-    ws.onmessage = (ev) => {
-      let msg: { t?: string } = {}
-      try { msg = JSON.parse(String(ev.data)) as { t?: string } } catch { finish('rejected'); return }
-      if (msg.t === 'paired' && mine === helperJob) {
-        helper.ws = ws
-        ws.onerror = null
-        ws.onclose = () => {
-          if (helper.ws !== ws) return
-          helper.ws = null
-          helper.status = 'off'
-          emitHelper()
-        }
-        ws.onmessage = null
-        finish('connected')
-        return
-      }
-      finish(msg.t === 'rejected' ? 'rejected' : 'down')
-    }
+    },
   })
 }
 
 async function connectHelper(code: string): Promise<HelperResult> {
+  const attempt = helperConnects
+  helperConnects += 1
   const mine = ++helperJob
   closeHelperSocket()
   helper.status = 'connecting'
   emitHelper()
   let rejected = false
-  for (const port of HELPER_PORTS) {
+  for (let portIndex = 0; portIndex < HELPER_PORTS.length; portIndex++) {
+    const port = HELPER_PORTS[portIndex]
     if (mine !== helperJob) return 'cancelled'
-    const result = await tryHelperPort(port, code, mine)
+    const result = await tryHelperPort(port, code, mine, attempt, portIndex)
     if (mine !== helperJob) return 'cancelled'
     if (result === 'connected') {
       helper.status = 'connected'
@@ -443,7 +426,7 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
     void connectHelper(code).then((result) => {
       if (result === 'cancelled' || result === 'connected') return
       if (result === 'rejected') setNote('That code was rejected. Check the helper window and try again.')
-      else setNote('Not connected. Start the helper on this computer, then try again.')
+      else setNote(HELPER_DOWN_NOTE)
     })
   }
 

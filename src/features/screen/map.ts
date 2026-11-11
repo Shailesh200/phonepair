@@ -3,7 +3,7 @@
  * Coordinates are normalized on the video content box after object-fit letterboxing,
  * then inverted through the CSS zoom, pan, and rotation around the frame center.
  */
-import { SC_EMPTY_HINT, SC_REASON_EMPTY, SC_REASON_HELPER, SC_REASON_SURFACE, SC_SURFACE_HINT, type ScAction, type ScMsg } from './sc.ts'
+import { SC_EMPTY_HINT, SC_HELPER_HINT, SC_REASON_EMPTY, SC_REASON_HELPER, SC_REASON_SURFACE, SC_SURFACE_HINT, type ScAction, type ScMsg } from './sc.ts'
 
 export const MOVE_INTERVAL_MS = 1000 / 60
 export const TAP_SLOP_PX = 10
@@ -50,9 +50,17 @@ export function viewOnlyDetail(reason: unknown): string {
   if (typeof reason !== 'string') return SC_SURFACE_HINT
   const text = reason.trim()
   if (!text || text === SC_REASON_SURFACE) return SC_SURFACE_HINT
-  if (text === SC_REASON_HELPER) return 'Full laptop is off'
+  if (text === SC_REASON_HELPER) return SC_HELPER_HINT
   if (text === SC_REASON_EMPTY) return SC_EMPTY_HINT
   return text
+}
+
+/** Line under the phone's Control switch. The helper reason is the full hint, with no view-only prefix. */
+export function screenControlNote(controlling: boolean, allowed: boolean, reason: unknown): string {
+  if (controlling) return 'Controlling the primary display'
+  if (allowed) return 'Primary display only'
+  if (typeof reason === 'string' && reason.trim() === SC_REASON_HELPER) return viewOnlyDetail(reason)
+  return `View only · ${viewOnlyDetail(reason)}`
 }
 
 /** Last `sc:avail`. Only a boolean true enables the Control toggle. */
