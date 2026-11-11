@@ -78,7 +78,7 @@ function mediaError(what: 'camera' | 'microphone', e: unknown): string {
     return `No ${what} was found on this device.`
   }
   if (name === 'NotReadableError') return `The ${what} is already in use by another app. Close that app, then try again.`
-  if (!navigator.mediaDevices?.getUserMedia) return `This browser can't open the ${what}. Try the latest Safari or Chrome.`
+  if (name === 'NotSupportedError' || !navigator.mediaDevices?.getUserMedia) return `This browser can't open the ${what}. Try the latest Safari or Chrome.`
   return `The ${what} didn't start. Check that it isn't covered or in use, then try again.`
 }
 
@@ -115,7 +115,7 @@ function Blocked({ text, onRetry, testid }: { text: string; onRetry: () => void;
 async function openCapture(kind: Kind, facing: Facing): Promise<MediaStream> {
   if (!window.isSecureContext) throw Object.assign(new Error('insecure'), { name: 'SecurityError' })
   const md = navigator.mediaDevices
-  if (!md?.getUserMedia) throw Object.assign(new Error('unsupported'), { name: 'SecurityError' })
+  if (!md?.getUserMedia) throw new DOMException('unsupported', 'NotSupportedError')
   if (kind === 'mic') {
     try {
       return await md.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false })
@@ -171,17 +171,21 @@ function Capture({ ctx, kind }: { ctx: CoreCtx; kind: Kind }) {
     const which = face ?? facingRef.current
     if (face) facingRef.current = face
     const my = ++seq.current
+    const prevCall = callRef.current
+    const prevStream = streamRef.current
+    callRef.current = null
+    streamRef.current = null
+    try { prevCall?.close() } catch { /* ignore */ }
+    prevStream?.getTracks().forEach((t) => t.stop())
+    if (prevCall || prevStream) ctxRef.current.send({ t: 'cam:stop', kind })
     setErr('')
+    setStream(null)
+    setLive(false)
+    setMuted(false)
     setBusy(true)
     try {
       const s = await openCapture(kind, which)
       if (my !== seq.current) { s.getTracks().forEach((t) => t.stop()); return }
-      const prevCall = callRef.current
-      const prevStream = streamRef.current
-      callRef.current = null
-      streamRef.current = null
-      try { prevCall?.close() } catch { /* ignore */ }
-      prevStream?.getTracks().forEach((t) => t.stop())
       const call = ctxRef.current.call(s, kind)
       if (my !== seq.current) { try { call.close() } catch { /* ignore */ }; s.getTracks().forEach((t) => t.stop()); return }
       call.on('close', () => { if (callRef.current === call) release(false, true) })
@@ -663,10 +667,16 @@ registerFeature({
   id: 'camera', title: 'Camera', icon: 'camera', order: 50, laptopColumn: 'right',
   PhonePage: ({ ctx }) => <Capture ctx={ctx} kind="camera" />,
   LaptopPanel: CameraPanel,
-  init: () => {
+  init: (ctx) => {
     const offC = onCall('camera', (call) => acceptCall('camera', call))
     const offM = onMessage('cam:stop', onStop)
-    return () => { offC(); offM(); dropIncoming('camera') }
+    const offS = ctx.link.subscribe(() => {
+      if (ctx.role === 'host' && ctx.link.status !== 'connected') {
+        dropIncoming('camera')
+        dropIncoming('mic')
+      }
+    })
+    return () => { offC(); offM(); offS(); dropIncoming('camera') }
   },
 })
 
