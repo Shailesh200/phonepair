@@ -1,4 +1,13 @@
+import {
+  forceSignalWatchdogDelayMs,
+  mayForceReplaceSignalSocket,
+  type ForceSignalPeerStateExt,
+} from './forceSignalPeerState.ts'
+
 export const FORCE_SIGNAL_OPEN_WATCHDOG_MS = 3000
+export const FORCE_SIGNAL_CONNECTING_GRACE_MS = 10_000
+export const FORCE_SIGNAL_DROP_HOOK_FAST_PHASE_MS = 2 * 60_000
+export const FORCE_SIGNAL_DROP_HOOK_CAP_MS = 5000
 export const FORCE_SIGNAL_RECLAIM_MIN_MS = 75_000
 export const FORCE_SIGNAL_VERIFY_CADENCE_MS = 12_000
 export const FORCE_SIGNAL_VERIFY_SLOW_CADENCE_MS = 60_000
@@ -11,6 +20,8 @@ export type ForceSignalPeerLike = {
   open: boolean
   disconnect: () => void
   reconnect: () => void
+  signalReadyState?: () => number | null
+  signalConnectStartedAt?: () => number | null
 }
 
 export function forceSignalReconnect(peer: ForceSignalPeerLike): boolean {
@@ -30,6 +41,21 @@ export function forceSignalReconnectBackoffMs(attempt: number): number {
   if (attempt === 3) return 4000
   if (attempt === 4) return 8000
   return 10_000
+}
+
+/** Drop-hook / post-outage retries: 1s, 2s, 4s, 5s, 5s, … for 2m, then 10s. */
+export function forceSignalDropHookBackoffMs(
+  attempt: number,
+  dropStartedAt: number | null,
+  now: number,
+): number {
+  if (dropStartedAt != null && now - dropStartedAt >= FORCE_SIGNAL_DROP_HOOK_FAST_PHASE_MS) {
+    return 10_000
+  }
+  if (attempt <= 1) return 1000
+  if (attempt === 2) return 2000
+  if (attempt === 3) return 4000
+  return FORCE_SIGNAL_DROP_HOOK_CAP_MS
 }
 
 export function forceSignalUnverifiedIntervalMs(elapsedSinceDropMs: number): number {
@@ -106,6 +132,10 @@ export class ForceSignalRunner {
     }
   }
 
+  runnerBusy(): boolean {
+    return this.watchdogId != null || this.retryId != null
+  }
+
   isUnverifiedAfterDrop(): boolean {
     return this.unverifiedAfterDrop
   }
@@ -136,7 +166,7 @@ export class ForceSignalRunner {
     this.clearTimers()
   }
 
-  hookOnline(peer: ForceSignalPeerLike, idReclaimCap = false) {
+  hookOnline(peer: ForceSignalPeerStateExt, idReclaimCap = false) {
     if (this.stopped || peer.destroyed) return
     if (this.watchdogId != null) return
     if (this.retryId != null) {
@@ -148,7 +178,7 @@ export class ForceSignalRunner {
     this.runForce(peer, idReclaimCap, 'online')
   }
 
-  hook(peer: ForceSignalPeerLike, idReclaimCap: boolean) {
+  hook(peer: ForceSignalPeerStateExt, idReclaimCap: boolean) {
     if (this.stopped || peer.destroyed) return
     if (this.watchdogId != null || this.retryId != null) return
     const now = this.timers.now()
@@ -160,7 +190,7 @@ export class ForceSignalRunner {
   }
 
   tick(
-    peer: ForceSignalPeerLike,
+    peer: ForceSignalPeerStateExt,
     active: boolean,
     idReclaimCap: boolean,
     peerLooksHealthy: boolean,
@@ -182,6 +212,7 @@ export class ForceSignalRunner {
         forceSignalCadenceDue(this.dropStartedAt, this.lastCadenceAt, now)
         && this.watchdogId == null
         && this.retryId == null
+        && mayForceReplaceSignalSocket(peer, now)
       ) {
         this.lastCadenceAt = now
         this.runForce(peer, idReclaimCap, 'cadence')
@@ -197,26 +228,49 @@ export class ForceSignalRunner {
     }
     if (!signalPeerNeedsForce(peer, peerHealthy)) return
     if (this.watchdogId != null || this.retryId != null) return
+    if (!mayForceReplaceSignalSocket(peer, now)) return
     this.runForce(peer, idReclaimCap, 'tick')
   }
 
-  private runForce(peer: ForceSignalPeerLike, idReclaimCap: boolean, mode: ForceMode) {
+  private hookRetryBackoff(attempt: number, mode: ForceMode, now: number): number {
+    if (this.dropStartedAt != null && mode !== 'cadence') {
+      return forceSignalDropHookBackoffMs(attempt, this.dropStartedAt, now)
+    }
+    return forceSignalReconnectBackoffMs(attempt)
+  }
+
+  private runForce(peer: ForceSignalPeerStateExt, idReclaimCap: boolean, mode: ForceMode) {
     if (peer.destroyed || this.stopped) return
+    const now = this.timers.now()
+    if (!mayForceReplaceSignalSocket(peer, now)) {
+      this.armWatchdog(peer, idReclaimCap, mode)
+      return
+    }
     this.attempt += 1
     forceSignalReconnect(peer)
     if (mode === 'cadence') return
+    this.armWatchdog(peer, idReclaimCap, mode)
+  }
+
+  private armWatchdog(peer: ForceSignalPeerStateExt, idReclaimCap: boolean, mode: ForceMode) {
     if (this.watchdogId != null) {
       this.timers.clearTimeout(this.watchdogId)
       this.watchdogId = null
     }
     const trustOpen = mode === 'tick'
+    const now = this.timers.now()
+    const watchdogMs = forceSignalWatchdogDelayMs(peer, now, FORCE_SIGNAL_OPEN_WATCHDOG_MS)
     this.watchdogId = this.timers.setTimeout(() => {
       this.watchdogId = null
       if (peer.destroyed || this.stopped) return
       if (trustOpen && peer.open) return
-      const now = this.timers.now()
-      if (idReclaimCap && forceReclaimExpired(this.reclaimStartedAt, now, this.reclaimMinMs)) return
-      const delay = forceSignalReconnectBackoffMs(this.attempt)
+      const t = this.timers.now()
+      if (!mayForceReplaceSignalSocket(peer, t)) {
+        this.armWatchdog(peer, idReclaimCap, mode)
+        return
+      }
+      if (idReclaimCap && forceReclaimExpired(this.reclaimStartedAt, t, this.reclaimMinMs)) return
+      const delay = this.hookRetryBackoff(this.attempt, mode, t)
       if (this.retryId != null) {
         this.timers.clearTimeout(this.retryId)
         this.retryId = null
@@ -225,9 +279,14 @@ export class ForceSignalRunner {
         this.retryId = null
         if (peer.destroyed || this.stopped) return
         if (trustOpen && peer.open) return
-        if (idReclaimCap && forceReclaimExpired(this.reclaimStartedAt, this.timers.now(), this.reclaimMinMs)) return
+        const retryNow = this.timers.now()
+        if (!mayForceReplaceSignalSocket(peer, retryNow)) {
+          this.armWatchdog(peer, idReclaimCap, mode)
+          return
+        }
+        if (idReclaimCap && forceReclaimExpired(this.reclaimStartedAt, retryNow, this.reclaimMinMs)) return
         this.runForce(peer, idReclaimCap, mode)
       }, delay)
-    }, FORCE_SIGNAL_OPEN_WATCHDOG_MS)
+    }, watchdogMs)
   }
 }

@@ -34,7 +34,10 @@ describe('remember link auth', () => {
     const good = mockConn('good-peer')
     good.open = true
     const evil2 = mockConn('evil2-peer')
-    assert.equal(host.canAcceptConnection(evil2 as never, good as never), false)
+    assert.equal(
+      host.canAcceptConnection(evil2 as never, good as never, { mainConnPhoneId: 'phone-a', knownPhoneId: 'phone-b' }),
+      false,
+    )
     host.beginAuth(evil2 as never, good as never, {
       onPromote: () => {},
       onFail: () => {},
@@ -172,6 +175,24 @@ describe('remember link auth', () => {
       cb,
     )
     assert.ok((evil.sent as { t?: string }[]).some((m) => m.t === 'remember:denied'))
+  })
+
+  it('timeout clears pending without listen auth backoff', () => {
+    const host = new RememberHostAuth()
+    const c = mockConn('timeout-peer')
+    let timedOut = false
+    host.beginAuth(c as never, null, {
+      onPromote: () => {},
+      onFail: () => {},
+      onDispatch: () => {},
+      onTimeout: () => { timedOut = true },
+    })
+    host.clear()
+    assert.equal(timedOut, false)
+    assert.equal(host.authPending, null)
+    assert.equal(host.listenAuthBackoffUntil, 0)
+    const c2 = mockConn('after-timeout')
+    assert.equal(host.canAcceptConnection(c2 as never, null), true)
   })
 
   it('backs off new remember dials for 1s after auth failure', () => {

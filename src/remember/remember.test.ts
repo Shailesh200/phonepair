@@ -25,7 +25,12 @@ import { hostAcceptsPhoneForget } from './hostForgetInbound.ts'
 import { guestForgetShouldSync } from './guestForgetSync.ts'
 import { connBlockedByRememberAuth } from './hostAuthSend.ts'
 import { phoneShowsConnecting, phoneShowsPairedHome } from './guestSessionGate.ts'
-import { canOpenRememberListenSocket, listenClaimGiveUp, REMEMBER_LISTEN_MAX_SOCKETS } from './rememberListenClaim.ts'
+import {
+  canOpenRememberListenSocket,
+  listenClaimGiveUp,
+  REMEMBER_LISTEN_MAX_SOCKETS,
+  REMEMBER_LISTEN_UNAVAILABLE_GIVE_UP,
+} from './rememberListenClaim.ts'
 import { routeRememberDeniedToEntry } from './guestDeniedUi.ts'
 import { MSG_REMEMBER_DENIED } from '../features/pairing/errors.ts'
 import { forgetHostPhoneRecord, upsertGuestLaptop, type HostStore } from './records.ts'
@@ -101,13 +106,13 @@ describe('remember guest session ui', () => {
 })
 
 describe('remember listen claim', () => {
-  it('gives up after two unavailable-id failures or three sockets', () => {
+  it('gives up after two unavailable-id failures (burst cap uses unavailable-id only)', () => {
     assert.equal(listenClaimGiveUp(1, 1), false)
     assert.equal(listenClaimGiveUp(2, 1), true)
-    assert.equal(listenClaimGiveUp(0, REMEMBER_LISTEN_MAX_SOCKETS), true)
-    assert.equal(canOpenRememberListenSocket(2, false, [1000, 2000], 3000), true)
-    assert.equal(canOpenRememberListenSocket(3, false, [], 3000), false)
-    assert.equal(canOpenRememberListenSocket(0, true, [], 3000), false)
+    assert.equal(listenClaimGiveUp(REMEMBER_LISTEN_UNAVAILABLE_GIVE_UP, 99), true)
+    assert.equal(canOpenRememberListenSocket(false, [], 3000, false), true)
+    assert.equal(canOpenRememberListenSocket(false, [1000, 2000, 3000], 4000, false), false)
+    assert.equal(canOpenRememberListenSocket(true, [], 3000, false), false)
   })
 })
 

@@ -33,6 +33,14 @@ import {
   shouldForceSignalOnVisibility,
 } from '../features/pairing/forceSignalReconnect'
 import { notifyHostPhoneConnected } from '../features/pairing/hostDualForceRunner'
+import { hostListenStaggerUntil, shouldDeferListenForce } from '../features/pairing/hostSignalStagger'
+import { peerAsForceSignal, trackListenPeerSocketOpen } from '../features/pairing/peerForceAdapter'
+import {
+  ppDebugIncForce,
+  ppDebugIncListenReject,
+  ppDebugIncListenSocketClosedConnecting,
+  ppDebugIncListenSocketOpen,
+} from '../features/pairing/ppDebug'
 import { shouldCallPeerReconnect, shouldHostReconnect } from '../features/pairing/peerReconnect'
 import {
   hostKeepsConnectedStatusOnSignalDrop,
@@ -151,8 +159,11 @@ export class Link {
   private listenBackoffUntil = 0
   private listenSocketsOpened = 0
   private listenUnavailableFailures = 0
+  private listenUnavailableFailureTimes: number[] = []
   private listenSocketOpenTimes: number[] = []
   private listenOwnedBefore = false
+  private listenPeerEverOpen = false
+  private hostListenStaggerUntil: number | null = null
   private listenReclaimStartedAt: number | null = null
   private visibilityListener: (() => void) | null = null
   private networkListener: (() => void) | null = null
@@ -210,6 +221,7 @@ export class Link {
     this.listenBackoffUntil = 0
     this.listenSocketsOpened = 0
     this.listenUnavailableFailures = 0
+    this.listenUnavailableFailureTimes = []
     this.listenSocketOpenTimes = []
     if (hadGaveUp) this.listeners.forEach((l) => l())
   }
@@ -236,7 +248,12 @@ export class Link {
           this.listenDocumentHiddenAt = null
           if (shouldForceSignalOnVisibility(hiddenMs, this.listenSignalUnverified())) {
             const lp = this.listenPeer
-            if (lp && !lp.destroyed) this.ensureListenForceRunner().hook(lp, false)
+            if (lp && !lp.destroyed && this.listenPeerEverOpen) {
+              if (!shouldDeferListenForce(!!this.peer?.open, this.hostListenStaggerUntil, Date.now())) {
+                ppDebugIncForce('listen')
+                this.ensureListenForceRunner().hook(peerAsForceSignal(lp), false)
+              }
+            }
           }
         }
       }
@@ -246,7 +263,17 @@ export class Link {
     if (!this.networkListener) {
       const onOnline = () => {
         const lp = this.listenPeer
-        if (lp && !lp.destroyed) this.ensureListenForceRunner().hookOnline(lp, false)
+        if (!lp || lp.destroyed || !this.listenPeerEverOpen) return
+        const run = () => {
+          if (lp !== this.listenPeer || lp.destroyed) return
+          ppDebugIncForce('listen')
+          this.ensureListenForceRunner().hookOnline(peerAsForceSignal(lp), false)
+        }
+        const deferMs = shouldDeferListenForce(!!this.peer?.open, this.hostListenStaggerUntil, Date.now())
+          ? Math.max(0, (this.hostListenStaggerUntil ?? 0) - Date.now())
+          : 0
+        if (deferMs > 0) window.setTimeout(run, deferMs)
+        else run()
       }
       window.addEventListener('online', onOnline)
       this.networkListener = () => window.removeEventListener('online', onOnline)
@@ -264,8 +291,28 @@ export class Link {
     return this.listenForceRunner
   }
 
+  private markHostDualSignalingDrop() {
+    const now = Date.now()
+    this.ensureListenForceRunner().onSignalingDrop()
+    this.ensureHostSignalRunner().onSignalingDrop()
+    this.hostListenStaggerUntil = hostListenStaggerUntil(now)
+  }
+
+  private rememberAcceptOpts() {
+    return {
+      mainConnPhoneId: this.authenticatedRememberPhoneId,
+      onReject: (reason: Parameters<typeof ppDebugIncListenReject>[0]) => {
+        ppDebugIncListenReject(reason)
+      },
+    }
+  }
+
   private tickListenSignalForce(lp: Peer) {
     if (!hostHasPhones(loadHostStore()) || lp.destroyed) return
+    if (!this.listenPeerEverOpen) return
+    const now = Date.now()
+    const codePeer = this.peer
+    if (shouldDeferListenForce(!!codePeer?.open, this.hostListenStaggerUntil, now)) return
     const unverified = this.listenSignalUnverified()
     const peerLooksHealthy = lp.open && !lp.disconnected && !unverified
     const active = shouldRearmListenPeer({
@@ -274,7 +321,7 @@ export class Link {
       status: this.status,
       listenMissingOrDead: !lp.open,
     })
-    this.ensureListenForceRunner().tick(lp, active, false, peerLooksHealthy, unverified)
+    this.ensureListenForceRunner().tick(peerAsForceSignal(lp), active, false, peerLooksHealthy, unverified)
   }
 
   private rearmRememberListenPeer() {
@@ -294,13 +341,7 @@ export class Link {
       else return
     }
     const lp = this.listenPeer
-    if (lp && !lp.destroyed) {
-      this.ensureListenForceRunner().hook(lp, false)
-      return
-    }
-    if (lp && !lp.destroyed) {
-      try { lp.destroy() } catch {}
-    }
+    if (lp && !lp.destroyed) return
     this.listenPeer = null
     if (Date.now() < this.listenBackoffUntil) return
     void this.bootstrapRememberListen()
@@ -331,7 +372,10 @@ export class Link {
     const onOnline = () => {
       if (shouldHostReconnectOnOnline(this.role, this.destroyed)) {
         const peer = this.peer
-        if (peer && !peer.destroyed) this.ensureHostSignalRunner().hookOnline(peer, false)
+        if (peer && !peer.destroyed) {
+          ppDebugIncForce('code')
+          this.ensureHostSignalRunner().hookOnline(peerAsForceSignal(peer), false)
+        }
       }
       this.onIceNetworkChange()
     }
@@ -345,7 +389,10 @@ export class Link {
         this.documentHiddenAt = null
         if (this.role === 'host' && shouldForceSignalOnVisibility(hiddenMs, this.hostCodeSignalUnverified())) {
           const peer = this.peer
-          if (peer && !peer.destroyed) this.ensureHostSignalRunner().hook(peer, false)
+          if (peer && !peer.destroyed) {
+            ppDebugIncForce('code')
+            this.ensureHostSignalRunner().hook(peerAsForceSignal(peer), false)
+          }
         }
       }
     }
@@ -393,8 +440,9 @@ export class Link {
   private tickHostCodeSignalForce(peer: Peer) {
     const unverified = this.hostCodeSignalUnverified()
     const peerLooksHealthy = peer.open && !peer.disconnected && !unverified
+    const wrapped = peerAsForceSignal(peer)
     this.ensureHostSignalRunner().tick(
-      peer,
+      wrapped,
       this.hostCodeSignalForceActive(peer),
       false,
       peerLooksHealthy,
@@ -405,7 +453,8 @@ export class Link {
   private forceHostPeerSignalReconnect() {
     const peer = this.peer
     if (!peer || peer.destroyed || this.destroyed) return
-    this.ensureHostSignalRunner().hook(peer, false)
+    ppDebugIncForce('code')
+    this.ensureHostSignalRunner().hook(peerAsForceSignal(peer), false)
   }
 
   private clearIceGraceTimer() {
@@ -556,6 +605,7 @@ export class Link {
           this.hostUnavailableRetry = 0
         }
         this.ensureHostSignalRunner().onSignalingDrop()
+        this.hostListenStaggerUntil = hostListenStaggerUntil(now)
       }
       const keepHostUi =
         this.role === 'host' && hostKeepsConnectedStatusOnSignalDrop(!!this.conn?.open)
@@ -690,32 +740,34 @@ export class Link {
     const now = Date.now()
     const listenReclaiming = this.listenOwnedBefore && this.listenReclaimStartedAt != null
     if (!listenReclaiming && !canOpenRememberListenSocket(
-      this.listenSocketsOpened,
       this.listenGaveUp,
-      this.listenSocketOpenTimes,
+      this.listenUnavailableFailureTimes,
       now,
+      this.listenOwnedBefore,
     )) {
       this.markListenGaveUp()
       this.listenBootstrapInFlight = false
       return
     }
     this.listenSocketsOpened++
-    this.listenSocketOpenTimes.push(now)
     const id = listenPeerId(store.listenId)
     const peer = new Peer(id, { ...SIGNAL, config: rtc })
     const prev = this.listenPeer
     if (prev && prev !== peer) { try { prev.destroy() } catch {} }
     this.listenPeer = peer
+    this.listenPeerEverOpen = false
     this.listenBootstrapInFlight = false
-    peer.on('open', () => {
+    trackListenPeerSocketOpen(peer, () => {
+      this.listenPeerEverOpen = true
       this.listenOwnedBefore = true
       this.listenReclaimStartedAt = null
       this.listenUnavailableFailures = 0
+      ppDebugIncListenSocketOpen()
       this.ensureListenForceRunner().onOpen()
     })
     peer.on('connection', (c) => {
       if (this.role !== 'host' || this.destroyed) { try { c.close() } catch {}; return }
-      if (!this.rememberHostAuth.canAcceptConnection(c, this.conn)) {
+      if (!this.rememberHostAuth.canAcceptConnection(c, this.conn, this.rememberAcceptOpts())) {
         try { c.close() } catch {}
         return
       }
@@ -728,7 +780,7 @@ export class Link {
         const lp = this.listenPeer
         if (!lp || lp !== peer || this.destroyed) return
         this.ensureListenForceRunner().onSignalingDrop()
-        this.ensureListenForceRunner().hook(lp, false)
+        this.hostListenStaggerUntil = hostListenStaggerUntil(Date.now())
       }, 1500)
     })
     peer.on('error', (e: any) => {
@@ -741,6 +793,7 @@ export class Link {
       )
       this.listenRetry++
       this.listenUnavailableFailures++
+      this.listenUnavailableFailureTimes.push(t)
       const delay = listenBackoffForClaim(
         this.listenRetry,
         this.listenOwnedBefore,
@@ -1091,6 +1144,7 @@ export class Link {
 
   private failRememberAuth(c: DataConnection, reason: HostAuthFailReason = 'fail') {
     if (this.role === 'host') {
+      if (c === this.rememberHostAuth.authPending?.conn) this.rememberHostAuth.clear()
       try { c.close() } catch {}
       return
     }
@@ -1119,8 +1173,17 @@ export class Link {
 
   private promoteConnected(c: DataConnection, remoteHint?: string, fromListenPeer = false, rememberPhoneId?: string) {
     if (this.conn?.open && this.conn !== c) {
-      try { c.close() } catch {}
-      return
+      if (
+        fromListenPeer
+        && rememberPhoneId
+        && rememberPhoneId === this.authenticatedRememberPhoneId
+      ) {
+        try { this.conn.close() } catch {}
+        this.dropConn()
+      } else {
+        try { c.close() } catch {}
+        return
+      }
     }
     const fromAuth = this.authPending?.conn === c
     if (!canPromoteDataConn({
@@ -1239,9 +1302,9 @@ export class Link {
   private attachRememberHost(c: DataConnection) {
     if (this.conn && !this.conn.open) this.dropConn()
     const cb = this.hostAuthCallbacks()
-    this.rememberHostAuth.beginAuth(c, this.conn, cb)
+    this.rememberHostAuth.beginAuth(c, this.conn, cb, this.rememberAcceptOpts())
     c.on('data', (m: any) => {
-      void this.rememberHostAuth.handleData(c, m, this.rememberPhones, this.conn, cb)
+      void this.rememberHostAuth.handleData(c, m, this.rememberPhones, this.conn, cb, this.rememberAcceptOpts())
     })
     c.on('close', () => this.lost(c))
     c.on('error', () => this.lost(c))
@@ -1266,11 +1329,8 @@ export class Link {
     }
     if (this.role === 'host') {
       const peer = this.peer
-      if (hostHasPhones(loadHostStore()) && !this.isRememberConnOnListenPeer()) {
-        this.ensureListenForceRunner().onSignalingDrop()
-      }
-      if (this.everConnected && !this.conn?.open) {
-        this.ensureHostSignalRunner().onSignalingDrop()
+      if (this.role === 'host' && hostHasPhones(loadHostStore()) && !this.conn?.open) {
+        this.markHostDualSignalingDrop()
       }
       if (
         peer

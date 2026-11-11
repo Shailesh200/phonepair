@@ -2,6 +2,11 @@ import { verifyPhoneProof, signHostProof } from './proof.ts'
 import { authConnStillPending } from './authStale.ts'
 import { REMEMBER_PROOF_TIMEOUT_MS, type RememberGatePhase } from './gate.ts'
 import { bytesFromB64, bytesToB64, randomBytes } from './ids.ts'
+import {
+  mainConnBlocksRememberAccept,
+  rememberAcceptAllowed,
+  type RememberAcceptReject,
+} from './hostAuthAccept.ts'
 
 export type RememberConn = {
   open: boolean
@@ -35,6 +40,13 @@ export type HostAuthDeps = {
   signHostProof: typeof signHostProof
 }
 
+export type RememberAcceptOpts = {
+  now?: number
+  knownPhoneId?: string
+  mainConnPhoneId?: string | null
+  onReject?: (reason: RememberAcceptReject) => void
+}
+
 const defaultDeps: HostAuthDeps = { verifyPhoneProof, signHostProof }
 
 /** Host listen-peer remember auth; kept out of Link.conn until proof passes. */
@@ -43,6 +55,7 @@ export class RememberHostAuth {
   private timer: ReturnType<typeof setTimeout> | null = null
   private promoted = false
   listenAuthBackoffUntil = 0
+  authPendingStartedAt: number | null = null
 
   private deps: HostAuthDeps
 
@@ -50,19 +63,36 @@ export class RememberHostAuth {
     this.deps = deps
   }
 
-  canAcceptConnection(conn: RememberConn | null, mainConn: RememberConn | null): boolean {
-    if (Date.now() < this.listenAuthBackoffUntil) return false
-    if (mainConn?.open) return false
-    if (this.authPending) return false
+  canAcceptConnection(
+    conn: RememberConn | null,
+    mainConn: RememberConn | null,
+    opts?: RememberAcceptOpts,
+  ): boolean {
+    const now = opts?.now ?? Date.now()
+    const verdict = rememberAcceptAllowed({
+      now,
+      backoffUntil: this.listenAuthBackoffUntil,
+      hasPending: !!this.authPending,
+      pendingStartedAt: this.authPendingStartedAt,
+      mainConnOpen: !!mainConn?.open,
+      knownPhoneId: opts?.knownPhoneId,
+      mainConnPhoneId: opts?.mainConnPhoneId,
+    })
+    if (!verdict.accept) {
+      if (verdict.reject) opts?.onReject?.(verdict.reject)
+      return false
+    }
+    if (verdict.supersedePending) this.clear()
     return true
   }
 
-  beginAuth(conn: RememberConn, mainConn: RememberConn | null, cb: HostAuthCallbacks) {
-    if (!this.canAcceptConnection(conn, mainConn)) {
+  beginAuth(conn: RememberConn, mainConn: RememberConn | null, cb: HostAuthCallbacks, opts?: RememberAcceptOpts) {
+    if (!this.canAcceptConnection(conn, mainConn, opts)) {
       try { conn.close() } catch {}
       return
     }
     this.promoted = false
+    this.authPendingStartedAt = opts?.now ?? Date.now()
     this.authPending = { conn, phase: 'await-hello', nonce: null, phoneNonce: null, phone: null, phoneId: null }
     this.armTimeout(conn, cb)
   }
@@ -70,7 +100,10 @@ export class RememberHostAuth {
   private armTimeout(conn: RememberConn, cb: HostAuthCallbacks) {
     if (this.timer) clearTimeout(this.timer)
     this.timer = setTimeout(() => {
-      if (this.authPending?.conn === conn && !this.promoted) cb.onTimeout(conn)
+      if (this.authPending?.conn === conn && !this.promoted) {
+        this.clear()
+        cb.onTimeout(conn)
+      }
     }, REMEMBER_PROOF_TIMEOUT_MS)
   }
 
@@ -78,6 +111,7 @@ export class RememberHostAuth {
     if (this.timer) clearTimeout(this.timer)
     this.timer = null
     this.authPending = null
+    this.authPendingStartedAt = null
     this.promoted = false
   }
 
@@ -104,6 +138,7 @@ export class RememberHostAuth {
     phones: Map<string, RememberPhoneRecord> | null,
     mainConn: RememberConn | null,
     cb: HostAuthCallbacks,
+    opts?: RememberAcceptOpts,
   ) {
     if (conn === mainConn) {
       cb.onDispatch(conn, m)
@@ -116,6 +151,13 @@ export class RememberHostAuth {
       const phoneId = String(msg.phoneId ?? '')
       const rec = phones?.get(phoneId)
       if (!rec || typeof msg.phoneNonce !== 'string' || !msg.phoneNonce) {
+        this.failDenied(conn, cb)
+        return
+      }
+      if (
+        mainConnBlocksRememberAccept(!!mainConn?.open, phoneId, opts?.mainConnPhoneId)
+      ) {
+        opts?.onReject?.('mainConnOtherPhone')
         this.failDenied(conn, cb)
         return
       }
@@ -153,6 +195,7 @@ export class RememberHostAuth {
       try { conn.send({ t: 'remember:ok', hostProof: bytesToB64(hostProof) }) } catch {}
       cb.onPromote(conn, name, pending.phoneId)
       this.authPending = null
+      this.authPendingStartedAt = null
     }
   }
 }

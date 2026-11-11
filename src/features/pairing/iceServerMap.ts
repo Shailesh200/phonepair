@@ -9,6 +9,10 @@ export function iceServersFromTurnApi(iceServers: RTCIceServer[] | undefined): R
   })
 }
 
+export function iceServersHaveTurn(servers: RTCIceServer[]): boolean {
+  return allIceUrls(servers).some((u) => /^turns?:/i.test(u))
+}
+
 export function allIceUrls(servers: RTCIceServer[]): string[] {
   const out: string[] = []
   for (const s of servers) {
