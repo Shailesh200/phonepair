@@ -12,10 +12,10 @@ src/
   core/link.ts           PeerJS connection (pairing, reconnect, heartbeat, hello/bye/ping)
   core/bus.ts            message bus + feature registry + tiny stores   <-- your API
   core/ui.tsx            Logo, CopyBtn, Linkified, Video, StatusPill
-  core/icons.tsx         <Icon n="..."/> (upload share link clip pointer camera mic scan screen x back next send copy file image keyboard full zoom rotate download slides flip lock)
+  core/icons.tsx         <Icon n="..."/> (upload share clip pointer camera mic scan screen x back next send copy file image keyboard full zoom rotate download slides flip lock)
   core/util.ts           fmtSize, ago, uid, copyText, linkify, download
   features/index.ts      one import line per feature
-  features/files|text|clipboard/   working baseline features (owned by those lanes; improve freely)
+  features/files|clipboard/   working baseline features (owned by those lanes; improve freely)
 api/turn.js              GET /api/turn → { iceServers, ttl }
 ```
 
@@ -41,10 +41,10 @@ registerFeature({
   init: (ctx) => onMessage('remote:click', (m, ctx) => { /* runs on the receiving device */ }),     // return cleanup
 })
 ```
-Existing orders: files 10, text 20, clipboard 30. Suggested: remote 40, camera 50, mic 55, scan 60, screen 70.
+Existing orders: files 10, clipboard 30. Suggested: remote 40, camera 50, mic 55, scan 60, screen 70.
 
 ## Bus API (`src/core/bus.ts`)
-- `ctx.send({ t: 'area:thing', ...payload })` — send to the other device. Payload can contain `Uint8Array`/`ArrayBuffer` (PeerJS binary serialization). **Prefix types with your area** (`text:`, `file:`, `clip:`, `remote:`, `cam:`, `screen:`). Reserved by core: `hello`, `bye`, `ping`.
+- `ctx.send({ t: 'area:thing', ...payload })` — send to the other device. Payload can contain `Uint8Array`/`ArrayBuffer` (PeerJS binary serialization). **Prefix types with your area** (`file:`, `clip:`, `remote:`, `cam:`, `screen:`). Reserved by core: `hello`, `bye`, `ping`.
 - `onMessage(type, (msg, ctx) => …)` → unsubscribe. Register in `init` so it works even when your page isn't open. `onMessage('*', …)` sees everything.
 - `useMessage(type, handler, deps)` — same, tied to a component's lifetime.
 - `createStore(initial)` → `{ get, set, use, subscribe }` module-level state.
@@ -61,4 +61,4 @@ Existing orders: files 10, text 20, clipboard 30. Suggested: remote 40, camera 5
 - Tested from the box (Nov 11 23:25 IST): relay-only data channel works over TURN/UDP and TURN/TCP — no extra Hetzner cloud firewall ports needed.
 
 ## Tested locally (Playwright, desktop + Pixel 7 emulation, real signal server)
-Pair by code; text both ways; 3.5 MB laptop→phone and 1.2 MB phone→laptop files with matching SHA-256; clipboard both ways; phone reload and laptop reload both auto-reconnect.
+Pair by code; 3.5 MB laptop→phone and 1.2 MB phone→laptop files with matching SHA-256; clipboard both ways; phone reload and laptop reload both auto-reconnect.

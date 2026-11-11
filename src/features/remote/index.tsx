@@ -1,9 +1,10 @@
 // Phone as a remote for this tab. Messages: remote:move, remote:click, remote:scroll,
 // remote:nav, remote:type, remote:key, remote:pointer.
 import React, { useEffect, useRef, useState } from 'react'
-import { CoreCtx, onMessage, registerFeature } from '../../core/bus'
+import { CoreCtx, onMessage, registerFeature, useMessage } from '../../core/bus'
 import { Icon } from '../../core/icons'
 import { CopyBtn } from '../../core/ui'
+import { helperProbeTimeout, settleHelperProbe, type HelperProbeSocket } from './helperProbe'
 import './remote.css'
 
 const MOVE_GAIN = 1.6
@@ -13,9 +14,141 @@ const NON_TEXT = new Set(['button', 'submit', 'reset', 'checkbox', 'radio', 'fil
 type Btn = 'left' | 'right'
 type Tab = 'trackpad' | 'clicker' | 'pointer'
 
+const HELPER_PORTS = [47811, 47812, 47813, 47814]
+const HELPER_START_HINT = 'Run the helper on your Mac to get a 6-digit code: in Terminal, open phonepair/helper and run npm start.'
+const HELPER_DOWN_NOTE = "Couldn't reach the helper. Make sure it's running, and click Allow if Chrome asks about local network access, then try again."
+type HelperStatus = 'off' | 'connecting' | 'connected'
+type HelperResult = 'connected' | 'rejected' | 'down' | 'cancelled'
+
 const pos = { x: 0, y: 0, visible: false, laser: false }
 let cursorEl: HTMLDivElement | null = null
 let hideTimer: number | undefined
+const helper = {
+  status: 'off' as HelperStatus,
+  ws: null as WebSocket | null,
+  listeners: new Set<() => void>(),
+}
+let helperJob = 0
+let helperConnects = 0
+
+function emitHelper() {
+  helper.listeners.forEach((fn) => fn())
+}
+
+function useHelper() {
+  const [, bump] = useState(0)
+  useEffect(() => {
+    const fn = () => bump((n) => n + 1)
+    helper.listeners.add(fn)
+    return () => { helper.listeners.delete(fn) }
+  }, [])
+  return helper
+}
+
+function helperReady() {
+  return helper.status === 'connected' && !!helper.ws && helper.ws.readyState === WebSocket.OPEN
+}
+
+function sendHelper(msg: object) {
+  if (!helperReady() || !helper.ws) return false
+  helper.ws.send(JSON.stringify(msg))
+  return true
+}
+
+export function helperConnected() {
+  return helperReady()
+}
+
+export function forwardHelper(msg: object) {
+  return sendHelper(msg)
+}
+
+export function subscribeHelper(listener: () => void) {
+  helper.listeners.add(listener)
+  return () => { helper.listeners.delete(listener) }
+}
+
+function closeHelperSocket() {
+  const ws = helper.ws
+  helper.ws = null
+  if (!ws) return
+  ws.onopen = null
+  ws.onmessage = null
+  ws.onerror = null
+  ws.onclose = null
+  try { ws.close() } catch { /* already closed */ }
+}
+
+function suppressOverlay() {
+  pos.laser = false
+  pos.visible = false
+  paint()
+}
+
+function printableRun(text: string) {
+  return [...text].filter((ch) => {
+    const cp = ch.codePointAt(0) ?? 0
+    return cp >= 32 && cp !== 127
+  }).join('')
+}
+
+function tryHelperPort(port: number, code: string, mine: number, attempt: number, portIndex: number): Promise<'connected' | 'rejected' | 'down'> {
+  let ws: WebSocket
+  try { ws = new WebSocket(`ws://127.0.0.1:${port}`) } catch { return Promise.resolve('down') }
+  return settleHelperProbe({
+    code,
+    mine,
+    currentJob: () => helperJob,
+    timeoutMs: helperProbeTimeout(attempt, portIndex),
+    socket: ws as unknown as HelperProbeSocket,
+    setTimer: (fn, ms) => window.setTimeout(fn, ms),
+    clearTimer: (id) => { window.clearTimeout(id) },
+    onPaired: () => {
+      helper.ws = ws
+      ws.onclose = () => {
+        if (helper.ws !== ws) return
+        helper.ws = null
+        helper.status = 'off'
+        emitHelper()
+      }
+    },
+  })
+}
+
+async function connectHelper(code: string): Promise<HelperResult> {
+  const attempt = helperConnects
+  helperConnects += 1
+  const mine = ++helperJob
+  closeHelperSocket()
+  helper.status = 'connecting'
+  emitHelper()
+  let rejected = false
+  for (let portIndex = 0; portIndex < HELPER_PORTS.length; portIndex++) {
+    const port = HELPER_PORTS[portIndex]
+    if (mine !== helperJob) return 'cancelled'
+    const result = await tryHelperPort(port, code, mine, attempt, portIndex)
+    if (mine !== helperJob) return 'cancelled'
+    if (result === 'connected') {
+      helper.status = 'connected'
+      suppressOverlay()
+      emitHelper()
+      return 'connected'
+    }
+    if (result === 'rejected') { rejected = true; break }
+  }
+  if (mine !== helperJob) return 'cancelled'
+  closeHelperSocket()
+  helper.status = 'off'
+  emitHelper()
+  return rejected ? 'rejected' : 'down'
+}
+
+function disconnectHelper() {
+  helperJob += 1
+  closeHelperSocket()
+  helper.status = 'off'
+  emitHelper()
+}
 
 function num(v: unknown) {
   const n = typeof v === 'number' ? v : Number(v)
@@ -270,10 +403,51 @@ function LaptopOverlay() {
 
 function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
   const [text, setText] = useState('')
+  const link = useHelper()
+  const [code, setCode] = useState('')
+  const [note, setNote] = useState('')
+  const armed = link.status === 'connected' || link.status === 'connecting'
+
+  useEffect(() => {
+    if (ctx.link.status !== 'connected') return
+    ctx.send({ t: 'remote:helper', on: link.status === 'connected' })
+  }, [ctx, ctx.link.status, link.status])
+
+  const toggle = () => {
+    if (armed) {
+      setNote('')
+      disconnectHelper()
+      return
+    }
+    if (!/^\d{6}$/.test(code)) {
+      setNote('Enter the 6-digit code printed by the helper.')
+      return
+    }
+    setNote('')
+    void connectHelper(code).then((result) => {
+      if (result === 'cancelled' || result === 'connected') return
+      if (result === 'rejected') setNote('That code was rejected. Check the helper window and try again.')
+      else setNote(HELPER_DOWN_NOTE)
+    })
+  }
+
+  const statusText = link.status === 'connected' ? 'Connected' : link.status === 'connecting' ? 'Connecting…' : 'Not connected'
   return <div className="card pad" data-testid="remote-panel">
     <h3 className="h-row"><span><Icon n="keyboard" /> Phone keyboard</span>{text ? <CopyBtn text={text} ctx={ctx} label="Copy" /> : null}</h3>
     <textarea data-testid="remote-text" className="clip" rows={2} onChange={(e) => setText(e.target.value)} placeholder="Open Remote on your phone and type. Text lands here, or in the field the pointer focuses." />
-    <p className="mut small">Pointer, clicks, scroll, and keys from your phone stay inside this tab.</p>
+    <div className="full-laptop" data-testid="full-laptop">
+      <div className="full-laptop-row">
+        <div>
+          <b>Full laptop</b>
+          <p className={'mut small helper-status' + (link.status === 'connected' ? ' on' : '')} data-testid="helper-status" aria-live="polite">{statusText}</p>
+        </div>
+        <button type="button" className={'switch' + (armed ? ' on' : '')} role="switch" aria-checked={armed} aria-label="Full laptop" data-testid="full-laptop-toggle" onClick={toggle}><span /></button>
+      </div>
+      {link.status !== 'connected' && <p className="mut small" data-testid="helper-start-hint">{HELPER_START_HINT}</p>}
+      {link.status !== 'connected' && <input className="helper-code" data-testid="helper-code" inputMode="numeric" autoComplete="off" spellCheck={false} maxLength={6} placeholder="6-digit code" aria-label="Helper code" value={code} onChange={(e) => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setNote('') }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); toggle() } }} />}
+      {note ? <p className="err">{note}</p> : null}
+    </div>
+    <p className="mut small">{link.status === 'connected' ? 'Your phone controls the whole laptop. Turn Full laptop off to keep control inside this tab.' : 'Pointer, clicks, scroll, and keys from your phone stay inside this tab.'}</p>
   </div>
 }
 
@@ -292,10 +466,15 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
   const stripAcc = useRef(0)
   const stripRaf = useRef(0)
   const linked = ctx.link.remoteName || 'Connecting…'
+  const [fullLaptop, setFullLaptop] = useState(false)
+  useMessage('remote:helper', (m) => { if (typeof m.on === 'boolean') setFullLaptop(m.on) })
 
   useEffect(() => {
     if (ctx.link.status === 'connected') ctx.send({ t: 'remote:pointer', on: tab === 'pointer' })
   }, [tab, ctx, ctx.link.status])
+  useEffect(() => {
+    if (ctx.link.status === 'connected') ctx.send({ t: 'remote:helper', ask: true })
+  }, [ctx, ctx.link.status])
   useEffect(() => {
     const page = pageRef.current?.closest('.phone-page') as HTMLElement | null
     if (!page) return
@@ -421,6 +600,7 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
   }
 
   return <div className="pg remote" data-remote-name={linked} ref={pageRef}>
+    {fullLaptop ? <span className="tag ok" data-testid="full-laptop-badge">Full laptop</span> : null}
     <div className="seg" role="tablist" aria-label="Remote mode">
       {(['trackpad', 'clicker', 'pointer'] as const).map((t) => <button key={t} type="button" role="tab" aria-selected={tab === t} data-testid={`rtab-${t}`} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t === 'trackpad' ? 'Trackpad' : t === 'clicker' ? 'Clicker' : 'Pointer'}</button>)}
     </div>
@@ -480,28 +660,66 @@ registerFeature({
     const onResize = () => { clampPos(); paint() }
     window.addEventListener('resize', onResize)
     const offs = [
-      onMessage('remote:move', (m) => moveBy(num(m.dx), num(m.dy))),
-      onMessage('remote:click', (m) => clickAt(pos.x, pos.y, m.btn === 'right' ? 'right' : 'left')),
+      onMessage('remote:move', (m) => {
+        const dx = num(m.dx)
+        const dy = num(m.dy)
+        if (sendHelper({ t: 'move', dx: dx * MOVE_GAIN, dy: dy * MOVE_GAIN })) return
+        moveBy(dx, dy)
+      }),
+      onMessage('remote:click', (m) => {
+        const btn = m.btn === 'right' ? 'right' : 'left'
+        if (sendHelper({ t: 'click', btn })) return
+        clickAt(pos.x, pos.y, btn)
+      }),
       onMessage('remote:scroll', (m) => {
         const dx = Math.max(-500, Math.min(500, num(m.dx)))
         const dy = Math.max(-500, Math.min(500, num(m.dy)))
         if (!dx && !dy) return
+        if (sendHelper({ t: 'scroll', dx: dx * SCROLL_GAIN, dy: dy * SCROLL_GAIN })) return
         clampPos()
         scrollAt(pos.x, pos.y, dx * SCROLL_GAIN, dy * SCROLL_GAIN)
         showCursor()
       }),
-      onMessage('remote:nav', (m) => nav(m.dir)),
-      onMessage('remote:type', (m) => { if (typeof m.text === 'string') typeText(m.text) }),
+      onMessage('remote:nav', (m) => {
+        if (helperReady()) {
+          const prev = m.dir === 'prev'
+          sendHelper({ t: 'key', key: prev ? 'ArrowLeft' : 'ArrowRight' })
+          sendHelper({ t: 'key', key: prev ? 'PageUp' : 'PageDown' })
+          return
+        }
+        nav(m.dir)
+      }),
+      onMessage('remote:type', (m) => {
+        if (typeof m.text !== 'string') return
+        if (helperReady()) {
+          const clean = printableRun(m.text)
+          for (let i = 0; i < clean.length; i += 200) {
+            const text = clean.slice(i, i + 200)
+            if (text) sendHelper({ t: 'type', text })
+          }
+          return
+        }
+        typeText(m.text)
+      }),
       onMessage('remote:key', (m) => {
         const key = String(m.key || '')
+        if (!key) return
+        if (sendHelper({ t: 'key', key })) return
         if (key === 'Enter' || key === 'Backspace') pressSpecial(key)
-        else if (key) pageKey(key)
+        else pageKey(key)
       }),
       onMessage('remote:pointer', (m) => {
+        if (helperReady()) {
+          suppressOverlay()
+          return
+        }
         pos.laser = !!m.on
         pos.visible = true
         paint()
         armHide()
+      }),
+      onMessage('remote:helper', (m) => {
+        if (m.ask) ctx.send({ t: 'remote:helper', on: helperReady() })
       }),
     ]
     return () => {

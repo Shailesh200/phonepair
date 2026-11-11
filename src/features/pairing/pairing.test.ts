@@ -14,7 +14,7 @@ import { buildRtcConfiguration, mergeIceServers } from './peerConfig.ts'
 import { joinPathFor, withRelayQuery } from './relay.ts'
 import { hostUnavailableIdBackoffMs, hostUnavailableIdGiveUp, HOST_UNAVAILABLE_ID_MAX_TRIES } from './hostClaim.ts'
 import { redialDelayMs } from './reconnect.ts'
-import { PEER_RECONNECT_MIN_MS, shouldCallPeerReconnect } from './peerReconnect.ts'
+import { PEER_RECONNECT_MIN_MS, shouldCallPeerReconnect, shouldHostReconnect } from './peerReconnect.ts'
 import { linkTeardownSendsBye } from './teardown.ts'
 import { phoneHostLabel } from './session.ts'
 import {
@@ -165,6 +165,41 @@ describe('guest peer reconnect', () => {
     assert.equal(shouldCallPeerReconnect({ ...base, peerDestroyed: true, now }), false)
     assert.equal(shouldCallPeerReconnect({ ...base, linkDestroyed: true, now }), false)
     assert.equal(shouldCallPeerReconnect({ ...base, role: 'host', now }), false)
+  })
+})
+
+describe('host signalling reconnect', () => {
+  const host = {
+    role: 'host' as const,
+    linkDestroyed: false,
+    samePeer: true,
+    disconnected: true,
+    peerDestroyed: false,
+  }
+
+  it('reconnects a disconnected host peer', () => {
+    assert.equal(shouldHostReconnect(host), true)
+  })
+
+  it('does not reconnect when destroyed or the peer is stale', () => {
+    assert.equal(shouldHostReconnect({ ...host, linkDestroyed: true }), false)
+    assert.equal(shouldHostReconnect({ ...host, peerDestroyed: true }), false)
+    assert.equal(shouldHostReconnect({ ...host, samePeer: false }), false)
+  })
+
+  it('leaves the guest reconnect path unchanged', () => {
+    const now = 50_000
+    const guest = {
+      role: 'guest' as const,
+      disconnected: true,
+      peerDestroyed: false,
+      linkDestroyed: false,
+      lastPeerReconnectAt: 0,
+      now,
+    }
+    assert.equal(shouldHostReconnect({ ...host, role: 'guest' }), false)
+    assert.equal(shouldCallPeerReconnect(guest), true)
+    assert.equal(shouldCallPeerReconnect({ ...guest, role: 'host' }), false)
   })
 })
 

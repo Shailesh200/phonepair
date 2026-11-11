@@ -4,7 +4,7 @@
  * Every feature lives in src/features/<area>/ and calls registerFeature() once
  * (imported from src/features/index.ts). Features talk to the other device only
  * through this bus: send({ t: 'myarea:thing', ... }) and onMessage('myarea:thing', fn).
- * Use a prefix per area for message types ('text:', 'file:', 'clip:', 'remote:', 'cam:', 'screen:').
+ * Use a prefix per area for message types ('file:', 'clip:', 'remote:', 'cam:', 'screen:').
  */
 import { useEffect, useSyncExternalStore } from 'react'
 import type { MediaConnection } from 'peerjs'
@@ -27,7 +27,7 @@ export type CoreCtx = {
 }
 
 export type Feature = {
-  id: string // 'text', 'files', ...
+  id: string // 'files', 'clipboard', ...
   title: string // tile + page title
   icon: string // icon name from core/icons.tsx
   order?: number // lower = earlier (tiles + panels)

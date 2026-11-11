@@ -104,6 +104,79 @@
   letter-spacing: -0.01em;
 }
 
+.pp-control {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pp-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 14px 6px 6px;
+  border-radius: 999px;
+  background: var(--tile);
+  border: 1px solid var(--line);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text);
+}
+.pp-switch .pp-knob {
+  width: 44px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--line-strong);
+  position: relative;
+  flex: none;
+}
+.pp-switch .pp-knob i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--tile);
+  box-shadow: 0 1px 2px rgba(42, 28, 22, 0.18);
+  transition: transform 160ms ease;
+}
+.pp-switch.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+.pp-switch.on .pp-knob { background: rgba(246, 240, 230, 0.28); }
+.pp-switch.on .pp-knob i { transform: translateX(16px); background: var(--accent-ink); }
+.pp-switch:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.pp-kb-btn {
+  margin-left: auto;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-weight: 700;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+.pp-kb-btn svg { width: 18px; height: 18px; color: var(--accent); }
+.pp-control-note {
+  margin-top: 8px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.pp-kb { margin-top: 10px; }
+
 .pp-tools {
   margin-top: 18px;
   display: grid;
@@ -210,3 +283,35 @@
   .pp-screen-live { padding-left: 16px; padding-right: 16px; }
   .pp-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+.pp-control-banner {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  padding: 12px 12px 12px 16px;
+  border-radius: 16px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-ring);
+  color: var(--danger);
+  box-shadow: 0 16px 40px rgba(162, 59, 42, 0.12);
+}
+.pp-control-banner p { margin: 0; display: flex; flex-direction: column; gap: 2px; max-width: 440px; }
+.pp-control-banner strong { font-size: 15px; font-weight: 800; letter-spacing: -0.01em; }
+.pp-control-banner small { font-size: 12px; font-weight: 600; color: var(--danger); line-height: 1.35; }
+.pp-control-banner button {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: var(--danger);
+  color: var(--accent-ink);
+  font-weight: 800;
+  flex: none;
+}
+.pp-control-banner button:focus-visible { outline: 2px solid var(--danger); outline-offset: 2px; }
