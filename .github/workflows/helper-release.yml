@@ -32,22 +32,18 @@ jobs:
         id: sign
         env:
           CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_API_KEY_BODY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           set -euo pipefail
-          if [ -n "${CSC_LINK_SECRET}" ] && [ -n "${CSC_KEY_PASSWORD}" ] && [ -n "${APPLE_API_KEY_BODY}" ] && [ -n "${APPLE_API_KEY_ID}" ] && [ -n "${APPLE_API_ISSUER}" ]; then
+          if [ -n "${CSC_LINK_SECRET}" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "Apple signing secrets are present. The Mac build will be signed and notarized."
+            echo "CSC_LINK is set. The Mac build will be signed and notarized."
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "Apple signing secrets are incomplete. Building unsigned with ad-hoc identity (CSC_IDENTITY_AUTO_DISCOVERY=false)."
+            echo "CSC_LINK is empty. Building unsigned with ad-hoc identity (CSC_IDENTITY_AUTO_DISCOVERY=false)."
           fi
 
       - name: Prepare Apple signing credentials
-        if: steps.sign.outputs.enabled == 'true' && github.ref != 'refs/heads/feat/helper-app'
+        if: steps.sign.outputs.enabled == 'true'
         env:
           CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -86,7 +82,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Build signed macOS artifacts
-        if: steps.sign.outputs.enabled == 'true' && github.ref != 'refs/heads/feat/helper-app'
+        if: steps.sign.outputs.enabled == 'true'
         timeout-minutes: 90
         working-directory: desktop
         run: npx electron-builder --mac --publish never
@@ -98,7 +94,7 @@ jobs:
           DEBUG: electron-osx-sign*,electron-notarize*
 
       - name: Build unsigned macOS artifacts
-        if: steps.sign.outputs.enabled != 'true' || github.ref == 'refs/heads/feat/helper-app'
+        if: steps.sign.outputs.enabled != 'true'
         timeout-minutes: 90
         working-directory: desktop
         run: |
@@ -106,7 +102,43 @@ jobs:
           export CSC_IDENTITY_AUTO_DISCOVERY=false
           npx electron-builder --mac --publish never -c.mac.identity=- -c.mac.notarize=false -c.dmg.sign=false
 
-      - name: Show macOS code signature
+      - name: Notarize and staple the DMG
+        if: steps.sign.outputs.enabled == 'true'
+        timeout-minutes: 60
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          dmg="$(find desktop/release -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          if [ -z "${dmg}" ]; then
+            echo "No DMG was produced" >&2
+            exit 1
+          fi
+          xcrun notarytool submit "${dmg}" --key "${APPLE_API_KEY}" --key-id "${APPLE_API_KEY_ID}" --issuer "${APPLE_API_ISSUER}" --wait
+          xcrun stapler staple "${dmg}"
+
+      - name: Verify Developer ID signature and notarization
+        if: steps.sign.outputs.enabled == 'true'
+        run: |
+          set -euo pipefail
+          app="$(find desktop/release -type d -name '*.app' -print -quit)"
+          dmg="$(find desktop/release -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          if [ -z "${app}" ] || [ -z "${dmg}" ]; then
+            echo "Missing .app or .dmg" >&2
+            exit 1
+          fi
+          echo "codesign -dv --verbose=2 ${app}"
+          codesign -dv --verbose=2 "${app}"
+          echo "spctl -a -vv -t install ${dmg}"
+          spctl -a -vv -t install "${dmg}"
+          echo "xcrun stapler validate ${dmg}"
+          xcrun stapler validate "${dmg}"
+          echo "xcrun stapler validate ${app}"
+          xcrun stapler validate "${app}"
+
+      - name: Verify ad-hoc signature
+        if: steps.sign.outputs.enabled != 'true'
         run: |
           set -euo pipefail
           app="$(find desktop/release -type d -name '*.app' -print -quit)"
@@ -116,9 +148,7 @@ jobs:
           fi
           echo "codesign -dv --verbose=4 ${app}"
           codesign -dv --verbose=4 "${app}" 2>&1 | tee "$RUNNER_TEMP/codesign.txt"
-          if [ "${{ steps.sign.outputs.enabled }}" != "true" ] || [ "${{ github.ref }}" = "refs/heads/feat/helper-app" ]; then
-            grep -E -q 'Signature=adhoc' "$RUNNER_TEMP/codesign.txt"
-          fi
+          grep -E -q 'Signature=adhoc' "$RUNNER_TEMP/codesign.txt"
 
       - name: Print macOS artifact sizes
         run: find desktop/release -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' \) -exec ls -l {} \;
