@@ -15,7 +15,6 @@ type Btn = 'left' | 'right'
 type Tab = 'trackpad' | 'clicker' | 'pointer'
 
 const HELPER_PORTS = [47811, 47812, 47813, 47814]
-const HELPER_START_HINT = 'Run the helper on your Mac to get a 6-digit code: in Terminal, open phonepair/helper and run npm start.'
 const HELPER_DOWN_NOTE = "Couldn't reach the helper. Make sure it's running, and click Allow if Chrome asks about local network access, then try again."
 type HelperStatus = 'off' | 'connecting' | 'connected'
 type HelperResult = 'connected' | 'rejected' | 'down' | 'cancelled'
@@ -443,11 +442,20 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
         </div>
         <button type="button" className={'switch' + (armed ? ' on' : '')} role="switch" aria-checked={armed} aria-label="Full laptop" data-testid="full-laptop-toggle" onClick={toggle}><span /></button>
       </div>
-      {link.status !== 'connected' && <p className="mut small" data-testid="helper-start-hint">{HELPER_START_HINT}</p>}
-      {link.status !== 'connected' && <input className="helper-code" data-testid="helper-code" inputMode="numeric" autoComplete="off" spellCheck={false} maxLength={6} placeholder="6-digit code" aria-label="Helper code" value={code} onChange={(e) => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setNote('') }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); toggle() } }} />}
+      {link.status !== 'connected' && <>
+        <p className="mut small" data-testid="helper-hint">Download the PhonePair Helper, open it, and type the 6-digit code it shows.</p>
+        <p className="helper-downloads">
+          <a className="linkbtn sm" href="https://github.com/Shailesh200/phonepair/releases/latest" target="_blank" rel="noreferrer" data-testid="download-mac">Download for Mac</a>
+          <a className="linkbtn sm" href="https://github.com/Shailesh200/phonepair/releases/latest" target="_blank" rel="noreferrer" data-testid="download-win">Download for Windows</a>
+        </p>
+        <p className="mut small" data-testid="mac-open-steps">{'Open the DMG, drag PhonePair Helper to Applications, and open it. Allow Accessibility when asked so Control works.'}</p>
+        <p className="mut small" data-testid="win-open-steps">{'If SmartScreen appears, click More info, then Run anyway.'}</p>
+        <input className="helper-code" data-testid="helper-code" inputMode="numeric" autoComplete="off" spellCheck={false} maxLength={6} placeholder="6-digit code" aria-label="Helper code" value={code} onChange={(e) => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setNote('') }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); toggle() } }} />
+      </>}
       {note ? <p className="err">{note}</p> : null}
     </div>
-    <p className="mut small">{link.status === 'connected' ? 'Your phone controls the whole laptop. Turn Full laptop off to keep control inside this tab.' : 'Pointer, clicks, scroll, and keys from your phone stay inside this tab.'}</p>
+    <p className="mut small helper-dev-note" data-testid="helper-dev-note">or run from source: <code>cd helper && npm start</code></p>
+    {link.status === 'connected' ? <p className="mut small">Your phone controls the whole laptop. Turn Full laptop off to keep control inside this tab.</p> : null}
   </div>
 }
 
