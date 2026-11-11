@@ -1,0 +1,108 @@
+/* Phone remote page. Selectors stay stronger than the shell stylesheet. */
+.pg.remote { gap: 0; padding-top: 16px; }
+
+.pg.remote .seg { background: #EBEDF4; border-radius: 14px; padding: 4px; }
+.pg.remote .seg button { font-weight: 600; font-size: 14px; padding: 10px 0; border-radius: 10px; }
+.pg.remote .seg button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .08); }
+
+.pg.remote .pad-area {
+  position: relative;
+  display: block;
+  height: min(390px, calc(100dvh - 420px));
+  min-height: 220px;
+  margin-top: 14px;
+  border-radius: 24px;
+  overflow: hidden;
+  background-color: #fff;
+  background-image: radial-gradient(#DADDEA 1px, transparent 1px), linear-gradient(160deg, #fff, #F1F3FA);
+  background-size: 18px 18px, auto;
+  touch-action: none;
+}
+
+.pg.remote .pad-hint {
+  position: absolute;
+  top: 22px;
+  left: 0;
+  right: 0;
+  padding: 0 52px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--mut);
+  pointer-events: none;
+  z-index: 2;
+}
+.pg.remote .pad-hint svg { width: 22px; height: 22px; margin: 0 auto 6px; color: var(--a3); }
+
+.pg.remote .touch-dot {
+  position: absolute;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(79, 70, 229, .18);
+  box-shadow: 0 0 0 14px rgba(79, 70, 229, .07);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.pg.remote .pad-scroll {
+  position: absolute;
+  right: 10px;
+  top: 40px;
+  bottom: 40px;
+  width: 30px;
+  border-radius: 15px;
+  background: #EEF0F6;
+  color: var(--mut);
+  display: grid;
+  place-items: center;
+  touch-action: none;
+  z-index: 3;
+  cursor: ns-resize;
+}
+.pg.remote .pad-scroll svg { width: 16px; height: 16px; color: var(--mut); }
+.pg.remote .pad-scroll.on { background: #E2E5F0; }
+
+.pg.remote .clicks { margin-top: 10px; }
+.pg.remote .clicks .btn {
+  min-height: 56px;
+  height: 56px;
+  border-radius: 16px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.pg.remote .nav2 { margin-top: 14px; }
+.pg.remote .nav2 .btn {
+  min-height: 78px;
+  height: 78px;
+  border-radius: 20px;
+  font-size: 19px;
+  font-weight: 800;
+  gap: 8px;
+}
+.pg.remote .nav2 .btn svg { width: 22px; height: 22px; }
+.pg.remote .nav2 .btn:not(.soft) { box-shadow: 0 12px 24px -10px rgba(79, 70, 229, .6); }
+.pg.remote .nav2.tall .btn { min-height: 150px; height: auto; font-size: 22px; }
+
+.pg.remote .kb-btn.btn {
+  width: 100%;
+  margin-top: 14px;
+  min-height: 52px;
+  height: 52px;
+  border-radius: 16px;
+  font-size: 15px;
+  font-weight: 700;
+  gap: 10px;
+}
+.pg.remote .kb-btn.btn svg { width: 22px; height: 22px; color: var(--a); }
+.pg.remote .kb-form { margin-top: 10px; }
+
+.pg.remote .clicker-help { margin-top: 14px; }
+
+/* Cursor overlay. Children must not steal elementFromPoint. */
+.ptr, .ptr * { pointer-events: none; }
+.ptr.laser svg { display: none; }
+.ptr:not(.laser) .dot { display: none; }
+.ptr.clicked .dot { animation: clk .3s; }
