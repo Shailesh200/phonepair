@@ -26,7 +26,8 @@ async function main() {
   }
 
   const code = pairingCode()
-  const helper = await startHelper({ code, inject: createNutInjector() })
+  const inject = createNutInjector()
+  const helper = await startHelper({ code, inject })
   console.log(`Listening on ${LOOPBACK}:${helper.port}`)
   console.log(`Pairing code: ${code}`)
   console.log('CONTROL OFF')
@@ -37,7 +38,7 @@ async function main() {
     stopping = true
     await helper.close()
     await Promise.race([
-      releaseModifiers(),
+      Promise.all([inject.release(), releaseModifiers()]),
       new Promise((resolve) => setTimeout(resolve, 400)),
     ])
     process.exit(0)

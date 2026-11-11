@@ -3,6 +3,7 @@
  * Coordinates are normalized on the video content box after object-fit letterboxing,
  * then inverted through the CSS zoom, pan, and rotation around the frame center.
  */
+import { SC_REASON_HELPER, SC_REASON_SURFACE, SC_SURFACE_HINT, type ScAction, type ScMsg } from './sc.ts'
 
 export const MOVE_INTERVAL_MS = 1000 / 60
 export const TAP_SLOP_PX = 10
@@ -12,8 +13,6 @@ export const LONG_PRESS_MS = 500
 export const PINCH_SLOP_PX = 12
 export const MIN_SCALE = 1
 export const MAX_SCALE = 5
-
-const SURFACE_HINT = 'Share your entire screen to control it'
 
 export type Point = { x: number; y: number }
 export type Box = { width: number; height: number }
@@ -48,10 +47,10 @@ export function moveAllowed(now: number, lastSentAt: number | null, intervalMs =
 
 /** Human text under the toggle when control is not allowed. `surface` uses the shared hint. */
 export function viewOnlyDetail(reason: unknown): string {
-  if (typeof reason !== 'string') return SURFACE_HINT
+  if (typeof reason !== 'string') return SC_SURFACE_HINT
   const text = reason.trim()
-  if (!text || text === 'surface') return SURFACE_HINT
-  if (text === 'helper') return 'Full laptop is off'
+  if (!text || text === SC_REASON_SURFACE) return SC_SURFACE_HINT
+  if (text === SC_REASON_HELPER) return 'Full laptop is off'
   return text
 }
 
@@ -110,10 +109,6 @@ export function mapTouchToContent(input: MapTouchInput): Point | null {
   }
 }
 
-export type ScOut =
-  | { t: 'sc'; a: 'move' | 'down' | 'up' | 'click' | 'dbl' | 'right'; x: number; y: number }
-  | { t: 'sc'; a: 'scroll'; dx: number; dy: number }
-
 export type Finger = { id: number; px: number; py: number; nx: number; ny: number }
 
 export type GestureState = {
@@ -141,7 +136,7 @@ export type GestureEvent =
   | { type: 'cancel'; now: number }
 
 export type Effect =
-  | { type: 'send'; msg: ScOut }
+  | { type: 'send'; msg: ScMsg }
   | { type: 'armLong' }
   | { type: 'clearLong' }
   | { type: 'armClick' }
@@ -167,7 +162,7 @@ export function initialGesture(): GestureState {
   }
 }
 
-function point(a: 'move' | 'down' | 'up' | 'click' | 'dbl' | 'right', x: number, y: number): Effect {
+function point(a: ScAction, x: number, y: number): Effect {
   return { type: 'send', msg: { t: 'sc', a, x, y } }
 }
 

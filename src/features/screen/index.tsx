@@ -18,6 +18,9 @@ import {
   type Finger,
   type GestureEvent,
 } from './map'
+import { forwardHelper, helperConnected, subscribeHelper } from '../remote'
+import { availability, helperCommands, readDisplaySurface } from './control'
+import { SC_REASON_HELPER, SC_REASON_SURFACE, SC_SURFACE_HINT, type ScAvailMsg } from './sc'
 import './screen.css'
 
 const sharing = createStore(false)
@@ -25,6 +28,48 @@ const requested = createStore(false)
 const incoming = createStore<MediaStream | null>(null)
 const controlAvail = createStore<{ on: boolean; reason?: string } | null>(null)
 const controlEpoch = createStore(0)
+const controlling = createStore(false)
+const availState = createStore<ScAvailMsg>({ t: 'sc:avail', on: false })
+
+let availKey = ''
+let availSent = false
+let pendingStop = false
+
+function trackSurface(stream: MediaStream | null): string | undefined {
+  const track = stream?.getVideoTracks()[0]
+  if (!track || track.readyState === 'ended') return undefined
+  try { return readDisplaySurface(track.getSettings()) } catch { return undefined }
+}
+
+function currentAvail(): ScAvailMsg {
+  return availability(helperConnected(), trackSurface(outStream), sharing.get() && !!outStream)
+}
+
+function releaseDrag() {
+  forwardHelper({ t: 'btn', btn: 'left', state: 'up' })
+  forwardHelper({ t: 'btn', btn: 'right', state: 'up' })
+}
+
+function endControl(ctx: CoreCtx) {
+  if (!controlling.get()) return
+  controlling.set(false)
+  releaseDrag()
+  if (ctx.link.connected) ctx.send({ t: 'sc:stop' })
+  else pendingStop = true
+}
+
+function publishAvail(ctx: CoreCtx, force = false) {
+  const msg = currentAvail()
+  availState.set(msg)
+  if (!sharing.get() && !availSent) return
+  const key = `${msg.on}:${msg.reason ?? ''}`
+  const changed = key !== availKey || !availSent
+  if (!force && !changed) return
+  availKey = key
+  availSent = true
+  if (changed && !msg.on) endControl(ctx)
+  if (ctx.link.connected) ctx.send(msg)
+}
 
 let outCall: MediaConnection | null = null
 let outStream: MediaStream | null = null
@@ -46,6 +91,7 @@ function stopSharing(ctx: CoreCtx, notify: boolean) {
   stream?.getTracks().forEach((t) => t.stop())
   try { call?.close() } catch { /* already closed */ }
   if (notify) ctx.send({ t: 'screen:stop' })
+  publishAvail(ctx)
 }
 
 async function startSharing(ctx: CoreCtx) {
@@ -65,6 +111,7 @@ async function startSharing(ctx: CoreCtx) {
     }
     sharing.set(true)
     requested.set(false)
+    publishAvail(ctx)
     stream.getVideoTracks()[0]?.addEventListener('ended', () => {
       if (outStream === stream) stopSharing(ctx, true)
     })
@@ -501,9 +548,19 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
   </div>
 }
 
+function ControlBanner({ ctx }: { ctx: CoreCtx }) {
+  const on = controlling.use()
+  if (!on) return null
+  return <div className="pp-control-banner" role="status" aria-live="assertive" data-testid="screen-control-banner">
+    <p><strong>Phone is controlling this laptop</strong><small>Primary display only</small></p>
+    <button type="button" data-testid="screen-control-stop" onClick={() => endControl(ctx)}>Stop</button>
+  </div>
+}
+
 function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
   const on = sharing.use()
   const ask = requested.use()
+  const offer = availState.use()
   return <>
     {ask && !on && <div className="banner pp-screen-banner" data-testid="screen-banner">
       <Icon n="screen" />
@@ -516,6 +573,9 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
       <b>{on ? 'Stop sharing' : 'Share screen'}</b>
       <small>{on ? 'Your phone is viewing' : 'Show this screen on phone'}</small>
     </button>
+    {on && offer.reason === SC_REASON_SURFACE && <p className="mut small" data-testid="screen-surface-hint">{SC_SURFACE_HINT}</p>}
+    {on && offer.reason === SC_REASON_HELPER && <p className="mut small" data-testid="screen-helper-hint">View only until Full laptop is connected. Primary display only.</p>}
+    {on && offer.on && <p className="mut small" data-testid="screen-primary-hint">Primary display only.</p>}
   </>
 }
 
@@ -527,6 +587,7 @@ registerFeature({
   laptopColumn: 'right',
   PhonePage,
   LaptopPanel,
+  LaptopOverlay: ControlBanner,
   init: (ctx) => {
     const offCall = onCall('screen', (call) => {
       call.answer()
@@ -575,13 +636,55 @@ registerFeature({
       requested.set(true)
       c.toast('Your phone wants to view this screen')
     })
-    const unsubLink = ctx.link.subscribe(() => { if (!ctx.link.connected) { stopSharing(ctx, false); clearIncoming() } })
+    const onKey = (e: KeyboardEvent) => {
+      if (ctx.role !== 'host' || e.key !== 'Escape') return
+      endControl(ctx)
+    }
+    window.addEventListener('keydown', onKey)
+    const offHelper = ctx.role === 'host' ? subscribeHelper(() => publishAvail(ctx)) : () => {}
+    const offSc = ctx.role === 'host' ? onMessage('sc', (m, c) => {
+      if (c.role !== 'host') return
+      if (!currentAvail().on) return
+      const cmds = helperCommands(m)
+      if (!cmds.length) return
+      let sent = false
+      for (const cmd of cmds) {
+        if (!forwardHelper(cmd)) break
+        sent = true
+      }
+      if (sent && currentAvail().on) controlling.set(true)
+    }) : () => {}
+    let linkWasUp = ctx.link.connected
+    const unsubLink = ctx.link.subscribe(() => {
+      const up = ctx.link.connected
+      if (!up) {
+        linkWasUp = false
+        if (controlling.get()) pendingStop = true
+        stopSharing(ctx, false)
+        clearIncoming()
+        return
+      }
+      if (!linkWasUp) {
+        linkWasUp = true
+        if (pendingStop) {
+          pendingStop = false
+          ctx.send({ t: 'sc:stop' })
+        }
+        publishAvail(ctx, true)
+      }
+    })
     return () => {
-      offCall(); offStop(); offAvail(); offScStop(); offReq(); unsubLink()
+      offCall(); offStop(); offAvail(); offScStop(); offReq(); offSc(); offHelper(); unsubLink()
+      window.removeEventListener('keydown', onKey)
       stopSharing(ctx, false)
       clearIncoming()
       requested.set(false)
       controlEpoch.set(0)
+      controlling.set(false)
+      availSent = false
+      availKey = ''
+      pendingStop = false
+      availState.set({ t: 'sc:avail', on: false })
     }
   },
 })

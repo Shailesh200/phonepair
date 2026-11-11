@@ -11,8 +11,8 @@ The laptop's PhonePair tab already receives the phone's remote events. While Ful
 - Five wrong codes lock pairing for 60 seconds. Only one client can be paired at a time.
 - The WebSocket origin must be `https://phonepair.vercel.app` or `http://localhost:5173`. Any other origin is rejected. For local development, open the app at `http://localhost:5173`.
 - A Chrome Private Network Access preflight is answered with `Access-Control-Allow-Private-Network: true`.
-- Every message is checked. Mouse and scroll deltas are clamped. Keys must be an arrow, Enter, Escape, Tab, Backspace, Space, Page Up, Page Down, a printable character, or a modifier (`cmd`, `ctrl`, `alt`, `shift`). Anything else is dropped.
-- The helper only injects mouse move, click, scroll, and key events. It does not run a shell or open files.
+- Every message is checked. Mouse and scroll deltas are clamped. Absolute points (`abs`) must be finite and are clamped to 0..1. Button events (`btn`) are left or right, down or up. `dbl` is a double-click. Keys must be an arrow, Enter, Escape, Tab, Backspace, Space, Page Up, Page Down, a printable character, or a modifier (`cmd`, `ctrl`, `alt`, `shift`). Anything else is dropped.
+- The helper only injects mouse move, click, scroll, and key events. It does not run a shell or open files. A button it pressed is released when the socket closes, when that session ends, and if no message arrives for 3 seconds.
 
 ## Install and run on macOS
 
