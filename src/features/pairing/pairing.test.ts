@@ -7,6 +7,10 @@ import { buildRtcConfiguration, mergeIceServers } from './peerConfig.ts'
 import { joinPathFor, withRelayQuery } from './relay.ts'
 import { redialDelayMs } from './reconnect.ts'
 import { phoneHostLabel } from './session.ts'
+import {
+  guestShouldRedialOnPeerOpen,
+  shouldDeferDialUntilPeerOpen,
+} from './dialGuard.ts'
 
 describe('pair code', () => {
   it('normalizes pasted spacing and dashes', () => {
@@ -41,6 +45,25 @@ describe('relay join paths', () => {
     assert.equal(withRelayQuery('/', true), '/?relay=1')
     assert.equal(withRelayQuery('/?as=host', true), '/?as=host&relay=1')
     assert.equal(withRelayQuery('/j/CODE?relay=1', true), '/j/CODE?relay=1')
+  })
+})
+
+describe('dial guard', () => {
+  it('defers dial when the peer socket is disconnected', () => {
+    assert.equal(
+      shouldDeferDialUntilPeerOpen({ hasPeer: true, destroyed: false, disconnected: true }),
+      true,
+    )
+    assert.equal(
+      shouldDeferDialUntilPeerOpen({ hasPeer: true, destroyed: false, disconnected: false }),
+      false,
+    )
+  })
+
+  it('redials guest on peer open while connecting', () => {
+    assert.equal(guestShouldRedialOnPeerOpen('guest', 'connecting', false), true)
+    assert.equal(guestShouldRedialOnPeerOpen('guest', 'connected', true), false)
+    assert.equal(guestShouldRedialOnPeerOpen('host', 'connecting', false), false)
   })
 })
 
