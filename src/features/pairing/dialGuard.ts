@@ -23,3 +23,15 @@ export const GUEST_CONNECTING_WATCHDOG_MS = 15_000
 export function reopenListenerShouldDial(): boolean {
   return false
 }
+
+export const DIAL_OPEN_TIMEOUT_MS = 12_000
+export const DIAL_OPEN_TIMEOUT_RELAY_MS = 25_000
+
+export function dialOpenTimeoutMs(relayOnly: boolean): number {
+  return relayOnly ? DIAL_OPEN_TIMEOUT_RELAY_MS : DIAL_OPEN_TIMEOUT_MS
+}
+
+/** While a guest dial is in flight, suppress spawning another DataConnection. */
+export function guestDialInFlight(inFlightUntil: number, now = Date.now()): boolean {
+  return inFlightUntil > now
+}
