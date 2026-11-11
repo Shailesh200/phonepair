@@ -14,7 +14,7 @@ export function forgetGuestLaptopRecord(store: GuestStore, listenId: string): Gu
   return { laptops: store.laptops.filter((l) => l.listenId !== listenId) }
 }
 
-export function upsertGuestLaptop(store: GuestStore, entry: SavedLaptop): GuestStore {
-  const laptops = [...store.laptops.filter((l) => l.listenId !== entry.listenId), entry]
-  return { laptops }
+/** v1: at most one saved laptop per phone; a new save replaces any prior entry. */
+export function upsertGuestLaptop(_store: GuestStore, entry: SavedLaptop): GuestStore {
+  return { laptops: [entry] }
 }

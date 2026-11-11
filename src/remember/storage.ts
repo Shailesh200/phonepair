@@ -56,6 +56,7 @@ export function saveHostStore(store: HostStore | null) {
 export function loadGuestStore(): GuestStore {
   const laptops = readJson<SavedLaptop[]>(GUEST_LAPTOPS_KEY)
   if (!laptops?.length) return { laptops: [] }
+  if (laptops.length > 1) return { laptops: [laptops[laptops.length - 1]!] }
   return { laptops }
 }
 

@@ -8,7 +8,7 @@ import {
   gateAfterValidProof,
   gateOnAuthFailure,
 } from './gate.ts'
-import { forgetHostPhoneRecord, type HostStore } from './records.ts'
+import { forgetHostPhoneRecord, upsertGuestLaptop, type HostStore } from './records.ts'
 
 describe('remember hmac', () => {
   it('accepts the right key and rejects a wrong key or tampered nonce', async () => {
@@ -31,6 +31,18 @@ describe('remember session gate', () => {
     assert.equal(gateMessageDisposition('await-proof', 'remember:proof'), 'control')
     assert.equal(gateAllowsFeatureData(gateAfterValidProof('await-proof')), true)
     assert.equal(gateAllowsFeatureData(gateOnAuthFailure('await-proof')), false)
+  })
+})
+
+describe('remember guest storage v1', () => {
+  it('keeps at most one saved laptop, replacing any prior entry', () => {
+    const a = { listenId: 'a', phoneId: 'p1', name: 'Laptop A', key: 'ka' }
+    const b = { listenId: 'b', phoneId: 'p1', name: 'Laptop B', key: 'kb' }
+    const first = upsertGuestLaptop({ laptops: [] }, a)
+    assert.equal(first.laptops.length, 1)
+    const second = upsertGuestLaptop(first, b)
+    assert.equal(second.laptops.length, 1)
+    assert.equal(second.laptops[0].listenId, 'b')
   })
 })
 
