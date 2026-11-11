@@ -45,7 +45,29 @@ export function canGuestIceRedial(hasInFlightDial: boolean, dialWait: boolean, d
   return true
 }
 
-/** After a real signal outage, an open DataConnection often keeps a dead RTCPeerConnection — replace it. */
+/** Matches link tick: stale session when no payload/ping for this long. */
+export const DATA_CONN_LAST_SEEN_TIMEOUT_MS = 15_000
+
+export type AbandonOpenDataConnInput = {
+  everConnected: boolean
+  dataConnOpen: boolean
+  iceState: RTCIceConnectionState | null
+  lastSeen: number
+  now: number
+  lastSeenTimeoutMs?: number
+}
+
+/** Only drop an open data channel when ICE is dead or the session is stale — not on signal `disconnected` alone. */
+export function shouldAbandonOpenDataConn(opts: AbandonOpenDataConnInput): boolean {
+  if (!opts.everConnected || !opts.dataConnOpen) return false
+  const ice = opts.iceState
+  if (ice === 'disconnected' || ice === 'failed' || ice === 'closed') return true
+  const timeout = opts.lastSeenTimeoutMs ?? DATA_CONN_LAST_SEEN_TIMEOUT_MS
+  if (opts.lastSeen > 0 && opts.now - opts.lastSeen >= timeout) return true
+  return false
+}
+
+/** @deprecated Use shouldAbandonOpenDataConn */
 export function shouldAbandonDataConnOnSignalDrop(everConnected: boolean, dataConnOpen: boolean): boolean {
   return everConnected && dataConnOpen
 }

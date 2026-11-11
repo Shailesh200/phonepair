@@ -15,6 +15,7 @@ const child = spawn(process.execPath, [
   'src/features/pairing/peerForceAdapter.test.ts',
   'src/features/pairing/forceSignalConnectingGrace.test.ts',
   'src/features/pairing/reconnect.test.ts',
+  'src/features/pairing/ppDebugNoIds.test.ts',
   'src/features/screen/map.test.ts',
   'src/features/screen/control.test.ts',
   'src/features/remote/helperProbe.test.ts',
@@ -23,6 +24,7 @@ const child = spawn(process.execPath, [
   'src/remember/mutualAuth.test.ts',
   'src/remember/guestFail.test.ts',
   'src/remember/linkPromote.test.ts',
+  'src/remember/guestRememberConn.test.ts',
 ], { stdio: 'inherit', cwd: new URL('..', import.meta.url).pathname })
 
 child.on('exit', (code) => process.exit(code ?? 1))

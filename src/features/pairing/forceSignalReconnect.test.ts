@@ -199,7 +199,7 @@ describe('forceSignalRunner stuck socket', () => {
     runner.stop()
   })
 
-  it('does not cadence-force an open healthy socket; phone connect still clears unverified', () => {
+  it('cadence-forces a silent open socket and accepts phone connect to stop', () => {
     mock.timers.enable({ apis: ['setTimeout', 'Date'] })
     const peer = makeMockPeer()
     const t = { value: 0 }
@@ -211,7 +211,7 @@ describe('forceSignalRunner stuck socket', () => {
     t.value = FORCE_SIGNAL_VERIFY_CADENCE_MS
     mock.timers.tick(FORCE_SIGNAL_VERIFY_CADENCE_MS)
     runner.tick(peer, true, false, true, true)
-    assert.equal(peer.sockets.length, before)
+    assert.ok(peer.sockets.length > before)
     let dataAccepted = false
     const onPhone = () => {
       dataAccepted = true
@@ -280,7 +280,7 @@ describe('forceSignalRunner stuck socket', () => {
     assert.equal(shouldForceSignalOnVisibility(31_000, false), false)
   })
 
-  it('peer open after a hook stops watchdog backoff and leaves the open socket alone', () => {
+  it('peer open after a hook stops watchdog backoff while unverified (cadence only)', () => {
     mock.timers.enable({ apis: ['setTimeout', 'Date'] })
     const peer = makeMockPeer()
     const t = { value: 0 }
@@ -296,7 +296,7 @@ describe('forceSignalRunner stuck socket', () => {
     assert.equal(peer.sockets.length, afterHook)
     t.value = FORCE_SIGNAL_VERIFY_CADENCE_MS
     runner.tick(peer, true, false, true, true)
-    assert.equal(peer.sockets.length, afterHook)
+    assert.ok(peer.sockets.length > afterHook)
     runner.stop()
   })
 

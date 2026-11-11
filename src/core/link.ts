@@ -67,7 +67,7 @@ import {
   isDataConnIceOfferer,
   iceTransportRecovered,
   shouldActOnIceNetworkChange,
-  shouldAbandonDataConnOnSignalDrop,
+  shouldAbandonOpenDataConn,
   shouldArmIceGraceTimer,
   shouldRedialAfterDisconnectedGrace,
   shouldRedialImmediatelyOnIceFailed,
@@ -80,6 +80,7 @@ import {
 import { candidatePairUsesRelay } from '../features/pairing/relayStats'
 import { rememberLastLaptop } from '../features/pairing/session'
 import { guestAcceptsRememberOk } from '../remember/guestAuth'
+import { guestRememberIncomingAuthAction, guestRememberSwapOnPromote } from '../remember/guestRememberConn'
 import { peerForOutboundCall } from '../remember/callPeer'
 import { signPhoneProof } from '../remember/proof'
 import type { HostAuthFailReason } from '../remember/hostAuth'
@@ -547,9 +548,21 @@ export class Link {
   }
 
   private abandonOpenDataConnForFreshPc() {
-    if (!shouldAbandonDataConnOnSignalDrop(this.everConnected, !!this.conn?.open)) return
+    const c = this.conn
+    if (!c?.open) return
+    const pc = this.peerConnectionOf(c)
+    const now = Date.now()
+    if (
+      !shouldAbandonOpenDataConn({
+        everConnected: this.everConnected,
+        dataConnOpen: true,
+        iceState: pc?.iceConnectionState ?? null,
+        lastSeen: this.lastSeen,
+        now,
+      })
+    ) return
     ppDebugIncAbandonOnSignalDrop()
-    try { this.conn?.close() } catch {}
+    try { c.close() } catch {}
   }
 
   private armIceGraceRedial(pc: RTCPeerConnection) {
@@ -1281,6 +1294,7 @@ export class Link {
   }
 
   private promoteConnected(c: DataConnection, remoteHint?: string, fromListenPeer = false, rememberPhoneId?: string) {
+    const fromAuth = this.authPending?.conn === c
     if (this.conn?.open && this.conn !== c) {
       if (
         fromListenPeer
@@ -1290,11 +1304,15 @@ export class Link {
         try { this.conn.close() } catch {}
         this.dropConn()
       } else {
-        try { c.close() } catch {}
-        return
+        const action = guestRememberSwapOnPromote(!!this.conn?.open, this.conn === c, fromAuth)
+        if (action === 'swap') {
+          try { this.conn.close() } catch {}
+        } else if (action === 'reject-new') {
+          try { c.close() } catch {}
+          return
+        }
       }
     }
-    const fromAuth = this.authPending?.conn === c
     if (!canPromoteDataConn({
       fromGuestAuthPending: fromAuth,
       fromRememberListen: fromListenPeer,
@@ -1338,11 +1356,8 @@ export class Link {
   }
 
   private attachRememberGuest(c: DataConnection) {
-    if (this.conn?.open) {
-      try { this.conn.close() } catch {}
-      this.dropConn()
-    }
-    if (this.authPending) {
+    const authAction = guestRememberIncomingAuthAction(!!this.conn?.open, !!this.authPending)
+    if (authAction === 'reject-incoming') {
       try { c.close() } catch {}
       return
     }
@@ -1361,7 +1376,12 @@ export class Link {
         ppDebugRememberAuthSent()
       } catch {}
       this.armAuthTimeout(c)
-      this.set({ status: this.everConnected ? 'reconnecting' : 'connecting' })
+      const next = this.conn?.open
+        ? 'connected'
+        : this.everConnected
+          ? 'reconnecting'
+          : 'connecting'
+      this.set({ status: next })
     }
     if (c.open) greet(); else c.on('open', greet)
     c.on('data', async (m: any) => {

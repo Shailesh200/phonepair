@@ -30,7 +30,7 @@ import {
   iceDisconnectedRedialDelayMs,
   iceTransportRecovered,
   isDataConnIceOfferer,
-  shouldAbandonDataConnOnSignalDrop,
+  shouldAbandonOpenDataConn,
   shouldActOnIceNetworkChange,
   shouldArmIceGraceTimer,
   shouldRedialAfterDisconnectedGrace,
@@ -146,11 +146,43 @@ describe('relay stats', () => {
   })
 })
 
-describe('ice abandon on signal drop', () => {
-  it('abandons an open data conn after a post-pairing signal drop', () => {
-    assert.equal(shouldAbandonDataConnOnSignalDrop(true, true), true)
-    assert.equal(shouldAbandonDataConnOnSignalDrop(true, false), false)
-    assert.equal(shouldAbandonDataConnOnSignalDrop(false, true), false)
+describe('abandon open data conn', () => {
+  it('keeps the conn on signal disconnect when ICE is healthy and lastSeen is fresh', () => {
+    const now = 100_000
+    assert.equal(
+      shouldAbandonOpenDataConn({
+        everConnected: true,
+        dataConnOpen: true,
+        iceState: 'connected',
+        lastSeen: now - 1000,
+        now,
+      }),
+      false,
+    )
+  })
+
+  it('abandons when ICE is disconnected/failed or lastSeen is stale', () => {
+    const now = 100_000
+    assert.equal(
+      shouldAbandonOpenDataConn({
+        everConnected: true,
+        dataConnOpen: true,
+        iceState: 'disconnected',
+        lastSeen: now - 1000,
+        now,
+      }),
+      true,
+    )
+    assert.equal(
+      shouldAbandonOpenDataConn({
+        everConnected: true,
+        dataConnOpen: true,
+        iceState: 'connected',
+        lastSeen: now - 16_000,
+        now,
+      }),
+      true,
+    )
   })
 })
 

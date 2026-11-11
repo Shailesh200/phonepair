@@ -17,7 +17,6 @@ export type PpDebugRemember = {
   dials: number
   dialErrors: Record<string, number>
   authSent: number
-  lastTarget: string
 }
 
 export type PpDebugGuestRedials = {
@@ -73,7 +72,7 @@ function freshDebug(): PpDebugState {
       redials: { scheduled: 0, immediate: 0, lastDelayMs: 0, delaysMs: [] },
     },
     relayFallbackNoTurn: 0,
-    remember: { dials: 0, dialErrors: {}, authSent: 0, lastTarget: '' },
+    remember: { dials: 0, dialErrors: {}, authSent: 0 },
     ice: {
       connGeneration: 0,
       abandonOnSignalDrop: 0,

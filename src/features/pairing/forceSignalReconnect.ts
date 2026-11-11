@@ -233,6 +233,16 @@ export class ForceSignalRunner {
     const now = this.timers.now()
     if (unverified && peer.open && !peer.disconnected) {
       if (this.watchdogId != null || this.retryId != null) this.clearTimers()
+      if (this.dropStartedAt == null) return
+      if (
+        forceSignalCadenceDue(this.dropStartedAt, this.lastCadenceAt, now)
+        && this.watchdogId == null
+        && this.retryId == null
+        && mayForceReplaceSignalSocket(peer, now, this.socketReplaceOpts('cadence'))
+      ) {
+        this.lastCadenceAt = now
+        this.runForce(peer, idReclaimCap, 'cadence')
+      }
       return
     }
 
@@ -310,7 +320,7 @@ export class ForceSignalRunner {
     this.watchdogId = this.timers.setTimeout(() => {
       this.watchdogId = null
       if (peer.destroyed || this.stopped) return
-      if (peer.open) {
+      if (peer.open && mode !== 'cadence') {
         this.clearTimers()
         return
       }
@@ -328,7 +338,7 @@ export class ForceSignalRunner {
       this.retryId = this.timers.setTimeout(() => {
         this.retryId = null
         if (peer.destroyed || this.stopped) return
-        if (peer.open) {
+        if (peer.open && mode !== 'cadence') {
           this.clearTimers()
           return
         }
