@@ -69,12 +69,14 @@ describe('remember listen give up', () => {
 })
 
 describe('remember guest session ui', () => {
-  it('shows tiles only after session is paired and connected', () => {
+  it('keeps home on paired reconnecting and connecting only before pair', () => {
     assert.equal(phoneShowsPairedHome(true, 'connected'), true)
+    assert.equal(phoneShowsPairedHome(true, 'reconnecting'), true)
     assert.equal(phoneShowsPairedHome(false, 'connected'), false)
     assert.equal(phoneShowsPairedHome(false, 'reconnecting'), false)
     assert.equal(phoneShowsConnecting(false, 'reconnecting'), true)
-    assert.equal(phoneShowsConnecting(true, 'reconnecting'), true)
+    assert.equal(phoneShowsConnecting(true, 'reconnecting'), false)
+    assert.equal(phoneShowsConnecting(false, 'connecting'), true)
   })
 })
 

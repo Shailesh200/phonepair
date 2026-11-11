@@ -1024,6 +1024,7 @@ export class Link {
       try { this.conn?.send({ t: 'bye' }) } catch {}
     }
     this.set({ status: this.role === 'host' ? 'waiting' : 'closed' })
+    if (this.role === 'guest') this.sessionPaired = false
     const c = this.conn
     this.conn = null
     window.setTimeout(() => { try { c?.close() } catch {} }, 200)

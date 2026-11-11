@@ -1,6 +1,6 @@
 /** Phone home/tiles only after mutual-auth remember or a successful code pair. */
 export function phoneShowsPairedHome(sessionPaired: boolean, status: string): boolean {
-  return sessionPaired && status === 'connected'
+  return sessionPaired && (status === 'connected' || status === 'reconnecting')
 }
 
 export function phoneShowsConnecting(sessionPaired: boolean, status: string): boolean {
