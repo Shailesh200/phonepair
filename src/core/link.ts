@@ -25,16 +25,12 @@ import {
 import { guestUnavailableRetries, redialDelayMs } from '../features/pairing/reconnect'
 import { linkTeardownSendsBye } from '../features/pairing/teardown'
 import { shouldCallPeerReconnect, shouldHostReconnect } from '../features/pairing/peerReconnect'
+import { ForceSignalRunner, forceSignalReconnect } from '../features/pairing/forceSignalReconnect'
 import {
   hostKeepsConnectedStatusOnSignalDrop,
-  planHostSignalReconnect,
-  HOST_FORCE_SIGNAL_TIMEOUT_MS,
-  shouldClearHostForceSignalOnPeerError,
-  shouldExpireHostForceSignalInFlight,
   shouldHostReconnectAfterVisibility,
   shouldHostReconnectHalfOpen,
   shouldHostReconnectOnOnline,
-  shouldSkipHostDisconnectedHandler,
 } from '../features/pairing/hostSignalReconnect'
 import {
   canGuestIceRedial,
@@ -107,9 +103,7 @@ export class Link {
   private hostIdReclaimSince: number | null = null
   private hostUnavailableRetry = 0
   private iceWatchCleanup: (() => void) | null = null
-  private hostForceSignalInFlight = false
-  private hostForceSignalStartedAt = 0
-  private hostForceSignalTimer: number | null = null
+  private hostSignalRunner: ForceSignalRunner | null = null
   connViaRelay: boolean | null = null
 
   constructor(role: Role, code: string) {
@@ -159,58 +153,35 @@ export class Link {
     }
   }
 
-  private clearHostForceSignalInFlight() {
-    this.hostForceSignalInFlight = false
-    this.hostForceSignalStartedAt = 0
-    if (this.hostForceSignalTimer) {
-      clearTimeout(this.hostForceSignalTimer)
-      this.hostForceSignalTimer = null
+  private ensureHostSignalRunner(): ForceSignalRunner {
+    if (!this.hostSignalRunner) {
+      this.hostSignalRunner = new ForceSignalRunner({
+        setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+        clearTimeout: (id) => { if (id != null) window.clearTimeout(id) },
+        now: () => Date.now(),
+      })
     }
+    return this.hostSignalRunner
   }
 
-  private armHostForceSignalTimeout(peer: Peer) {
-    if (this.hostForceSignalTimer) clearTimeout(this.hostForceSignalTimer)
-    const started = this.hostForceSignalStartedAt
-    this.hostForceSignalTimer = window.setTimeout(() => {
-      this.hostForceSignalTimer = null
-      if (peer !== this.peer || this.destroyed) return
-      if (!shouldExpireHostForceSignalInFlight(this.hostForceSignalInFlight, started, Date.now())) return
-      this.clearHostForceSignalInFlight()
-      if (this.role === 'host' && peer.disconnected && !peer.destroyed) {
-        try { peer.reconnect() } catch {}
-      }
-    }, HOST_FORCE_SIGNAL_TIMEOUT_MS)
+  private hostCodeSignalForceActive(peer: Peer): boolean {
+    if (this.role !== 'host' || this.destroyed || peer.destroyed || peer.open) return false
+    if (this.status === 'reconnecting' || this.status === 'waiting') return true
+    return shouldHostReconnectHalfOpen(this.role, this.destroyed, peer.open, !!this.conn?.open)
+  }
+
+  private tickHostCodeSignalForce(peer: Peer) {
+    const reclaim = shouldUseHostIdReclaimWindow(this.everConnected, this.hostIdReclaimSince)
+    this.ensureHostSignalRunner().tick(peer, this.hostCodeSignalForceActive(peer), reclaim)
   }
 
   private forceHostPeerSignalReconnect() {
     const peer = this.peer
-    if (!peer) return
+    if (!peer || peer.destroyed || this.destroyed) return
     const now = Date.now()
-    const plan = planHostSignalReconnect({
-      role: this.role,
-      linkDestroyed: this.destroyed,
-      peerDestroyed: peer.destroyed,
-      peerDisconnected: peer.disconnected,
-      forceInFlight: this.hostForceSignalInFlight,
-      lastForcedAt: this.lastPeerReconnectAt,
-      now,
-    })
-    if (plan === 'skip') return
-    this.hostForceSignalInFlight = true
-    this.hostForceSignalStartedAt = now
-    this.hostIdReclaimSince = now
-    this.hostUnavailableRetry = 0
-    this.lastPeerReconnectAt = now
-    this.armHostForceSignalTimeout(peer)
-    try {
-      if (plan === 'reconnect') peer.reconnect()
-      else {
-        peer.disconnect()
-        peer.reconnect()
-      }
-    } catch {
-      this.clearHostForceSignalInFlight()
-    }
+    this.hostIdReclaimSince = ensureHostReclaimStarted(this.everConnected, this.hostIdReclaimSince, now)
+    const reclaim = shouldUseHostIdReclaimWindow(this.everConnected, this.hostIdReclaimSince)
+    this.ensureHostSignalRunner().hook(peer, reclaim)
   }
 
   private clearIceGraceTimer() {
@@ -330,7 +301,7 @@ export class Link {
     const peer = id ? new Peer(id, { ...SIGNAL, config }) : new Peer({ ...SIGNAL, config })
     this.peer = peer
     peer.on('open', () => {
-      this.clearHostForceSignalInFlight()
+      this.ensureHostSignalRunner().onOpen()
       this.hostIdReclaimSince = null
       this.hostUnavailableRetry = 0
       this.retry = 0
@@ -363,17 +334,8 @@ export class Link {
         this.set({ status: this.everConnected ? 'reconnecting' : this.status })
       }
       window.setTimeout(() => {
-        if (shouldSkipHostDisconnectedHandler(this.hostForceSignalInFlight)) return
         if (this.role === 'host') {
-          if (shouldHostReconnect({
-            role: 'host',
-            linkDestroyed: this.destroyed,
-            samePeer: peer === this.peer,
-            disconnected: peer.disconnected,
-            peerDestroyed: peer.destroyed,
-          })) {
-            try { peer.reconnect() } catch {}
-          }
+          if (peer === this.peer && !this.destroyed) this.forceHostPeerSignalReconnect()
           return
         }
         this.tryGuestPeerReconnect(peer)
@@ -392,7 +354,7 @@ export class Link {
         const attempt = reclaim ? ++this.hostUnavailableRetry : ++this.retry
         if (hostUnavailableIdShouldGiveUp(attempt, this.hostIdReclaimSince, now, this.everConnected)) {
           this.hostIdReclaimSince = null
-          this.clearHostForceSignalInFlight()
+          this.ensureHostSignalRunner().onOpen()
           const msg = reclaim
             ? 'Could not reclaim this pairing code. Try again.'
             : 'Could not claim this pairing code. Try again.'
@@ -408,26 +370,12 @@ export class Link {
         window.setTimeout(() => {
           if (this.destroyed) return
           if (keepConn && peer === this.peer && !peer.destroyed) {
-            try {
-              if (peer.disconnected) peer.reconnect()
-              else {
-                peer.disconnect()
-                peer.reconnect()
-              }
-            } catch {}
+            forceSignalReconnect(peer)
             return
           }
           if (!this.peer) void this.start()
         }, delay)
         return
-      }
-      if (shouldClearHostForceSignalOnPeerError(
-        this.hostForceSignalInFlight,
-        peer === this.peer,
-        t,
-        shouldUseHostIdReclaimWindow(this.everConnected, this.hostIdReclaimSince),
-      )) {
-        this.clearHostForceSignalInFlight()
       }
       if (t === 'peer-unavailable') {
         this.releaseInFlightDial()
@@ -776,14 +724,8 @@ export class Link {
     if (this.role === 'guest' && peer && peer.disconnected && !peer.destroyed && !this.destroyed) {
       this.tryGuestPeerReconnect(peer)
     }
-    if (this.role === 'host' && peer && shouldHostReconnect({
-      role: 'host',
-      linkDestroyed: this.destroyed,
-      samePeer: true,
-      disconnected: peer.disconnected,
-      peerDestroyed: peer.destroyed,
-    })) {
-      try { peer.reconnect() } catch {}
+    if (this.role === 'host' && peer && !peer.destroyed) {
+      this.tickHostCodeSignalForce(peer)
     }
     const c = this.conn
     if (c?.open) {
@@ -817,7 +759,8 @@ export class Link {
   destroy() {
     this.destroyed = true
     this.clearTickTimers()
-    this.clearHostForceSignalInFlight()
+    this.hostSignalRunner?.stop()
+    this.hostSignalRunner = null
     this.networkWatchersCleanup?.()
     this.clearIceRecovery()
     if (this.dialWait) clearTimeout(this.dialWait)
