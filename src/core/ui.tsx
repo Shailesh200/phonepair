@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useReducer, useRef } from 'react'
 import { Icon } from './icons'
 import { copyText, linkify } from './util'
 import type { CoreCtx } from './bus'
@@ -22,4 +22,20 @@ export function StatusPill({ link }: { link: Link }) {
   const s = link.status
   if (s === 'connected') return <span className="pill" data-testid="status">Connected to {link.remoteName || 'device'}</span>
   return <span className="pill warn" data-testid="status">{s === 'reconnecting' ? 'Reconnecting…' : s === 'waiting' ? 'Waiting for phone…' : s === 'connecting' ? 'Connecting…' : 'Not connected'}</span>
+}
+
+export function ConnRelayNote({ link }: { link: Link }) {
+  if (link.connViaRelay !== true) return null
+  return <span className="mut sm conn-relay-note" data-testid="conn-relay">Connected via relay</span>
+}
+
+export function StatusRow({ link }: { link: Link }) {
+  const [, bump] = useReducer((x: number) => x + 1, 0)
+  useEffect(() => link.subscribe(bump), [link])
+  return (
+    <div className="row-g status-row">
+      <StatusPill link={link} />
+      <ConnRelayNote link={link} />
+    </div>
+  )
 }

@@ -56,7 +56,8 @@ Existing orders: files 10, clipboard 30. Suggested: remote 40, camera 50, mic 55
 ## Connection details
 - Signal (PeerJS server): `https://signal.167.233.223.123.sslip.io/peerjs` (client config: host `signal.167.233.223.123.sslip.io`, port 443, path `/peerjs`, secure, key `peerjs`). Host peer id = `phonepair-<code lowercase>`; codes are 6 chars from `A-Z2-9` minus I/O/0/1.
 - Heartbeat: ping every 4 s; link considered lost after 15 s silence. Phone redials automatically; laptop goes back to "waiting" with the same code.
-- TURN: coturn at `167.233.223.123:3478` (UDP + TCP), relay ports `49160-49200/udp`, realm `phonepair`, REST auth (`use-auth-secret`): username = `<unix-expiry>:phonepair`, credential = base64(HMAC-SHA1(secret, username)), 6 h TTL. `/api/turn` mints these from the `TURN_SECRET` env var (never commit or log it); without the env var it returns STUN only.
+- TURN: coturn at `167.233.223.123:3478` (UDP + TCP), relay ports `49160-49999/udp`, realm `phonepair`, REST auth (`use-auth-secret`): username = `<unix-expiry>:phonepair`, credential = base64(HMAC-SHA1(secret, username)), 6 h TTL. `/api/turn` mints these from the `TURN_SECRET` env var (never commit or log it); without the env var it returns STUN only.
+- TURN over TLS on port 443 via Traefik `HostSNI` `turn.167.233.223.123.sslip.io` (file `/data/coolify/proxy/dynamic/phonepair-turn.yml`).
 - Server side lives in `/opt/phonepair` on the Hetzner VM (docker compose: `phonepair-peerjs` behind Traefik with Let's Encrypt, `phonepair-coturn` on host network, 128 MB limit each). Private/internal peer IPs are denied in coturn.
 - Tested from the box (Nov 11 23:25 IST): relay-only data channel works over TURN/UDP and TURN/TCP — no extra Hetzner cloud firewall ports needed.
 
