@@ -31,6 +31,9 @@ export function PhoneConnecting({
         <p className="mut">
           Code <b className="mono">{link.code}</b>. Keep the PhonePair page open on your laptop.
         </p>
+        {link.guestStallRetrying && (
+          <p className="mut stall-retry" role="status">Still connecting… retrying</p>
+        )}
         {slow && (
           <div className="slow-connect" role="status">
             <p className="mut">Taking longer than usual. Make sure the PhonePair page is open on your laptop</p>
