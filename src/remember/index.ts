@@ -14,6 +14,7 @@ import {
   forgetHostPhoneRecord,
   type SavedLaptop,
 } from './storage'
+import { guestForgetShouldSync } from './guestForgetSync'
 
 export const rememberPrompt = createStore(false)
 
@@ -105,7 +106,16 @@ export function forgetGuestLaptopLocal(listenId: string) {
 export function forgetGuestLaptop(ctx: CoreCtx, listenId: string) {
   const store = loadGuestStore()
   const lap = store.laptops.find((l) => l.listenId === listenId)
-  if (ctx.link.connected && lap) {
+  if (
+    lap
+    && guestForgetShouldSync(
+      ctx.link.connected,
+      ctx.link.rememberListenId,
+      ctx.link.guestSessionPaired,
+      lap,
+      store.laptops.length,
+    )
+  ) {
     try {
       ctx.send({ t: 'remember:forget', phoneId: lap.phoneId, listenId: lap.listenId })
     } catch {}

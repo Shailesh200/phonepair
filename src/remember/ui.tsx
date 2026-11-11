@@ -1,6 +1,6 @@
 import React from 'react'
 import type { CoreCtx } from '../core/bus'
-import { allowRemember, denyRemember, forgetGuestLaptopLocal, forgetHostPhone, rememberPrompt } from './index'
+import { allowRemember, denyRemember, forgetGuestLaptop, forgetGuestLaptopLocal, forgetHostPhone, rememberPrompt } from './index'
 import { loadGuestStore, loadHostStore } from './storage'
 import { rememberStorageEpoch } from './storageNotify'
 import type { SavedLaptop } from './storage'
@@ -49,8 +49,10 @@ export function SavedPhonesPanel({ ctx }: { ctx: CoreCtx }) {
 }
 
 export function SavedLaptopsList({
+  ctx,
   onPick,
 }: {
+  ctx?: CoreCtx
   onPick: (lap: SavedLaptop) => void
 }) {
   rememberStorageEpoch.use()
@@ -78,7 +80,11 @@ export function SavedLaptopsList({
               type="button"
               className="linkbtn"
               data-testid="saved-laptop-forget"
-              onClick={(e) => { e.stopPropagation(); forgetGuestLaptopLocal(lap.listenId) }}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (ctx) forgetGuestLaptop(ctx, lap.listenId)
+                else forgetGuestLaptopLocal(lap.listenId)
+              }}
             >
               Forget
             </button>

@@ -55,6 +55,11 @@ function Dashboard({ ctx, waitingPhone }: { ctx: CoreCtx; waitingPhone: boolean 
   return <div className="dash">
     <header className="nav"><Logo /><div className="row-g"><StatusPill link={ctx.link} /><button className="btn ghost" data-testid="disconnect" onClick={() => ctx.link.disconnect()}>Disconnect</button></div></header>
     {waitingPhone && <div className="banner warn dash-wait">Phone disconnected, waiting to reconnect</div>}
+    {ctx.link.rememberListenOtherTab && (
+      <p className="mut small remember-other-tab" data-testid="remember-other-tab">
+        Saved phones are connected in another tab.
+      </p>
+    )}
     <SavedPhonesPanel ctx={ctx} />
     <div className="grid">
       <div className="col">{col('left')}</div>

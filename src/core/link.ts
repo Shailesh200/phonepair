@@ -29,6 +29,7 @@ import { signPhoneProof } from '../remember/proof'
 import type { HostAuthFailReason } from '../remember/hostAuth'
 import { canPromoteDataConn } from '../remember/promoteEligibility'
 import { shouldTickBootstrapListen } from '../remember/listenGiveUp'
+import { hostRememberListenOtherTab } from '../remember/rememberOtherTab'
 import {
   canOpenRememberListenSocket,
   listenClaimGiveUp,
@@ -37,7 +38,7 @@ import { guestForgetMatchesSavedLaptop } from '../remember/guestForgetMatch'
 import { REMEMBER_PROOF_TIMEOUT_MS, type RememberGatePhase } from '../remember/gate'
 import { RememberHostAuth } from '../remember/hostAuth'
 import { connBlockedByRememberAuth, shouldAcceptIncomingCall, shouldLinkSend } from '../remember/hostAuthSend'
-import { hostAcceptsRememberForget } from '../remember/hostForgetAuth'
+import { hostAcceptsPhoneForget } from '../remember/hostForgetInbound'
 import { shouldFailRememberGuestHome } from '../remember/guestHomeWatchdog'
 import { bytesFromB64, bytesToB64, listenPeerId, randomBytes } from '../remember/ids'
 import {
@@ -56,7 +57,7 @@ export type { Role }
 export type Status = 'starting' | 'waiting' | 'connecting' | 'connected' | 'reconnecting' | 'error' | 'closed'
 
 const SIGNAL = { host: 'signal.167.233.223.123.sslip.io', port: 443, path: '/peerjs', secure: true, key: 'peerjs' }
-const REMEMBER_GUEST_HOME_MS = 10_000
+const REMEMBER_GUEST_HOME_MS = 8_000
 
 export { newPairCode as newCode, normalizePairCode as cleanCode } from '../features/pairing/code'
 
@@ -145,18 +146,26 @@ export class Link {
     return !!(this.conn?.open && this.listenPeer && this.connPeer === this.listenPeer)
   }
 
+  private markListenGaveUp() {
+    if (this.listenGaveUp) return
+    this.listenGaveUp = true
+    this.listeners.forEach((l) => l())
+  }
+
   clearRememberListenGiveUp() {
+    const hadGaveUp = this.listenGaveUp
     this.listenGaveUp = false
     this.listenRetry = 0
     this.listenBackoffUntil = 0
     this.listenSocketsOpened = 0
     this.listenUnavailableFailures = 0
     this.listenSocketOpenTimes = []
+    if (hadGaveUp) this.listeners.forEach((l) => l())
   }
 
   get guestSessionPaired() { return this.sessionPaired }
   get rememberListenOtherTab() {
-    return this.role === 'host' && this.listenGaveUp && !!hostHasPhones(loadHostStore())
+    return this.role === 'host' && hostRememberListenOtherTab(this.listenGaveUp, loadHostStore())
   }
 
   private bindVisibilityListenRetry() {
@@ -272,7 +281,6 @@ export class Link {
         if (this.role === 'guest' && this.peer && !this.conn?.open && !this.hasInFlightDial()) this.scheduleDial()
         return
       }
-      console.warn('peer error', t, e)
     })
     this.timers.push(window.setInterval(() => this.tick(), 4000))
     if (this.role === 'host') {
@@ -331,7 +339,7 @@ export class Link {
       this.listenSocketOpenTimes,
       now,
     )) {
-      this.listenGaveUp = true
+      this.markListenGaveUp()
       this.listenBootstrapInFlight = false
       return
     }
@@ -378,7 +386,7 @@ export class Link {
       try { peer.destroy() } catch {}
       if (this.listenPeer === peer) this.listenPeer = null
       if (listenClaimGiveUp(this.listenUnavailableFailures, this.listenSocketsOpened)) {
-        this.listenGaveUp = true
+        this.markListenGaveUp()
         return
       }
       window.setTimeout(() => {
@@ -525,7 +533,8 @@ export class Link {
     this.releaseInFlightDial()
     this.dropConn()
     this.retry = 0
-    this.set({ status: 'error', error: MSG_HOST_NOT_FOUND })
+    const err = this.rememberGuestAuth || this.dialTarget ? MSG_REMEMBER_UNREACHABLE : MSG_HOST_NOT_FOUND
+    this.set({ status: 'error', error: err })
   }
 
   private dial() {
@@ -660,13 +669,20 @@ export class Link {
     }
     if (m.t === 'remember:forget') {
       const phoneId = String(m.phoneId ?? '')
+      const msgListenId = String(m.listenId ?? '')
       if (this.role === 'host' && phoneId) {
-        if (!hostAcceptsRememberForget(
-          this.isRememberConnOnListenPeer(),
-          this.authenticatedRememberPhoneId,
-          phoneId,
-        )) return
         const store = loadHostStore()
+        const fromListen = this.isRememberConnOnListenPeer()
+        const fromCode = !fromListen && !!(this.conn?.open && this.conn === c && this.connPeer === this.peer && this.sessionPaired)
+        if (!hostAcceptsPhoneForget({
+          fromListenPeer: fromListen,
+          fromCodePeer: fromCode,
+          storeListenId: store?.listenId ?? null,
+          msgListenId,
+          authenticatedPhoneId: this.authenticatedRememberPhoneId,
+          phoneId,
+          phoneKnown: !!store?.phones.some((p) => p.id === phoneId),
+        })) return
         if (store?.phones.some((p) => p.id === phoneId)) {
           const { next, stopListen } = forgetHostPhoneRecord(store, phoneId)
           saveHostStore(next)
@@ -897,14 +913,17 @@ export class Link {
   }
 
   private failRememberGuestHome() {
-    const c = this.authPending?.conn ?? this.inFlightDial
+    const c = this.authPending?.conn ?? this.inFlightDial ?? this.conn
+    this.clearAuthPending()
     if (c) {
-      this.clearAuthPending()
       try { c.close() } catch {}
     }
     this.releaseInFlightDial()
+    this.dropConn()
     if (this.dialWait) clearTimeout(this.dialWait)
     this.dialWait = null
+    this.rememberGuestSince = 0
+    if (this.role === 'guest') this.sessionPaired = false
     this.set({ status: 'error', error: MSG_REMEMBER_UNREACHABLE })
   }
 

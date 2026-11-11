@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Logo } from '../../core/ui'
 import type { Link } from '../../core/link'
 import { SavedLaptopsList } from '../../remember/ui'
+import type { CoreCtx } from '../../core/bus'
 import type { SavedLaptop } from '../../remember/storage'
 
 const SLOW_MS = 15_000
@@ -12,12 +13,14 @@ export function PhoneConnecting({
   onRetry,
   onRemember,
   rememberMode,
+  ctx,
 }: {
   link: Link
   onLeave: () => void
   onRetry: () => void
   onRemember?: (lap: SavedLaptop) => void
   rememberMode?: boolean
+  ctx?: CoreCtx
 }) {
   const [slow, setSlow] = useState(false)
   useEffect(() => {
@@ -41,7 +44,7 @@ export function PhoneConnecting({
             Code <b className="mono">{link.code}</b>. Keep the PhonePair page open on your laptop.
           </p>
         )}
-        {onRemember && <SavedLaptopsList onPick={onRemember} />}
+        {onRemember && <SavedLaptopsList ctx={ctx} onPick={onRemember} />}
         {link.guestStallRetrying && (
           <p className="mut stall-retry" role="status">Still connecting… retrying</p>
         )}

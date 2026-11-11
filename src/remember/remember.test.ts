@@ -11,9 +11,11 @@ import {
 import { shouldRestartListenPeer } from './allowListen.ts'
 import { rememberStorageEpoch, notifyRememberStorageChanged } from './storageNotify.ts'
 import { shouldTickBootstrapListen } from './listenGiveUp.ts'
+import { hostRememberListenOtherTab } from './rememberOtherTab.ts'
 import { guestForgetMatchesSavedLaptop } from './guestForgetMatch.ts'
 import { shouldFailRememberGuestHome } from './guestHomeWatchdog.ts'
-import { hostAcceptsRememberForget } from './hostForgetAuth.ts'
+import { hostAcceptsPhoneForget } from './hostForgetInbound.ts'
+import { guestForgetShouldSync } from './guestForgetSync.ts'
 import { connBlockedByRememberAuth } from './hostAuthSend.ts'
 import { phoneShowsConnecting, phoneShowsPairedHome } from './guestSessionGate.ts'
 import { canOpenRememberListenSocket, listenClaimGiveUp, REMEMBER_LISTEN_MAX_SOCKETS } from './rememberListenClaim.ts'
@@ -65,6 +67,17 @@ describe('remember listen give up', () => {
     assert.equal(shouldTickBootstrapListen({ ...base, bootstrapInFlight: true }), false)
     assert.equal(shouldTickBootstrapListen({ ...base, backoffUntil: 2000 }), false)
     assert.equal(shouldTickBootstrapListen({ ...base, hasPhones: false }), false)
+    assert.equal(shouldTickBootstrapListen({ ...base, listenMissing: false }), false)
+  })
+})
+
+describe('remember other tab', () => {
+  const store: HostStore = { listenId: 'l', phones: [{ id: 'p', name: 'Phone', key: 'k' }] }
+  it('shows only after listen give-up with saved phones', () => {
+    assert.equal(hostRememberListenOtherTab(false, store), false)
+    assert.equal(hostRememberListenOtherTab(true, store), true)
+    assert.equal(hostRememberListenOtherTab(true, null), false)
+    assert.equal(hostRememberListenOtherTab(true, { listenId: 'l', phones: [] }), false)
   })
 })
 
@@ -100,7 +113,7 @@ describe('remember denied routing', () => {
 
 describe('remember guest home watchdog', () => {
   it('does not fail home after the guest has paired the session', () => {
-    const limit = 10_000
+    const limit = 8_000
     assert.equal(shouldFailRememberGuestHome({
       rememberGuest: true,
       sessionPaired: true,
@@ -119,10 +132,30 @@ describe('remember guest home watchdog', () => {
 })
 
 describe('remember host forget auth', () => {
-  it('rejects forget on code-paired or wrong phone', () => {
-    assert.equal(hostAcceptsRememberForget(true, 'p-a', 'p-a'), true)
-    assert.equal(hostAcceptsRememberForget(false, 'p-a', 'p-a'), false)
-    assert.equal(hostAcceptsRememberForget(true, 'p-a', 'p-b'), false)
+  it('accepts forget on listen or code peer when listenId and phone match', () => {
+    const base = {
+      storeListenId: 'lid',
+      msgListenId: 'lid',
+      authenticatedPhoneId: 'p-a',
+      phoneId: 'p-a',
+      phoneKnown: true,
+    }
+    assert.equal(hostAcceptsPhoneForget({ ...base, fromListenPeer: true, fromCodePeer: false }), true)
+    assert.equal(hostAcceptsPhoneForget({ ...base, fromListenPeer: false, fromCodePeer: true }), true)
+    assert.equal(hostAcceptsPhoneForget({ ...base, fromListenPeer: false, fromCodePeer: false }), false)
+    assert.equal(hostAcceptsPhoneForget({ ...base, fromListenPeer: true, fromCodePeer: false, phoneId: 'p-b' }), false)
+    assert.equal(hostAcceptsPhoneForget({ ...base, fromListenPeer: true, fromCodePeer: false, phoneKnown: false }), false)
+    assert.equal(hostAcceptsPhoneForget({ ...base, fromListenPeer: false, fromCodePeer: true, msgListenId: 'other' }), false)
+  })
+})
+
+describe('remember guest forget sync', () => {
+  const lap = { listenId: 'lid', phoneId: 'p1', name: 'Laptop', key: 'k' }
+  it('syncs forget when remember-authed or single-laptop code pair', () => {
+    assert.equal(guestForgetShouldSync(true, 'lid', false, lap, 1), true)
+    assert.equal(guestForgetShouldSync(true, undefined, true, lap, 1), true)
+    assert.equal(guestForgetShouldSync(false, 'lid', true, lap, 1), false)
+    assert.equal(guestForgetShouldSync(true, 'other', true, lap, 2), false)
   })
 })
 
@@ -163,7 +196,7 @@ describe('remember allowListen', () => {
 })
 
 describe('remember forget', () => {
-  it('removes a phone key and clears listen when the last phone is forgotten', () => {
+  it('removes a phone key and stops listen when the last phone is forgotten', () => {
     const store: HostStore = {
       listenId: 'abc',
       phones: [{ id: 'p1', name: 'Phone', key: 'aa' }],

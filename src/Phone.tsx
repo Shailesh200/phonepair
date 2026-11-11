@@ -8,6 +8,7 @@ import { joinPath } from './features/pairing/relay'
 import type { SavedLaptop } from './remember/storage'
 import { MSG_REMEMBER_DENIED } from './features/pairing/errors'
 import { forgetGuestLaptop } from './remember'
+import { SavedLaptopsList } from './remember/ui'
 import { phoneShowsConnecting } from './remember/guestSessionGate'
 import { phoneHostLabel } from './features/pairing/session'
 
@@ -81,6 +82,7 @@ export function Phone({
     return (
       <PhoneConnecting
         link={ctx.link}
+        ctx={ctx}
         rememberMode={rememberMode}
         onLeave={onLeave}
         onRemember={onRemember}
@@ -131,6 +133,7 @@ export function Phone({
         {s === 'reconnecting' && <div className="banner warn">Reconnecting to your laptop…</div>}
         {!cur ? (
           <>
+            {onRemember && <SavedLaptopsList ctx={ctx} onPick={onRemember} />}
             <div className="conn card">
               <span className="lap"><Icon n="screen" /></span>
               <div className="conn-txt">

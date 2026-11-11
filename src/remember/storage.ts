@@ -34,8 +34,9 @@ function writeJson(key: string, value: unknown | null) {
 export function loadHostStore(): HostStore | null {
   try {
     const listenId = localStorage.getItem(HOST_LISTEN_KEY)
+    if (!listenId) return null
     const phones = readJson<SavedPhone[]>(HOST_PHONES_KEY)
-    if (!listenId || !Array.isArray(phones) || !phones.length) return null
+    if (!Array.isArray(phones) || !phones.length) return null
     return { listenId, phones }
   } catch {
     return null
@@ -44,14 +45,15 @@ export function loadHostStore(): HostStore | null {
 
 export function saveHostStore(store: HostStore | null) {
   try {
-    if (!store?.listenId || !store.phones.length) {
+    if (!store?.listenId) {
       localStorage.removeItem(HOST_LISTEN_KEY)
       localStorage.removeItem(HOST_PHONES_KEY)
       notifyRememberStorageChanged()
       return
     }
     localStorage.setItem(HOST_LISTEN_KEY, store.listenId)
-    localStorage.setItem(HOST_PHONES_KEY, JSON.stringify(store.phones))
+    if (!store.phones.length) localStorage.removeItem(HOST_PHONES_KEY)
+    else localStorage.setItem(HOST_PHONES_KEY, JSON.stringify(store.phones))
     notifyRememberStorageChanged()
   } catch {}
 }
@@ -71,6 +73,14 @@ export function saveGuestStore(store: GuestStore) {
 
 export function hostHasPhones(store: HostStore | null): boolean {
   return !!store?.phones?.length
+}
+
+export function hostRememberListenActive(): boolean {
+  try {
+    return !!localStorage.getItem(HOST_LISTEN_KEY)
+  } catch {
+    return false
+  }
 }
 
 export { forgetHostPhoneRecord, forgetGuestLaptopRecord }
