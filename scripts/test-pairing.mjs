@@ -9,6 +9,8 @@ const child = spawn(process.execPath, [
   'src/remember/remember.test.ts',
   'src/remember/linkRemember.test.ts',
   'src/remember/mutualAuth.test.ts',
+  'src/remember/guestFail.test.ts',
+  'src/remember/linkPromote.test.ts',
 ], { stdio: 'inherit', cwd: new URL('..', import.meta.url).pathname })
 
 child.on('exit', (code) => process.exit(code ?? 1))

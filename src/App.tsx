@@ -6,7 +6,9 @@ import { uid } from './core/util'
 import { Laptop } from './Laptop'
 import { Phone, PhoneEntry } from './Phone'
 import './features'
-import type { SavedLaptop } from './remember'
+import { forgetGuestLaptopLocal, type SavedLaptop } from './remember'
+import { rememberEntryError } from './remember/entryError'
+import { MSG_REMEMBER_DENIED } from './features/pairing/errors'
 
 type AppRoute =
   | { role: null; code: '' }
@@ -52,6 +54,25 @@ export default function App() {
     return () => { unsub(); window.removeEventListener('pagehide', bye); l.destroy() }
   }, [route])
 
+  useEffect(() => {
+    if (!link) return
+    const remember = 'remember' in route && route.remember
+    if (!remember) return
+    let sentHome = false
+    const goHome = () => {
+      if (sentHome) return
+      if (link.status !== 'error' || !link.error) return
+      sentHome = true
+      rememberEntryError.set({ message: link.error, listenId: link.rememberListenId })
+      link.destroy()
+      history.pushState(null, '', entryPath())
+      setRoute({ role: null, code: '' })
+      setLink(null)
+    }
+    goHome()
+    return link.subscribe(goHome)
+  }, [link, route])
+
   const ctx = useMemo<CoreCtx | null>(() => link && route.role ? {
     role: route.role, link, toast,
     send: (m) => link.send(m),
@@ -69,16 +90,35 @@ export default function App() {
   }, [ctx])
 
   const toastsEl = <div className="toasts" aria-live="polite">{toasts.map((t) => <div key={t.id} className="toast">{t.t}</div>)}</div>
-  if (!route.role) return (
-    <>
-      <PhoneEntry
-        onCode={(c) => { const path = joinPath(c); syncRelayFromUrl(); history.pushState(null, '', path); setRoute({ role: 'guest', code: cleanCode(c) }) }}
-        onHost={() => { syncRelayFromUrl(); history.pushState(null, '', hostEntryPath()); setRoute({ role: 'host', code: '' }) }}
-        onRemember={(lap) => { syncRelayFromUrl(); history.pushState(null, '', entryPath()); setRoute({ role: 'guest', code: '', remember: lap }) }}
-      />
-      {toastsEl}
-    </>
-  )
+  if (!route.role) {
+    const entryErr = rememberEntryError.get()
+    return (
+      <>
+        <PhoneEntry
+          error={entryErr?.message}
+          onForgetDenied={
+            entryErr?.message === MSG_REMEMBER_DENIED && entryErr.listenId
+              ? () => {
+                forgetGuestLaptopLocal(entryErr.listenId!)
+                rememberEntryError.set(null)
+              }
+              : undefined
+          }
+          onClearRememberError={() => rememberEntryError.set(null)}
+          onCode={(c) => {
+            rememberEntryError.set(null)
+            const path = joinPath(c)
+            syncRelayFromUrl()
+            history.pushState(null, '', path)
+            setRoute({ role: 'guest', code: cleanCode(c) })
+          }}
+          onHost={() => { syncRelayFromUrl(); history.pushState(null, '', hostEntryPath()); setRoute({ role: 'host', code: '' }) }}
+          onRemember={(lap) => { syncRelayFromUrl(); history.pushState(null, '', entryPath()); setRoute({ role: 'guest', code: '', remember: lap }) }}
+        />
+        {toastsEl}
+      </>
+    )
+  }
   if (!ctx) return null
   const leavePhone = () => { ctx?.link.disconnect(); history.pushState(null, '', entryPath()); setRoute({ role: null, code: '' }) }
   const rememberLaptop = (lap: SavedLaptop) => {

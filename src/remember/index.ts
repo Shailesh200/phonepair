@@ -66,11 +66,10 @@ export function allowRemember(ctx: CoreCtx) {
   const grant = createRememberGrant(prev?.listenId)
   const store = upsertHostPhone(prev, {
     id: grant.phoneId,
-    name: 'Phone',
+    name: '…',
     key: phoneKeyStored(grant.key),
   })
   saveHostStore(store)
-  ctx.link.refreshRememberListen()
   ctx.send({
     t: 'remember:grant',
     listenId: store.listenId,
@@ -78,6 +77,7 @@ export function allowRemember(ctx: CoreCtx) {
     key: phoneKeyStored(grant.key),
     laptopName: grant.laptopName,
   })
+  ctx.link.refreshRememberListen()
 }
 
 export function denyRemember() {
@@ -87,14 +87,29 @@ export function denyRemember() {
 export function forgetHostPhone(ctx: CoreCtx, phoneId: string) {
   const store = loadHostStore()
   if (!store) return
+  if (ctx.link.connected) {
+    try {
+      ctx.send({ t: 'remember:forget', listenId: store.listenId, phoneId })
+    } catch {}
+  }
   const { next, stopListen } = forgetHostPhoneRecord(store, phoneId)
   saveHostStore(next)
   ctx.link.refreshRememberListen(stopListen)
 }
 
-export function forgetGuestLaptop(listenId: string) {
-  const next = forgetGuestLaptopRecord(loadGuestStore(), listenId)
-  saveGuestStore(next)
+export function forgetGuestLaptopLocal(listenId: string) {
+  saveGuestStore(forgetGuestLaptopRecord(loadGuestStore(), listenId))
+}
+
+export function forgetGuestLaptop(ctx: CoreCtx, listenId: string) {
+  const store = loadGuestStore()
+  const lap = store.laptops.find((l) => l.listenId === listenId)
+  if (ctx.link.connected && lap) {
+    try {
+      ctx.send({ t: 'remember:forget', phoneId: lap.phoneId })
+    } catch {}
+  }
+  forgetGuestLaptopLocal(listenId)
 }
 
 export type { SavedLaptop } from './storage'

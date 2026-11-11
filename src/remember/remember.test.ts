@@ -8,6 +8,8 @@ import {
   gateAfterValidProof,
   gateOnAuthFailure,
 } from './gate.ts'
+import { shouldRestartListenPeer } from './allowListen.ts'
+import { rememberStorageEpoch, notifyRememberStorageChanged } from './storageNotify.ts'
 import { forgetHostPhoneRecord, upsertGuestLaptop, type HostStore } from './records.ts'
 
 describe('remember hmac', () => {
@@ -43,6 +45,21 @@ describe('remember guest storage v1', () => {
     const second = upsertGuestLaptop(first, b)
     assert.equal(second.laptops.length, 1)
     assert.equal(second.laptops[0].listenId, 'b')
+  })
+})
+
+describe('remember storage notify', () => {
+  it('bumps epoch when storage changes', () => {
+    const before = rememberStorageEpoch.get()
+    notifyRememberStorageChanged()
+    assert.equal(rememberStorageEpoch.get(), before + 1)
+  })
+})
+
+describe('remember allowListen', () => {
+  it('does not restart listen peer while conn is on it', () => {
+    assert.equal(shouldRestartListenPeer(true), false)
+    assert.equal(shouldRestartListenPeer(false), true)
   })
 })
 

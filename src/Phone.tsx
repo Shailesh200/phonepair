@@ -6,7 +6,14 @@ import { CodeEntry } from './features/pairing/CodeEntry'
 import { PhoneConnecting } from './features/pairing/PhoneConnecting'
 import { joinPath } from './features/pairing/relay'
 import type { SavedLaptop } from './remember/storage'
+import { MSG_REMEMBER_DENIED, MSG_REMEMBER_UNREACHABLE } from './features/pairing/errors'
+import { forgetGuestLaptopLocal } from './remember'
 import { phoneHostLabel } from './features/pairing/session'
+
+function entryPath() {
+  const base = location.pathname.replace(/\/$/, '')
+  return base.endsWith('/phone') ? base : `${base}/phone`
+}
 
 export function Phone({
   ctx, page, setPage, onLeave, rememberMode, onRemember,
@@ -37,12 +44,22 @@ export function Phone({
   }, [dcIn, ctx])
 
   if (s === 'error') {
+    const err = ctx.link.error || MSG_REMEMBER_UNREACHABLE
+    const listenId = ctx.link.rememberListenId
     return (
       <CodeEntry
-        error={ctx.link.error || undefined}
+        error={err}
         onClearError={() => {}}
         onCode={(c) => { location.assign(joinPath(c)) }}
         onRemember={onRemember}
+        onForgetDenied={
+          err === MSG_REMEMBER_DENIED && listenId
+            ? () => {
+              forgetGuestLaptopLocal(listenId)
+              location.assign(entryPath())
+            }
+            : undefined
+        }
       />
     )
   }
@@ -151,6 +168,13 @@ export function PhoneEntry(props: {
   onHost?: () => void
   onRemember?: (lap: SavedLaptop) => void
   error?: string
+  onForgetDenied?: () => void
+  onClearRememberError?: () => void
 }) {
-  return <CodeEntry {...props} />
+  return (
+    <CodeEntry
+      {...props}
+      onClearError={props.onClearRememberError}
+    />
+  )
 }

@@ -1,4 +1,5 @@
 import { newListenId, newPhoneId, newPhoneKey, keyToB64, keyFromB64 } from './ids'
+import { notifyRememberStorageChanged } from './storageNotify'
 import { friendlyDeviceName } from './deviceName'
 import type { GuestStore, HostStore, SavedLaptop, SavedPhone } from './records'
 import {
@@ -46,10 +47,12 @@ export function saveHostStore(store: HostStore | null) {
     if (!store?.listenId || !store.phones.length) {
       localStorage.removeItem(HOST_LISTEN_KEY)
       localStorage.removeItem(HOST_PHONES_KEY)
+      notifyRememberStorageChanged()
       return
     }
     localStorage.setItem(HOST_LISTEN_KEY, store.listenId)
     localStorage.setItem(HOST_PHONES_KEY, JSON.stringify(store.phones))
+    notifyRememberStorageChanged()
   } catch {}
 }
 
@@ -63,6 +66,7 @@ export function loadGuestStore(): GuestStore {
 export function saveGuestStore(store: GuestStore) {
   if (!store.laptops.length) writeJson(GUEST_LAPTOPS_KEY, null)
   else writeJson(GUEST_LAPTOPS_KEY, store.laptops)
+  notifyRememberStorageChanged()
 }
 
 export function hostHasPhones(store: HostStore | null): boolean {

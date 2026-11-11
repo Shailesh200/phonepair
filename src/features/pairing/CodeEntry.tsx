@@ -1,6 +1,7 @@
 import React, { useRef } from 'react'
 import { Logo } from '../../core/ui'
 import { CodeBoxes } from './CodeBoxes'
+import { MSG_REMEMBER_DENIED, MSG_REMEMBER_UNREACHABLE } from './errors'
 import { lastLaptopSession } from './session'
 import { SavedLaptopsList } from '../../remember/ui'
 import type { SavedLaptop } from '../../remember/storage'
@@ -11,12 +12,14 @@ export function CodeEntry({
   onRemember,
   error,
   onClearError,
+  onForgetDenied,
 }: {
   onCode: (c: string) => void
   onHost?: () => void
   onRemember?: (lap: SavedLaptop) => void
   error?: string
   onClearError?: () => void
+  onForgetDenied?: () => void
 }) {
   const sent = useRef('')
   const last = lastLaptopSession()
@@ -51,7 +54,31 @@ export function CodeEntry({
               onChange={() => onClearError?.()}
               onComplete={complete}
             />
-            {error && <p className="err" role="alert">{error}</p>}
+            {error && (
+              <div
+                className="err-block"
+                role="alert"
+                data-testid={
+                  error === MSG_REMEMBER_DENIED
+                    ? 'remember-denied'
+                    : error === MSG_REMEMBER_UNREACHABLE
+                      ? 'remember-unreachable'
+                      : undefined
+                }
+              >
+                <p className="err">{error}</p>
+                {error === MSG_REMEMBER_DENIED && onForgetDenied && (
+                  <button
+                    type="button"
+                    className="btn sm"
+                    data-testid="remember-denied-forget"
+                    onClick={onForgetDenied}
+                  >
+                    Forget
+                  </button>
+                )}
+              </div>
+            )}
             <button data-testid="code-join" className="btn big hidden" type="submit" tabIndex={-1}>Connect</button>
           </form>
           {onHost && (
