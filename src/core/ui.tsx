@@ -1,0 +1,25 @@
+import React, { useEffect, useRef } from 'react'
+import { Icon } from './icons'
+import { copyText, linkify } from './util'
+import type { CoreCtx } from './bus'
+import type { Link } from './link'
+
+export function Logo({ small }: { small?: boolean }) {
+  return <a className={'logo' + (small ? ' sm' : '')} href="/"><span className="mark"><span /><span /></span><span>Phone<em>Pair</em></span></a>
+}
+export function Linkified({ text }: { text: string }) {
+  return <>{linkify(text).map((p, i) => typeof p === 'string' ? <React.Fragment key={i}>{p}</React.Fragment> : <a key={i} href={p.href} target="_blank" rel="noopener noreferrer">{p.href}</a>)}</>
+}
+export function CopyBtn({ text, ctx, label }: { text: string; ctx: CoreCtx; label?: string }) {
+  return <button className="iconbtn sm" title="Copy" aria-label="Copy" onClick={async () => ctx.toast((await copyText(text)) ? 'Copied' : 'Copy blocked by browser')}><Icon n="copy" />{label && <span>{label}</span>}</button>
+}
+export function Video({ stream, muted = true, className, testid }: { stream: MediaStream; muted?: boolean; className?: string; testid?: string }) {
+  const ref = useRef<HTMLVideoElement>(null)
+  useEffect(() => { if (ref.current) { ref.current.srcObject = stream; ref.current.play().catch(() => {}) } }, [stream])
+  return <video data-testid={testid} ref={ref} className={className} autoPlay playsInline muted={muted} />
+}
+export function StatusPill({ link }: { link: Link }) {
+  const s = link.status
+  if (s === 'connected') return <span className="pill" data-testid="status">Connected to {link.remoteName || 'device'}</span>
+  return <span className="pill warn" data-testid="status">{s === 'reconnecting' ? 'Reconnecting…' : s === 'waiting' ? 'Waiting for phone…' : s === 'connecting' ? 'Connecting…' : 'Not connected'}</span>
+}
