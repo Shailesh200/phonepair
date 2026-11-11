@@ -60,6 +60,34 @@ function tap(btn: 'left' | 'right', x: number, y: number): HelperCommand[] {
   ]
 }
 
+/** After Stop, Esc, or sc:stop, pointer messages are dropped until sc:start or a new share. */
+export type ControlGate = {
+  stopped: boolean
+  controlling: boolean
+}
+
+export function initialControlGate(): ControlGate {
+  return { stopped: false, controlling: false }
+}
+
+export type ControlEvent =
+  | { type: 'stop' }
+  | { type: 'start'; avail: boolean }
+  | { type: 'share' }
+  | { type: 'pointer'; avail: boolean }
+
+/** `forward` is false when a pointer message must be dropped. */
+export function stepControl(gate: ControlGate, event: ControlEvent): { gate: ControlGate; forward: boolean } {
+  if (event.type === 'stop') return { gate: { stopped: true, controlling: false }, forward: false }
+  if (event.type === 'share') return { gate: { stopped: false, controlling: false }, forward: false }
+  if (event.type === 'start') {
+    if (!event.avail) return { gate: { stopped: false, controlling: false }, forward: false }
+    return { gate: { stopped: false, controlling: true }, forward: false }
+  }
+  if (gate.stopped || !event.avail) return { gate, forward: false }
+  return { gate: { stopped: false, controlling: true }, forward: true }
+}
+
 /** Phone `sc` message -> helper commands. Empty when the payload is not a control event. */
 export function helperCommands(value: unknown): HelperCommand[] {
   if (!isRecord(value) || value.t !== 'sc') return []

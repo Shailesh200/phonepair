@@ -1,6 +1,7 @@
 /** Screen-control messages shared by the phone and the laptop tab.
  *
  * Phone -> laptop (`ScMsg`):
+ * - `{t:'sc:start'}` when the phone's Control toggle turns on.
  * - `{t:'sc', a:'move'|'down'|'up'|'click'|'dbl'|'right', x, y}` with x,y in 0..1
  *   on the video content box (letterbox removed).
  * - `{t:'sc', a:'scroll', dx, dy}` for a two-finger drag.
@@ -11,6 +12,8 @@
  *   `displaySurface` is `'monitor'`. Sent once when sharing starts, then
  *   again on every change.
  * - `{t:'sc:stop'}` when Stop or Esc on the laptop ends control.
+ *   After Stop, Esc, or `sc:stop`, the laptop drops every `sc` message until
+ *   `sc:start`, or until screen sharing starts again.
  *
  * Keys stay on the existing remote messages (`remote:key`, `remote:type`).
  */
@@ -35,6 +38,11 @@ export type ScScrollMsg = {
 }
 
 export type ScMsg = ScPointMsg | ScScrollMsg
+
+/** Phone -> laptop. Control was switched on. Clears the laptop's stop latch. */
+export type ScStartMsg = {
+  t: 'sc:start'
+}
 
 /** Stable `sc:avail` reason codes. */
 export const SC_REASON_SURFACE = 'surface'

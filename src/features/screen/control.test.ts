@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { availability, helperCommands, readDisplaySurface, SCROLL_LIMIT } from './control.ts'
+import { availability, helperCommands, initialControlGate, readDisplaySurface, SCROLL_LIMIT, stepControl } from './control.ts'
 import { SC_REASON_HELPER, SC_REASON_SURFACE } from './sc.ts'
 
 describe('screen control availability', () => {
@@ -19,6 +19,41 @@ describe('screen control availability', () => {
     assert.equal(readDisplaySurface({ displaySurface: '' }), undefined)
     assert.equal(readDisplaySurface({}), undefined)
     assert.equal(readDisplaySurface(null), undefined)
+  })
+})
+
+describe('screen control stop latch', () => {
+  it('ignores a stale move after a stop', () => {
+    let gate = stepControl(initialControlGate(), { type: 'pointer', avail: true }).gate
+    assert.equal(gate.controlling, true)
+    gate = stepControl(gate, { type: 'stop' }).gate
+    assert.equal(gate.stopped, true)
+    assert.equal(gate.controlling, false)
+    const stale = stepControl(gate, { type: 'pointer', avail: true })
+    assert.equal(stale.forward, false)
+    assert.equal(stale.gate.controlling, false)
+    assert.equal(stale.gate.stopped, true)
+  })
+
+  it('sc:start re-enables control', () => {
+    const stopped = stepControl(initialControlGate(), { type: 'stop' }).gate
+    const started = stepControl(stopped, { type: 'start', avail: true })
+    assert.equal(started.forward, false)
+    assert.equal(started.gate.stopped, false)
+    assert.equal(started.gate.controlling, true)
+    const move = stepControl(started.gate, { type: 'pointer', avail: true })
+    assert.equal(move.forward, true)
+    assert.equal(move.gate.controlling, true)
+  })
+
+  it('a restarted share resets the latch', () => {
+    const stopped = stepControl(initialControlGate(), { type: 'stop' }).gate
+    const restarted = stepControl(stopped, { type: 'share' })
+    assert.equal(restarted.gate.stopped, false)
+    assert.equal(restarted.gate.controlling, false)
+    const move = stepControl(restarted.gate, { type: 'pointer', avail: true })
+    assert.equal(move.forward, true)
+    assert.equal(move.gate.controlling, true)
   })
 })
 

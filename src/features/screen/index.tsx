@@ -19,7 +19,7 @@ import {
   type GestureEvent,
 } from './map'
 import { forwardHelper, helperConnected, subscribeHelper } from '../remote'
-import { availability, helperCommands, readDisplaySurface } from './control'
+import { availability, helperCommands, initialControlGate, readDisplaySurface, stepControl, type ControlGate } from './control'
 import { SC_REASON_HELPER, SC_REASON_SURFACE, SC_SURFACE_HINT, type ScAvailMsg } from './sc'
 import './screen.css'
 
@@ -34,6 +34,7 @@ const availState = createStore<ScAvailMsg>({ t: 'sc:avail', on: false })
 let availKey = ''
 let availSent = false
 let pendingStop = false
+let gate: ControlGate = initialControlGate()
 
 function trackSurface(stream: MediaStream | null): string | undefined {
   const track = stream?.getVideoTracks()[0]
@@ -52,6 +53,7 @@ function releaseDrag() {
 
 function endControl(ctx: CoreCtx) {
   if (!controlling.get()) return
+  gate = stepControl(gate, { type: 'stop' }).gate
   controlling.set(false)
   releaseDrag()
   if (ctx.link.connected) ctx.send({ t: 'sc:stop' })
@@ -112,6 +114,8 @@ async function startSharing(ctx: CoreCtx) {
     sharing.set(true)
     requested.set(false)
     publishAvail(ctx)
+    gate = stepControl(gate, { type: 'share' }).gate
+    controlling.set(false)
     stream.getVideoTracks()[0]?.addEventListener('ended', () => {
       if (outStream === stream) stopSharing(ctx, true)
     })
@@ -243,6 +247,7 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
     gRef.current = initialGesture()
     controlRef.current = true
     setControl(true)
+    ctxRef.current.send({ t: 'sc:start' })
   }
 
   useEffect(() => {
@@ -628,8 +633,17 @@ registerFeature({
       controlAvail.set(readAvail(m.on, m.reason))
     })
     const offScStop = onMessage('sc:stop', (_m, c) => {
-      if (c.role !== 'guest') return
-      controlEpoch.set(controlEpoch.get() + 1)
+      if (c.role === 'guest') {
+        controlEpoch.set(controlEpoch.get() + 1)
+        return
+      }
+      endControl(c)
+    })
+    const offScStart = onMessage('sc:start', (_m, c) => {
+      if (c.role !== 'host') return
+      const next = stepControl(gate, { type: 'start', avail: currentAvail().on })
+      gate = next.gate
+      controlling.set(next.gate.controlling)
     })
     const offReq = onMessage('screen:request', (_m, c) => {
       if (c.role !== 'host' || sharing.get()) return
@@ -644,7 +658,12 @@ registerFeature({
     const offHelper = ctx.role === 'host' ? subscribeHelper(() => publishAvail(ctx)) : () => {}
     const offSc = ctx.role === 'host' ? onMessage('sc', (m, c) => {
       if (c.role !== 'host') return
-      if (!currentAvail().on) return
+      const decision = stepControl(gate, { type: 'pointer', avail: currentAvail().on })
+      if (!decision.forward) {
+        gate = decision.gate
+        if (decision.gate.stopped) controlling.set(false)
+        return
+      }
       const cmds = helperCommands(m)
       if (!cmds.length) return
       let sent = false
@@ -652,7 +671,9 @@ registerFeature({
         if (!forwardHelper(cmd)) break
         sent = true
       }
-      if (sent && currentAvail().on) controlling.set(true)
+      if (!sent) return
+      gate = decision.gate
+      controlling.set(true)
     }) : () => {}
     let linkWasUp = ctx.link.connected
     const unsubLink = ctx.link.subscribe(() => {
@@ -674,12 +695,13 @@ registerFeature({
       }
     })
     return () => {
-      offCall(); offStop(); offAvail(); offScStop(); offReq(); offSc(); offHelper(); unsubLink()
+      offCall(); offStop(); offAvail(); offScStop(); offScStart(); offReq(); offSc(); offHelper(); unsubLink()
       window.removeEventListener('keydown', onKey)
       stopSharing(ctx, false)
       clearIncoming()
       requested.set(false)
       controlEpoch.set(0)
+      gate = initialControlGate()
       controlling.set(false)
       availSent = false
       availKey = ''
