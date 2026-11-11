@@ -526,7 +526,7 @@ function CodeScan({ ctx }: { ctx: CoreCtx }) {
       <h3>{kind === 'url' ? 'Link' : 'Code'}</h3>
       <p className="txt" data-testid="scan-result">{value}</p>
       <div className="stack" style={{ marginTop: 12 }}>
-        <button className="btn big" onClick={() => { sendText(ctx, value); ctx.toast('Sent to your laptop') }}>Send to laptop</button>
+        <button className="btn big" onClick={() => { if (!ctx.link.connected) { ctx.toast('Not connected'); return } sendText(ctx, value); ctx.toast('Sent to your laptop') }}>Send to laptop</button>
         {href
           ? <div className="two">
               <a className="btn ghost big" href={href} target="_blank" rel="noopener noreferrer">Open</a>
