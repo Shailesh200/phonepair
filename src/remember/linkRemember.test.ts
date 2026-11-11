@@ -152,6 +152,28 @@ describe('remember link auth', () => {
     assert.equal(shouldRestartListenPeer(false), true)
   })
 
+  it('sends remember:denied for unknown phoneId before close', async () => {
+    const evil = mockConn('evil-peer')
+    const host = new RememberHostAuth()
+    const key = randomBytes(32)
+    const phones = new Map([['phone-a', { key, name: 'Phone A' }]])
+    const cb = {
+      onPromote: () => {},
+      onFail: (_c: ReturnType<typeof mockConn>, reason: string) => assert.equal(reason, 'denied'),
+      onDispatch: () => {},
+      onTimeout: () => {},
+    }
+    host.beginAuth(evil as never, null, cb)
+    await host.handleData(
+      evil as never,
+      { t: 'remember:hello', phoneId: 'unknown', phoneNonce: bytesToB64(randomBytes(32)) },
+      phones,
+      null,
+      cb,
+    )
+    assert.ok((evil.sent as { t?: string }[]).some((m) => m.t === 'remember:denied'))
+  })
+
   it('backs off new remember dials for 1s after auth failure', () => {
     const host = new RememberHostAuth()
     const c = mockConn('x')

@@ -149,8 +149,8 @@ export class RememberHostAuth {
       this.promoted = true
       if (this.timer) clearTimeout(this.timer)
       this.timer = null
-      try { conn.send({ t: 'remember:ok', hostProof: bytesToB64(hostProof) }) } catch {}
       if (!pending.phoneId) return
+      try { conn.send({ t: 'remember:ok', hostProof: bytesToB64(hostProof) }) } catch {}
       cb.onPromote(conn, name, pending.phoneId)
       this.authPending = null
     }

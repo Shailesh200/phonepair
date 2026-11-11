@@ -33,6 +33,11 @@ function Landing({ ctx, cardPhase }: { ctx: CoreCtx; cardPhase: ReturnType<typeo
         <div className="chips landing-chips">{[['file', 'Files'], ['clip', 'Clipboard'], ['pointer', 'Remote'], ['screen', 'Screen view']].map(([i, t]) => <span key={t} className="chip static"><Icon n={i} />{t}</span>)}</div>
       </section>
       <SavedPhonesPanel ctx={ctx} />
+      {ctx.link.rememberListenOtherTab && (
+        <p className="mut small remember-other-tab" data-testid="remember-other-tab">
+          Saved phones are connected in another tab.
+        </p>
+      )}
       <QrCard
         link={ctx.link}
         phase={cardPhase}

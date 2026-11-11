@@ -29,6 +29,10 @@ import { signPhoneProof } from '../remember/proof'
 import type { HostAuthFailReason } from '../remember/hostAuth'
 import { canPromoteDataConn } from '../remember/promoteEligibility'
 import { shouldTickBootstrapListen } from '../remember/listenGiveUp'
+import {
+  canOpenRememberListenSocket,
+  listenClaimGiveUp,
+} from '../remember/rememberListenClaim'
 import { guestForgetMatchesSavedLaptop } from '../remember/guestForgetMatch'
 import { REMEMBER_PROOF_TIMEOUT_MS, type RememberGatePhase } from '../remember/gate'
 import { RememberHostAuth } from '../remember/hostAuth'
@@ -90,6 +94,7 @@ export class Link {
   private retry = 0
   private destroyed = false
   private everConnected = false
+  private sessionPaired = false
   private pending: DataConnection | null = null
   private dialWait: number | null = null
   private hostGrace: number | null = null
@@ -110,6 +115,10 @@ export class Link {
   private listenGaveUp = false
   private listenBootstrapInFlight = false
   private listenBackoffUntil = 0
+  private listenSocketsOpened = 0
+  private listenUnavailableFailures = 0
+  private listenSocketOpenTimes: number[] = []
+  private visibilityListener: (() => void) | null = null
   private authenticatedRememberPhoneId: string | null = null
   private listenLastReconnectAt = 0
   private authTimer: number | null = null
@@ -140,6 +149,23 @@ export class Link {
     this.listenGaveUp = false
     this.listenRetry = 0
     this.listenBackoffUntil = 0
+    this.listenSocketsOpened = 0
+    this.listenUnavailableFailures = 0
+    this.listenSocketOpenTimes = []
+  }
+
+  get guestSessionPaired() { return this.sessionPaired }
+  get rememberListenOtherTab() {
+    return this.role === 'host' && this.listenGaveUp && !!hostHasPhones(loadHostStore())
+  }
+
+  private bindVisibilityListenRetry() {
+    if (this.visibilityListener || this.role !== 'host') return
+    const onVis = () => {
+      if (document.visibilityState === 'visible') this.clearRememberListenGiveUp()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    this.visibilityListener = () => document.removeEventListener('visibilitychange', onVis)
   }
 
   private markRememberGuestDial() {
@@ -249,7 +275,10 @@ export class Link {
       console.warn('peer error', t, e)
     })
     this.timers.push(window.setInterval(() => this.tick(), 4000))
-    if (this.role === 'host') void this.bootstrapRememberListen(config)
+    if (this.role === 'host') {
+      this.bindVisibilityListenRetry()
+      void this.bootstrapRememberListen(config)
+    }
   }
 
   refreshRememberListen(stopListen = false) {
@@ -295,6 +324,19 @@ export class Link {
     this.rememberPhones = new Map(
       store.phones.map((p) => [p.id, { key: phoneKeyBytes(p), name: p.name }]),
     )
+    const now = Date.now()
+    if (!canOpenRememberListenSocket(
+      this.listenSocketsOpened,
+      this.listenGaveUp,
+      this.listenSocketOpenTimes,
+      now,
+    )) {
+      this.listenGaveUp = true
+      this.listenBootstrapInFlight = false
+      return
+    }
+    this.listenSocketsOpened++
+    this.listenSocketOpenTimes.push(now)
     const id = listenPeerId(store.listenId)
     const peer = new Peer(id, { ...SIGNAL, config: rtc })
     const prev = this.listenPeer
@@ -330,15 +372,18 @@ export class Link {
     peer.on('error', (e: any) => {
       if (e?.type !== 'unavailable-id' || this.destroyed) return
       this.listenRetry++
+      this.listenUnavailableFailures++
       const delay = hostUnavailableIdBackoffMs(this.listenRetry)
       this.listenBackoffUntil = Date.now() + delay
       try { peer.destroy() } catch {}
       if (this.listenPeer === peer) this.listenPeer = null
-      if (hostUnavailableIdGiveUp(this.listenRetry)) {
+      if (listenClaimGiveUp(this.listenUnavailableFailures, this.listenSocketsOpened)) {
         this.listenGaveUp = true
         return
       }
-      window.setTimeout(() => { if (!this.destroyed) void this.bootstrapRememberListen(rtc) }, delay)
+      window.setTimeout(() => {
+        if (!this.destroyed && !this.listenGaveUp) void this.bootstrapRememberListen(rtc)
+      }, delay)
     })
   }
 
@@ -567,6 +612,7 @@ export class Link {
       if (c !== this.inFlightDial && c !== this.pending && c !== this.conn) return
       this.lastSeen = Date.now()
       this.everConnected = true
+      this.sessionPaired = true
       this.retry = 0
       this.hostFails = 0
       if (this.dialHangTimer) { clearTimeout(this.dialHangTimer); this.dialHangTimer = null }
@@ -578,6 +624,7 @@ export class Link {
       if (this.hostGrace) { clearTimeout(this.hostGrace); this.hostGrace = null }
       c.send({ t: 'hello', name: deviceName() })
       this.set({ status: 'connected', error: '' })
+      if (this.role === 'host' && !this.rememberGuestAuth) this.clearRememberListenGiveUp()
       if (this.role === 'guest') {
         rememberGuestPairedCode(this.code)
         this.clearGuestWatchdog()
@@ -669,7 +716,8 @@ export class Link {
       this.set({ status: 'error', error: MSG_REMEMBER_UNREACHABLE })
       return
     }
-    this.set({ status: 'reconnecting', error: '' })
+    const nextStatus = this.rememberGuestAuth && !this.sessionPaired ? 'connecting' : 'reconnecting'
+    this.set({ status: nextStatus, error: '' })
     if (!this.hasInFlightDial()) this.scheduleDial()
   }
 
@@ -699,6 +747,7 @@ export class Link {
     this.conn = c
     this.connPeer = fromListenPeer ? this.listenPeer : this.peer
     if (fromListenPeer && rememberPhoneId) this.authenticatedRememberPhoneId = rememberPhoneId
+    this.sessionPaired = true
     this.rememberGuestFailCount = 0
     if (this.role === 'guest' && this.rememberGuestAuth) this.rememberGuestSince = 0
     if (this.hostGrace) { clearTimeout(this.hostGrace); this.hostGrace = null }
@@ -828,7 +877,8 @@ export class Link {
       }
     }
     else if (!this.hasInFlightDial()) {
-      this.set({ status: 'reconnecting' })
+      const next = this.rememberGuestAuth && !this.sessionPaired ? 'connecting' : 'reconnecting'
+      this.set({ status: next })
       this.scheduleDial()
     }
   }
@@ -838,7 +888,7 @@ export class Link {
     const elapsed = Date.now() - this.rememberGuestSince
     if (!shouldFailRememberGuestHome({
       rememberGuest: !!this.rememberGuestAuth,
-      everConnected: this.everConnected,
+      sessionPaired: this.sessionPaired,
       status: this.status,
       elapsedMs: elapsed,
       limitMs: REMEMBER_GUEST_HOME_MS,
@@ -980,6 +1030,8 @@ export class Link {
   }
 
   destroy() {
+    this.visibilityListener?.()
+    this.visibilityListener = null
     this.destroyed = true
     this.timers.forEach(clearInterval)
     if (this.dialWait) clearTimeout(this.dialWait)

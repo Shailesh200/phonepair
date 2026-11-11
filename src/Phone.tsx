@@ -8,6 +8,7 @@ import { joinPath } from './features/pairing/relay'
 import type { SavedLaptop } from './remember/storage'
 import { MSG_REMEMBER_DENIED } from './features/pairing/errors'
 import { forgetGuestLaptop } from './remember'
+import { phoneShowsConnecting, phoneShowsPairedHome } from './remember/guestSessionGate'
 import { phoneHostLabel } from './features/pairing/session'
 
 function entryPath() {
@@ -76,11 +77,13 @@ export function Phone({
       </div>
     )
   }
-  if (s !== 'connected' && s !== 'reconnecting') {
+  if (phoneShowsConnecting(ctx.link.guestSessionPaired, s) || !phoneShowsPairedHome(ctx.link.guestSessionPaired, s)) {
     return (
       <PhoneConnecting
         link={ctx.link}
+        rememberMode={rememberMode}
         onLeave={onLeave}
+        onRemember={onRemember}
         onRetry={() => ctx.link.redialGuest()}
       />
     )

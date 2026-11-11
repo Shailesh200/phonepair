@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { Logo } from '../../core/ui'
 import type { Link } from '../../core/link'
+import { SavedLaptopsList } from '../../remember/ui'
+import type { SavedLaptop } from '../../remember/storage'
 
 const SLOW_MS = 15_000
 
@@ -8,10 +10,14 @@ export function PhoneConnecting({
   link,
   onLeave,
   onRetry,
+  onRemember,
+  rememberMode,
 }: {
   link: Link
   onLeave: () => void
   onRetry: () => void
+  onRemember?: (lap: SavedLaptop) => void
+  rememberMode?: boolean
 }) {
   const [slow, setSlow] = useState(false)
   useEffect(() => {
@@ -28,9 +34,14 @@ export function PhoneConnecting({
         <Logo />
         <span className="spin big" />
         <h2>Connecting to your laptop…</h2>
-        <p className="mut">
-          Code <b className="mono">{link.code}</b>. Keep the PhonePair page open on your laptop.
-        </p>
+        {rememberMode ? (
+          <p className="mut">Reconnecting to your saved laptop…</p>
+        ) : (
+          <p className="mut">
+            Code <b className="mono">{link.code}</b>. Keep the PhonePair page open on your laptop.
+          </p>
+        )}
+        {onRemember && <SavedLaptopsList onPick={onRemember} />}
         {link.guestStallRetrying && (
           <p className="mut stall-retry" role="status">Still connecting… retrying</p>
         )}

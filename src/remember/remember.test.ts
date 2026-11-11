@@ -15,6 +15,10 @@ import { guestForgetMatchesSavedLaptop } from './guestForgetMatch.ts'
 import { shouldFailRememberGuestHome } from './guestHomeWatchdog.ts'
 import { hostAcceptsRememberForget } from './hostForgetAuth.ts'
 import { connBlockedByRememberAuth } from './hostAuthSend.ts'
+import { phoneShowsConnecting, phoneShowsPairedHome } from './guestSessionGate.ts'
+import { canOpenRememberListenSocket, listenClaimGiveUp, REMEMBER_LISTEN_MAX_SOCKETS } from './rememberListenClaim.ts'
+import { routeRememberDeniedToEntry } from './guestDeniedUi.ts'
+import { MSG_REMEMBER_DENIED } from '../features/pairing/errors.ts'
 import { forgetHostPhoneRecord, upsertGuestLaptop, type HostStore } from './records.ts'
 
 describe('remember hmac', () => {
@@ -64,19 +68,47 @@ describe('remember listen give up', () => {
   })
 })
 
+describe('remember guest session ui', () => {
+  it('shows tiles only after session is paired and connected', () => {
+    assert.equal(phoneShowsPairedHome(true, 'connected'), true)
+    assert.equal(phoneShowsPairedHome(false, 'connected'), false)
+    assert.equal(phoneShowsPairedHome(false, 'reconnecting'), false)
+    assert.equal(phoneShowsConnecting(false, 'reconnecting'), true)
+    assert.equal(phoneShowsConnecting(true, 'reconnecting'), true)
+  })
+})
+
+describe('remember listen claim', () => {
+  it('gives up after two unavailable-id failures or three sockets', () => {
+    assert.equal(listenClaimGiveUp(1, 1), false)
+    assert.equal(listenClaimGiveUp(2, 1), true)
+    assert.equal(listenClaimGiveUp(0, REMEMBER_LISTEN_MAX_SOCKETS), true)
+    assert.equal(canOpenRememberListenSocket(2, false, [1000, 2000], 3000), true)
+    assert.equal(canOpenRememberListenSocket(3, false, [], 3000), false)
+    assert.equal(canOpenRememberListenSocket(0, true, [], 3000), false)
+  })
+})
+
+describe('remember denied routing', () => {
+  it('routes MSG_REMEMBER_DENIED to entry denied UI', () => {
+    assert.equal(routeRememberDeniedToEntry(MSG_REMEMBER_DENIED), true)
+    assert.equal(routeRememberDeniedToEntry('nope'), false)
+  })
+})
+
 describe('remember guest home watchdog', () => {
-  it('does not fail home after the guest has ever connected', () => {
+  it('does not fail home after the guest has paired the session', () => {
     const limit = 10_000
     assert.equal(shouldFailRememberGuestHome({
       rememberGuest: true,
-      everConnected: true,
+      sessionPaired: true,
       status: 'reconnecting',
       elapsedMs: limit + 1,
       limitMs: limit,
     }), false)
     assert.equal(shouldFailRememberGuestHome({
       rememberGuest: true,
-      everConnected: false,
+      sessionPaired: false,
       status: 'connecting',
       elapsedMs: limit + 1,
       limitMs: limit,
