@@ -144,10 +144,16 @@
 
 .pg.remote .clicker-help { margin-top: 14px; }
 
+.phone-wrap .phone-page:has(.pg.remote) {
+  height: var(--vvh, 100dvh);
+  max-height: var(--vvh, 100dvh);
+}
 .phone-page:has(.pg.remote) > .pg.remote {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  height: var(--vvh, 100dvh);
+  max-height: 100%;
 }
 .pg.remote .seg,
 .pg.remote .clicks,
