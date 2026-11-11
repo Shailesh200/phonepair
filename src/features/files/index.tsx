@@ -8,7 +8,12 @@ export type FileItem = { id: string; dir: 'in' | 'out'; name: string; size: numb
 export const files = createStore<FileItem[]>([])
 const patch = (id: string, p: Partial<FileItem>) => files.set((xs) => xs.map((x) => (x.id === id ? { ...x, ...p } : x)))
 const CHUNK = 64 * 1024
+const PREVIEW = 3
 let queue: Promise<unknown> = Promise.resolve()
+
+function isImage(it: FileItem) {
+  return it.mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|avif|heic|heif)$/i.test(it.name)
+}
 
 async function sendOne(ctx: CoreCtx, f: Blob, name: string, id: string) {
   const c = ctx.link.conn
@@ -36,23 +41,35 @@ export function sendFiles(ctx: CoreCtx, list: File[] | FileList, rename?: (f: Fi
   })
 }
 
+function FileGlyph({ it }: { it: FileItem }) {
+  const [broken, setBroken] = useState(false)
+  const img = isImage(it)
+  // Received photos and screenshots preview in the row; everything else uses a file-type icon.
+  if (img && it.dir === 'in' && it.url && !broken) return <img className="thumb" src={it.url} alt="" onError={() => setBroken(true)} />
+  return <i className="ri"><Icon n={img ? 'image' : 'file'} /></i>
+}
+
 function Row({ it }: { it: FileItem }) {
-  const isImg = it.mime?.startsWith('image/'); const failed = it.progress < 0
+  const failed = it.progress < 0
+  const done = it.progress >= 1
+  const busy = !failed && it.progress < 1
   return <div className="row" data-testid={`item-${it.dir}-file`}>
-    {isImg && it.url ? <img className="thumb" src={it.url} alt="" /> : <i className="ri"><Icon n={isImg ? 'image' : 'file'} /></i>}
+    <FileGlyph it={it} />
     <div className="grow">
       <b className="fname">{it.name}</b>
-      <small>{fmtSize(it.size)} · {failed ? 'Failed' : it.progress < 1 ? `${Math.round(it.progress * 100)}%` : it.dir === 'in' ? 'Received' : 'Sent'}</small>
-      {!failed && it.progress < 1 && <div className="bar"><span style={{ width: `${Math.round(it.progress * 100)}%` }} /></div>}
+      <small>{fmtSize(it.size)}</small>
+      {busy && <div className="bar" data-testid="file-progress"><span style={{ width: `${Math.max(0, Math.round(it.progress * 100))}%` }} /></div>}
     </div>
-    {it.progress >= 1 && it.url && it.dir === 'in' && <button className="chip" data-testid="download" data-name={it.name} onClick={() => download(it.url!, it.name)}><Icon n="download" />Save</button>}
-    {it.progress >= 1 && it.dir === 'out' && <span className="tag ok">Sent</span>}
+    {failed && <span className="tag" style={{ background: '#FEF2F2', color: 'var(--red)' }}>Failed</span>}
+    {done && <button type="button" className={'tag' + (it.dir === 'in' ? ' ok' : '')} data-testid="download" data-name={it.name} onClick={() => { if (it.url) download(it.url, it.name) }}>{it.dir === 'in' ? 'Received' : 'Sent'}</button>}
   </div>
 }
 
 function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
   const [drag, setDrag] = useState(false)
+  const [all, setAll] = useState(false)
   const list = files.use()
+  const shown = all ? list : list.slice(0, PREVIEW)
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       const t = e.target as HTMLElement
@@ -70,21 +87,37 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
       <small>or <u>browse</u>: photos, PDFs, anything. Paste a screenshot with Ctrl/⌘+V.</small>
     </label>
     <div className="card pad">
-      <h3>Recent transfers</h3>
-      {list.length === 0 ? <p className="mut small">Nothing yet. Files you send or receive show up here.</p> : <div className="list">{list.map((it) => <Row key={it.id} it={it} />)}</div>}
+      <h3 className="h-row"><span>Recent transfers</span><button type="button" data-testid="see-all" onClick={() => setAll((v) => !v)} style={{ color: 'var(--a)', fontWeight: 600, fontSize: 13 }}>{all && list.length > PREVIEW ? 'Show less' : 'See all'}</button></h3>
+      {list.length === 0 ? <p className="mut small">Nothing yet. Files you send or receive show up here.</p> : <div className="list">{shown.map((it) => <Row key={it.id} it={it} />)}</div>}
     </div>
   </>
+}
+
+function JustReceived({ it }: { it: FileItem }) {
+  const [broken, setBroken] = useState(false)
+  const img = isImage(it) && !!it.url && !broken
+  return <div className="last card" data-testid="just-received">
+    <i style={img ? { overflow: 'hidden' } : undefined}>
+      {img ? <img src={it.url} alt="" onError={() => setBroken(true)} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 8 }} /> : <Icon n={isImage(it) ? 'image' : 'file'} />}
+    </i>
+    <div><small>Just received</small><b className="fname">{it.name}</b></div>
+    <button type="button" data-testid="just-received-open" onClick={() => { if (it.url) download(it.url, it.name) }} style={{ color: 'var(--a)', fontWeight: 700, fontSize: 14 }}>Open</button>
+  </div>
 }
 
 function PhonePage({ ctx }: { ctx: CoreCtx }) {
   const ref = useRef<HTMLInputElement>(null)
   const list = files.use()
-  return <div className="pg">
-    <input ref={ref} data-testid="phone-file-input" type="file" multiple hidden onChange={(e) => { if (e.target.files) sendFiles(ctx, e.target.files); e.target.value = '' }} />
-    <button className="bigpick card" onClick={() => ref.current?.click()}><span className="drop-ic"><Icon n="upload" /></span><b>Choose photos or files</b><small>They go straight to your laptop</small></button>
-    <h3 className="sec">Transfers</h3>
-    {list.length ? <div className="list">{list.map((it) => <Row key={it.id} it={it} />)}</div> : <p className="mut small">Files from your laptop show up here too.</p>}
-  </div>
+  const lastIn = list.find((it) => it.dir === 'in' && it.progress >= 1 && it.url)
+  return <>
+    {lastIn && <JustReceived it={lastIn} />}
+    <div className="pg">
+      <input ref={ref} data-testid="phone-file-input" type="file" multiple hidden onChange={(e) => { if (e.target.files) sendFiles(ctx, e.target.files); e.target.value = '' }} />
+      <button className="bigpick card" onClick={() => ref.current?.click()}><span className="drop-ic"><Icon n="upload" /></span><b>Choose photos or files</b><small>Photos, screenshots, or any file — they go straight to your laptop</small></button>
+      <h3 className="sec">Transfers</h3>
+      {list.length ? <div className="list">{list.map((it) => <Row key={it.id} it={it} />)}</div> : <p className="mut small">Files from your laptop show up here too.</p>}
+    </div>
+  </>
 }
 
 const incoming: Record<string, { name: string; size: number; mime: string; chunks: Uint8Array[]; got: number }> = {}
