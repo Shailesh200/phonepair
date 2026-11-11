@@ -16,6 +16,7 @@ import { redialDelayMs } from './reconnect.ts'
 import { phoneHostLabel } from './session.ts'
 import {
   guestShouldRedialOnPeerOpen,
+  reopenListenerShouldDial,
   shouldDeferDialUntilPeerOpen,
 } from './dialGuard.ts'
 
@@ -71,6 +72,11 @@ describe('dial guard', () => {
     assert.equal(guestShouldRedialOnPeerOpen('guest', 'connecting', false), true)
     assert.equal(guestShouldRedialOnPeerOpen('guest', 'connected', true), false)
     assert.equal(guestShouldRedialOnPeerOpen('host', 'connecting', false), false)
+  })
+
+  it('dials only from the main open handler on reconnect', () => {
+    assert.equal(reopenListenerShouldDial(), false)
+    assert.equal(guestShouldRedialOnPeerOpen('guest', 'connecting', false), true)
   })
 })
 

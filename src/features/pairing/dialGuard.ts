@@ -18,3 +18,8 @@ export function guestShouldRedialOnPeerOpen(
 }
 
 export const GUEST_CONNECTING_WATCHDOG_MS = 15_000
+
+/** `armDialWhenPeerOpens` only disarms; the main `peer.on('open')` handler dials once. */
+export function reopenListenerShouldDial(): boolean {
+  return false
+}

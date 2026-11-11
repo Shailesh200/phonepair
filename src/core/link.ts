@@ -232,8 +232,6 @@ export class Link {
       if (peer !== this.peer) return
       this.dialOnOpenPending = false
       peer.off('open', onReopen)
-      if (this.destroyed) return
-      if (guestShouldRedialOnPeerOpen(this.role, this.status, !!this.conn?.open)) this.dial()
     }
     peer.on('open', onReopen)
   }
@@ -267,7 +265,12 @@ export class Link {
       try {
         if (peer.disconnected) peer.reconnect()
       } catch {}
-      if (this.role === 'guest' && !this.connectingSince) this.connectingSince = Date.now()
+      if (this.role === 'guest' && !this.conn?.open) {
+        if (!guestShouldRedialOnPeerOpen(this.role, this.status, !!this.conn?.open)) {
+          this.set({ status: this.everConnected ? 'reconnecting' : 'connecting' })
+        }
+        if (!this.connectingSince) this.connectingSince = Date.now()
+      }
       return
     }
     if (this.pending && !this.pending.open) this.closePending()
