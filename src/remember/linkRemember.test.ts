@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { hmacSha256 } from './crypto.ts'
+import { signPhoneProof } from './proof.ts'
 import { RememberHostAuth } from './hostAuth.ts'
 import { shouldAcceptIncomingCall, shouldLinkSend } from './hostAuthSend.ts'
 import { bytesFromB64, bytesToB64, randomBytes } from './ids.ts'
@@ -55,7 +55,8 @@ describe('remember link auth', () => {
       onTimeout: (conn: ReturnType<typeof mockConn>) => { host.clear(); conn.close() },
     }
     host.beginAuth(evil as never, good as never, cb)
-    await host.handleData(evil as never, { t: 'remember:hello', phoneId: 'phone-a' }, phones, good as never, cb)
+    const phoneNonce = bytesToB64(randomBytes(32))
+    await host.handleData(evil as never, { t: 'remember:hello', phoneId: 'phone-a', phoneNonce }, phones, good as never, cb)
     await host.handleData(
       evil as never,
       { t: 'remember:proof', proof: bytesToB64(randomBytes(32)) },
@@ -83,11 +84,14 @@ describe('remember link auth', () => {
       onTimeout: () => {},
     }
     host.beginAuth(evil as never, null, cb)
-    await host.handleData(evil as never, { t: 'remember:hello', phoneId: 'phone-a' }, phones, null, cb)
+    const phoneNonce = bytesToB64(randomBytes(32))
+    await host.handleData(evil as never, { t: 'remember:hello', phoneId: 'phone-a', phoneNonce }, phones, null, cb)
     const challenge = (evil.sent as { t?: string; nonce?: string }[]).find((m) => m.t === 'remember:challenge')
     assert.ok(challenge?.nonce)
-    const proof = await hmacSha256(key, bytesFromB64(challenge.nonce!))
+    const proof = await signPhoneProof(key, bytesFromB64(challenge.nonce!))
     await host.handleData(evil as never, { t: 'remember:proof', proof: bytesToB64(proof) }, phones, null, cb)
+    const ok = (evil.sent as { t?: string; hostProof?: string }[]).find((m) => m.t === 'remember:ok')
+    assert.ok(ok?.hostProof)
     assert.ok(promoted)
     assert.equal(shouldLinkSend(evil as never, host.authPending), true)
     await host.handleData(evil as never, { t: 'file:ack', id: '1' }, phones, evil as never, cb)

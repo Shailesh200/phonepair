@@ -5,6 +5,7 @@ import { newPairCode, normalizePairCode, peerIdForCode } from '../features/pairi
 import {
   guestFailFastOnPeerUnavailable,
   MSG_HOST_NOT_FOUND,
+  MSG_REMEMBER_UNREACHABLE,
   rememberGuestPairedCode,
 } from '../features/pairing/errors'
 import { loadRtcConfiguration } from '../features/pairing/ice'
@@ -21,11 +22,12 @@ import { guestUnavailableRetries, redialDelayMs } from '../features/pairing/reco
 import { linkTeardownSendsBye } from '../features/pairing/teardown'
 import { shouldCallPeerReconnect } from '../features/pairing/peerReconnect'
 import { rememberLastLaptop } from '../features/pairing/session'
-import { hmacSha256 } from '../remember/crypto'
+import { guestAcceptsRememberOk } from '../remember/guestAuth'
+import { signPhoneProof } from '../remember/proof'
 import { REMEMBER_PROOF_TIMEOUT_MS, type RememberGatePhase } from '../remember/gate'
 import { RememberHostAuth } from '../remember/hostAuth'
 import { shouldAcceptIncomingCall, shouldLinkSend } from '../remember/hostAuthSend'
-import { bytesFromB64, bytesToB64, listenPeerId } from '../remember/ids'
+import { bytesFromB64, bytesToB64, listenPeerId, randomBytes } from '../remember/ids'
 import { hostHasPhones, loadHostStore, phoneKeyBytes } from '../remember/storage'
 import type { SavedLaptop } from '../remember/storage'
 
@@ -88,8 +90,7 @@ export class Link {
   private authPending: {
     conn: DataConnection
     phase: RememberGatePhase
-    nonce: Uint8Array | null
-    phone: { key: Uint8Array; name: string } | null
+    phoneNonce: Uint8Array | null
   } | null = null
   private rememberPhones: Map<string, { key: Uint8Array; name: string }> | null = null
   private rememberHostAuth = new RememberHostAuth()
@@ -407,8 +408,12 @@ export class Link {
     return c === this.conn || c === this.pending || c === this.inFlightDial || c === this.authPending?.conn
   }
 
+  private rememberGuestLive(): boolean {
+    return !this.rememberGuestAuth || (this.status === 'connected' && !!this.conn?.open)
+  }
+
   private routeIncomingCall(call: MediaConnection) {
-    if (!shouldAcceptIncomingCall(this.conn, call.peer)) {
+    if (!this.rememberGuestLive() || !shouldAcceptIncomingCall(this.conn, call.peer)) {
       try { call.close() } catch {}
       return
     }
@@ -462,6 +467,7 @@ export class Link {
 
   private dispatchPayload(m: any, c: DataConnection) {
     if (c !== this.conn) return
+    if (!this.rememberGuestLive()) return
     this.lastSeen = Date.now()
     if (!m || typeof m !== 'object') return
     if (m.t === 'ping') return
@@ -497,7 +503,7 @@ export class Link {
     if (c !== this.authPending?.conn) return
     this.clearAuthPending()
     try { c.close() } catch {}
-    this.set({ status: 'error', error: '' })
+    this.set({ status: 'error', error: MSG_REMEMBER_UNREACHABLE })
   }
 
   private promoteConnected(c: DataConnection, remoteHint?: string) {
@@ -533,24 +539,37 @@ export class Link {
       return
     }
     if (this.conn && !this.conn.open) this.dropConn()
-    this.authPending = { conn: c, phase: 'await-hello', nonce: null, phone: null }
+    this.authPending = { conn: c, phase: 'await-hello', phoneNonce: null }
     const greet = () => {
       if (c !== this.authPending?.conn || !this.rememberGuestAuth) return
-      try { c.send({ t: 'remember:hello', phoneId: this.rememberGuestAuth.phoneId }) } catch {}
-      this.authPending = { conn: c, phase: 'await-proof', nonce: null, phone: null }
+      const phoneNonce = randomBytes(32)
+      this.authPending = { conn: c, phase: 'await-proof', phoneNonce }
+      try {
+        c.send({
+          t: 'remember:hello',
+          phoneId: this.rememberGuestAuth.phoneId,
+          phoneNonce: bytesToB64(phoneNonce),
+        })
+      } catch {}
+      this.armAuthTimeout(c)
       this.set({ status: this.everConnected ? 'reconnecting' : 'connecting' })
     }
     if (c.open) greet(); else c.on('open', greet)
     c.on('data', async (m: any) => {
       if (c === this.authPending?.conn) {
         if (!m || typeof m !== 'object') return
-        if (m.t === 'remember:challenge' && typeof m.nonce === 'string' && this.rememberGuestAuth) {
-          const nonce = bytesFromB64(m.nonce)
-          const proof = await hmacSha256(this.rememberGuestAuth.key, nonce)
+        if (m.t === 'remember:challenge' && typeof m.nonce === 'string' && this.rememberGuestAuth && this.authPending.phoneNonce) {
+          const hostNonce = bytesFromB64(m.nonce)
+          const proof = await signPhoneProof(this.rememberGuestAuth.key, hostNonce)
           try { c.send({ t: 'remember:proof', proof: bytesToB64(proof) }) } catch {}
           return
         }
-        if (m.t === 'remember:ok') {
+        if (m.t === 'remember:ok' && this.rememberGuestAuth && this.authPending.phoneNonce) {
+          const ok = await guestAcceptsRememberOk(m, this.rememberGuestAuth.key, this.authPending.phoneNonce)
+          if (!ok) {
+            this.failRememberAuth(c)
+            return
+          }
           this.promoteConnected(c)
           return
         }
@@ -589,10 +608,6 @@ export class Link {
     }
     if (c === this.authPending?.conn) {
       this.clearAuthPending()
-      if (this.role === 'guest' && this.rememberGuestAuth && !this.hasInFlightDial()) {
-        this.set({ status: 'reconnecting' })
-        this.scheduleDial()
-      }
       return
     }
     if (!this.ownConn(c) || this.destroyed) return
@@ -676,12 +691,14 @@ export class Link {
   get connected() { return this.status === 'connected' && !!this.conn?.open }
 
   send(m: any) {
+    if (!this.rememberGuestLive()) return
     const pending = this.authPending || this.rememberHostAuth.authPending
     if (!shouldLinkSend(this.conn, pending)) return
     try { this.conn!.send(m) } catch {}
   }
 
   call(stream: MediaStream, kind: string) {
+    if (!this.rememberGuestLive()) throw new Error('Not connected')
     const pending = this.authPending || this.rememberHostAuth.authPending
     if (!this.peer || !this.remoteId || pending) throw new Error('Not connected')
     return this.peer.call(this.remoteId, stream, { metadata: { kind } })

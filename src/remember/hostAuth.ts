@@ -1,4 +1,4 @@
-import { verifyHmac } from './crypto.ts'
+import { verifyPhoneProof, signHostProof } from './proof.ts'
 import { REMEMBER_PROOF_TIMEOUT_MS, type RememberGatePhase } from './gate.ts'
 import { bytesFromB64, bytesToB64, randomBytes } from './ids.ts'
 
@@ -15,6 +15,7 @@ export type AuthPending = {
   conn: RememberConn
   phase: RememberGatePhase
   nonce: Uint8Array | null
+  phoneNonce: Uint8Array | null
   phone: RememberPhoneRecord | null
 }
 
@@ -41,7 +42,7 @@ export class RememberHostAuth {
       try { conn.close() } catch {}
       return
     }
-    this.authPending = { conn, phase: 'await-hello', nonce: null, phone: null }
+    this.authPending = { conn, phase: 'await-hello', nonce: null, phoneNonce: null, phone: null }
     this.armTimeout(conn, cb)
   }
 
@@ -71,31 +72,35 @@ export class RememberHostAuth {
     }
     if (conn !== this.authPending?.conn) return
     if (!m || typeof m !== 'object') return
-    const msg = m as { t?: string; phoneId?: string; proof?: string }
+    const msg = m as { t?: string; phoneId?: string; phoneNonce?: string; proof?: string }
     if (msg.t === 'remember:hello') {
       const phoneId = String(msg.phoneId ?? '')
       const rec = phones?.get(phoneId)
-      if (!rec) {
+      if (!rec || typeof msg.phoneNonce !== 'string' || !msg.phoneNonce) {
         cb.onFail(conn)
         return
       }
+      let phoneNonce: Uint8Array
+      try { phoneNonce = bytesFromB64(msg.phoneNonce) } catch { cb.onFail(conn); return }
+      if (phoneNonce.length !== 32) { cb.onFail(conn); return }
       const nonce = randomBytes(32)
-      this.authPending = { conn, phase: 'await-proof', nonce, phone: rec }
+      this.authPending = { conn, phase: 'await-proof', nonce, phoneNonce, phone: rec }
       try { conn.send({ t: 'remember:challenge', nonce: bytesToB64(nonce) }) } catch {}
       this.armTimeout(conn, cb)
       return
     }
-    if (msg.t === 'remember:proof' && this.authPending.phase === 'await-proof' && this.authPending.nonce && this.authPending.phone) {
-      const { nonce, phone } = this.authPending
+    if (msg.t === 'remember:proof' && this.authPending.phase === 'await-proof' && this.authPending.nonce && this.authPending.phone && this.authPending.phoneNonce) {
+      const { nonce, phone, phoneNonce } = this.authPending
       const proof = bytesFromB64(String(msg.proof ?? ''))
-      const ok = await verifyHmac(phone.key, nonce, proof)
+      const ok = await verifyPhoneProof(phone.key, nonce, proof)
       if (!ok) {
         cb.onFail(conn)
         return
       }
       const name = phone.name
+      const hostProof = await signHostProof(phone.key, phoneNonce)
       this.clear()
-      try { conn.send({ t: 'remember:ok' }) } catch {}
+      try { conn.send({ t: 'remember:ok', hostProof: bytesToB64(hostProof) }) } catch {}
       cb.onPromote(conn, name)
     }
   }
