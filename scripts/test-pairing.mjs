@@ -13,6 +13,7 @@ const child = spawn(process.execPath, [
   'src/remember/rememberListenClaim.test.ts',
   'src/features/pairing/guestTurnOrdering.test.ts',
   'src/features/pairing/peerForceAdapter.test.ts',
+  'src/features/pairing/forceSignalConnectingGrace.test.ts',
   'src/features/screen/map.test.ts',
   'src/features/screen/control.test.ts',
   'src/features/remote/helperProbe.test.ts',

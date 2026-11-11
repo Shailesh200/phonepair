@@ -1,7 +1,7 @@
 import { describe, it, mock, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  FORCE_SIGNAL_CONNECTING_GRACE_MS,
+  FORCE_SIGNAL_CONNECTING_GRACE_UNVERIFIED_MS,
   FORCE_SIGNAL_DROP_HOOK_CAP_MS,
   FORCE_SIGNAL_DROP_HOOK_FAST_PHASE_MS,
   FORCE_SIGNAL_OPEN_WATCHDOG_MS,
@@ -79,8 +79,8 @@ describe('forceSignalRunner connecting grace', () => {
     t.value = 1000 + 5000
     mock.timers.tick(5000)
     assert.equal(peer.sockets, 1)
-    t.value = 1000 + FORCE_SIGNAL_CONNECTING_GRACE_MS + 1
-    mock.timers.tick(FORCE_SIGNAL_CONNECTING_GRACE_MS + 1)
+    t.value = 1000 + FORCE_SIGNAL_CONNECTING_GRACE_UNVERIFIED_MS + 1
+    mock.timers.tick(FORCE_SIGNAL_CONNECTING_GRACE_UNVERIFIED_MS + 1)
     assert.ok(peer.sockets >= 1)
     runner.stop()
   })

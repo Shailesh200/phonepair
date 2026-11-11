@@ -1,5 +1,8 @@
 import type { ForceSignalPeerLike } from './forceSignalReconnect.ts'
-import { FORCE_SIGNAL_CONNECTING_GRACE_MS } from './forceSignalReconnect.ts'
+import {
+  FORCE_SIGNAL_CONNECTING_GRACE_UNVERIFIED_MS,
+  forceSignalConnectingGraceMs,
+} from './forceSignalReconnect.ts'
 
 export const WS_CONNECTING = 0
 export const WS_OPEN = 1
@@ -11,6 +14,12 @@ export type ForceSignalPeerStateExt = ForceSignalPeerLike & {
   signalConnectStartedAt?: () => number | null
 }
 
+export type ForceSocketReplaceOpts = {
+  unverifiedAfterDrop?: boolean
+  mode?: 'hook' | 'tick' | 'cadence' | 'online'
+  onlineAt?: number
+}
+
 export function peerSignalConnectingAgeMs(peer: ForceSignalPeerStateExt, now: number): number | null {
   const rs = peer.signalReadyState?.() ?? null
   if (rs !== WS_CONNECTING) return null
@@ -19,24 +28,44 @@ export function peerSignalConnectingAgeMs(peer: ForceSignalPeerStateExt, now: nu
   return now - started
 }
 
-export function mayForceReplaceSignalSocket(peer: ForceSignalPeerStateExt, now: number): boolean {
+export function mayForceReplaceSignalSocket(
+  peer: ForceSignalPeerStateExt,
+  now: number,
+  opts?: ForceSocketReplaceOpts,
+): boolean {
   if (peer.destroyed) return false
   const rs = peer.signalReadyState?.() ?? null
   if (rs == null) return true
   if (rs !== WS_CONNECTING) return true
+  const started = peer.signalConnectStartedAt?.() ?? null
+  if (
+    opts?.mode === 'online'
+    && opts.onlineAt != null
+    && started != null
+    && started < opts.onlineAt
+  ) {
+    return true
+  }
   const age = peerSignalConnectingAgeMs(peer, now)
   if (age == null) return true
-  return age >= FORCE_SIGNAL_CONNECTING_GRACE_MS
+  const grace = forceSignalConnectingGraceMs(!!opts?.unverifiedAfterDrop)
+  return age >= grace
 }
 
 export function forceSignalWatchdogDelayMs(
   peer: ForceSignalPeerStateExt,
   now: number,
   baseWatchdogMs: number,
+  unverifiedAfterDrop: boolean,
 ): number {
   if (peer.open) return baseWatchdogMs
+  const grace = forceSignalConnectingGraceMs(unverifiedAfterDrop)
   const age = peerSignalConnectingAgeMs(peer, now)
   if (age == null) return baseWatchdogMs
-  if (age >= FORCE_SIGNAL_CONNECTING_GRACE_MS) return baseWatchdogMs
-  return Math.max(baseWatchdogMs, FORCE_SIGNAL_CONNECTING_GRACE_MS - age)
+  let delay = baseWatchdogMs
+  if (age < grace) delay = Math.max(baseWatchdogMs, grace - age)
+  if (unverifiedAfterDrop) {
+    delay = Math.min(FORCE_SIGNAL_CONNECTING_GRACE_UNVERIFIED_MS, delay)
+  }
+  return delay
 }
