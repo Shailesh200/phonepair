@@ -35,3 +35,9 @@ export function dialOpenTimeoutMs(relayOnly: boolean): number {
 export function guestDialInFlight(inFlightUntil: number, now = Date.now()): boolean {
   return inFlightUntil > now
 }
+
+/** After the connecting stall threshold, only the watchdog redials when nothing is in flight. */
+export function guestWatchdogShouldRedial(dialInFlight: boolean, elapsedMs: number): boolean {
+  if (elapsedMs < GUEST_CONNECTING_WATCHDOG_MS) return false
+  return !dialInFlight
+}

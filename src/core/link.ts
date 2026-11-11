@@ -414,7 +414,15 @@ export class Link {
     if (this.role !== 'guest' || this.destroyed || this.status === 'error') return
     if (this.status !== 'connecting' || this.conn?.open) return
     if (!this.connectingSince) return
-    if (Date.now() - this.connectingSince < GUEST_CONNECTING_WATCHDOG_MS) return
+    const elapsed = Date.now() - this.connectingSince
+    if (elapsed < GUEST_CONNECTING_WATCHDOG_MS) return
+    if (this.hasInFlightDial()) {
+      if (!this.guestStallRetrying) {
+        this.guestStallRetrying = true
+        this.listeners.forEach((l) => l())
+      }
+      return
+    }
     this.connectingSince = Date.now()
     this.guestStallRetrying = true
     this.listeners.forEach((l) => l())
