@@ -1,5 +1,9 @@
 export const FORCE_SIGNAL_OPEN_WATCHDOG_MS = 3000
 export const FORCE_SIGNAL_RECLAIM_MIN_MS = 75_000
+export const FORCE_SIGNAL_VERIFY_CADENCE_MS = 12_000
+export const FORCE_SIGNAL_VERIFY_SLOW_CADENCE_MS = 60_000
+export const FORCE_SIGNAL_VERIFY_FAST_PHASE_MS = 5 * 60_000
+export const FORCE_SIGNAL_VISIBILITY_MIN_MS = 30_000
 
 export type ForceSignalPeerLike = {
   destroyed: boolean
@@ -28,6 +32,28 @@ export function forceSignalReconnectBackoffMs(attempt: number): number {
   return 10_000
 }
 
+export function forceSignalUnverifiedIntervalMs(elapsedSinceDropMs: number): number {
+  if (elapsedSinceDropMs < FORCE_SIGNAL_VERIFY_FAST_PHASE_MS) return FORCE_SIGNAL_VERIFY_CADENCE_MS
+  return FORCE_SIGNAL_VERIFY_SLOW_CADENCE_MS
+}
+
+export function forceSignalCadenceDue(
+  dropStartedAt: number | null,
+  lastCadenceAt: number | null,
+  now: number,
+): boolean {
+  if (dropStartedAt == null) return false
+  const elapsed = now - dropStartedAt
+  const interval = forceSignalUnverifiedIntervalMs(elapsed)
+  const anchor = lastCadenceAt ?? dropStartedAt
+  return now - anchor >= interval
+}
+
+export function shouldForceSignalOnVisibility(hiddenMs: number, unverified: boolean): boolean {
+  if (!unverified) return false
+  return hiddenMs > FORCE_SIGNAL_VISIBILITY_MIN_MS
+}
+
 export function signalPeerNeedsForce(peer: ForceSignalPeerLike, peerHealthy: boolean): boolean {
   if (peer.destroyed) return false
   if (peer.open && peerHealthy) return false
@@ -45,13 +71,16 @@ export type ForceSignalTimers = {
   now: () => number
 }
 
-type ForceMode = 'hook' | 'tick'
+type ForceMode = 'hook' | 'tick' | 'cadence' | 'online'
 
 export class ForceSignalRunner {
   private attempt = 0
   private watchdogId: number | null = null
   private retryId: number | null = null
   private reclaimStartedAt: number | null = null
+  private dropStartedAt: number | null = null
+  private lastCadenceAt: number | null = null
+  private unverifiedAfterDrop = false
   private stopped = false
   private timers: ForceSignalTimers
   private reclaimMinMs: number
@@ -77,16 +106,44 @@ export class ForceSignalRunner {
     }
   }
 
+  isUnverifiedAfterDrop(): boolean {
+    return this.unverifiedAfterDrop
+  }
+
+  onSignalingDrop() {
+    const now = this.timers.now()
+    this.unverifiedAfterDrop = true
+    this.dropStartedAt = now
+    this.lastCadenceAt = null
+  }
+
+  onPhoneConnected() {
+    this.unverifiedAfterDrop = false
+    this.dropStartedAt = null
+    this.lastCadenceAt = null
+    this.attempt = 0
+    this.reclaimStartedAt = null
+    this.clearTimers()
+  }
+
   onOpen() {
     this.attempt = 0
     this.reclaimStartedAt = null
     this.clearTimers()
   }
 
-  /**
-   * Explicit triggers (half-open, online, visibility, link-lost): force even when peer.open.
-   * @param idReclaimCap when true, stop after FORCE_SIGNAL_RECLAIM_MIN_MS (unavailable-id only — not used for network outage).
-   */
+  hookOnline(peer: ForceSignalPeerLike, idReclaimCap = false) {
+    if (this.stopped || peer.destroyed) return
+    if (this.watchdogId != null) return
+    if (this.retryId != null) {
+      this.timers.clearTimeout(this.retryId)
+      this.retryId = null
+    }
+    this.clearTimers()
+    this.attempt = 0
+    this.runForce(peer, idReclaimCap, 'online')
+  }
+
   hook(peer: ForceSignalPeerLike, idReclaimCap: boolean) {
     if (this.stopped || peer.destroyed) return
     if (this.watchdogId != null || this.retryId != null) return
@@ -98,14 +155,36 @@ export class ForceSignalRunner {
     this.runForce(peer, idReclaimCap, 'hook')
   }
 
-  /** Routine poll: skip only when the signal peer looks healthy (open and not disconnected). */
-  tick(peer: ForceSignalPeerLike, active: boolean, idReclaimCap: boolean, peerHealthy: boolean) {
+  tick(
+    peer: ForceSignalPeerLike,
+    active: boolean,
+    idReclaimCap: boolean,
+    peerLooksHealthy: boolean,
+    unverifiedMode: boolean,
+  ) {
     if (this.stopped || !active || peer.destroyed) return
-    if (peer.open && peerHealthy) {
+    const unverified = unverifiedMode || this.unverifiedAfterDrop
+    const peerHealthy = unverified ? false : peerLooksHealthy
+
+    if (!unverified && peer.open && peerHealthy) {
       this.onOpen()
       return
     }
+
     const now = this.timers.now()
+    if (unverified && peer.open && !peer.disconnected) {
+      if (this.dropStartedAt == null) this.onSignalingDrop()
+      if (
+        forceSignalCadenceDue(this.dropStartedAt, this.lastCadenceAt, now)
+        && this.watchdogId == null
+        && this.retryId == null
+      ) {
+        this.lastCadenceAt = now
+        this.runForce(peer, idReclaimCap, 'cadence')
+      }
+      return
+    }
+
     if (idReclaimCap) {
       this.reclaimStartedAt ??= now
       if (forceReclaimExpired(this.reclaimStartedAt, now, this.reclaimMinMs)) return
@@ -123,10 +202,11 @@ export class ForceSignalRunner {
       this.timers.clearTimeout(this.watchdogId)
       this.watchdogId = null
     }
+    const trustOpen = mode === 'tick'
     this.watchdogId = this.timers.setTimeout(() => {
       this.watchdogId = null
       if (peer.destroyed || this.stopped) return
-      if (mode === 'tick' && peer.open) return
+      if (trustOpen && peer.open) return
       const now = this.timers.now()
       if (idReclaimCap && forceReclaimExpired(this.reclaimStartedAt, now, this.reclaimMinMs)) return
       const delay = forceSignalReconnectBackoffMs(this.attempt)
@@ -137,7 +217,7 @@ export class ForceSignalRunner {
       this.retryId = this.timers.setTimeout(() => {
         this.retryId = null
         if (peer.destroyed || this.stopped) return
-        if (mode === 'tick' && peer.open) return
+        if (trustOpen && peer.open) return
         if (idReclaimCap && forceReclaimExpired(this.reclaimStartedAt, this.timers.now(), this.reclaimMinMs)) return
         this.runForce(peer, idReclaimCap, mode)
       }, delay)

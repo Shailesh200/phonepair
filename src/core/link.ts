@@ -25,10 +25,13 @@ import {
 import { guestUnavailableRetries, redialDelayMs } from '../features/pairing/reconnect'
 import { linkTeardownSendsBye } from '../features/pairing/teardown'
 import { shouldCallPeerReconnect, shouldHostReconnect } from '../features/pairing/peerReconnect'
-import { ForceSignalRunner, forceSignalReconnect } from '../features/pairing/forceSignalReconnect'
+import {
+  ForceSignalRunner,
+  forceSignalReconnect,
+  shouldForceSignalOnVisibility,
+} from '../features/pairing/forceSignalReconnect'
 import {
   hostKeepsConnectedStatusOnSignalDrop,
-  shouldHostReconnectAfterVisibility,
   shouldHostReconnectHalfOpen,
   shouldHostReconnectOnOnline,
 } from '../features/pairing/hostSignalReconnect'
@@ -123,7 +126,10 @@ export class Link {
   private bindNetworkWatchers() {
     if (this.networkWatchersCleanup) return
     const onOnline = () => {
-      if (shouldHostReconnectOnOnline(this.role, this.destroyed)) this.forceHostPeerSignalReconnect()
+      if (shouldHostReconnectOnOnline(this.role, this.destroyed)) {
+        const peer = this.peer
+        if (peer && !peer.destroyed) this.ensureHostSignalRunner().hookOnline(peer, false)
+      }
       this.onIceNetworkChange()
     }
     const onVis = () => {
@@ -134,8 +140,9 @@ export class Link {
       if (this.documentHiddenAt != null) {
         const hiddenMs = Date.now() - this.documentHiddenAt
         this.documentHiddenAt = null
-        if (this.role === 'host' && shouldHostReconnectAfterVisibility(hiddenMs)) {
-          this.forceHostPeerSignalReconnect()
+        if (this.role === 'host' && shouldForceSignalOnVisibility(hiddenMs, this.hostCodeSignalUnverified())) {
+          const peer = this.peer
+          if (peer && !peer.destroyed) this.ensureHostSignalRunner().hook(peer, false)
         }
       }
     }
@@ -164,19 +171,31 @@ export class Link {
     return this.hostSignalRunner
   }
 
+  private hostCodeSignalUnverified(): boolean {
+    return (
+      this.role === 'host'
+      && this.everConnected
+      && (this.status === 'reconnecting' || this.status === 'waiting')
+      && !this.conn?.open
+    )
+  }
+
   private hostCodeSignalForceActive(peer: Peer): boolean {
     if (this.role !== 'host' || this.destroyed || peer.destroyed) return false
+    if (this.hostCodeSignalUnverified()) return true
     if (this.status === 'reconnecting' || this.status === 'waiting') return true
     return shouldHostReconnectHalfOpen(this.role, this.destroyed, peer.open, !!this.conn?.open)
   }
 
   private tickHostCodeSignalForce(peer: Peer) {
-    const peerHealthy = peer.open && !peer.disconnected
+    const unverified = this.hostCodeSignalUnverified()
+    const peerLooksHealthy = peer.open && !peer.disconnected && !unverified
     this.ensureHostSignalRunner().tick(
       peer,
       this.hostCodeSignalForceActive(peer),
       false,
-      peerHealthy,
+      peerLooksHealthy,
+      unverified,
     )
   }
 
@@ -303,7 +322,9 @@ export class Link {
     const peer = id ? new Peer(id, { ...SIGNAL, config }) : new Peer({ ...SIGNAL, config })
     this.peer = peer
     peer.on('open', () => {
-      this.ensureHostSignalRunner().onOpen()
+      if (this.role === 'host' && this.conn?.open) {
+        this.ensureHostSignalRunner().onPhoneConnected()
+      }
       this.hostIdReclaimSince = null
       this.hostUnavailableRetry = 0
       this.retry = 0
@@ -329,6 +350,7 @@ export class Link {
           this.hostIdReclaimSince = started
           this.hostUnavailableRetry = 0
         }
+        this.ensureHostSignalRunner().onSignalingDrop()
       }
       const keepHostUi =
         this.role === 'host' && hostKeepsConnectedStatusOnSignalDrop(!!this.conn?.open)
@@ -616,6 +638,7 @@ export class Link {
       this.pending = null
       this.conn = c
       if (this.hostGrace) { clearTimeout(this.hostGrace); this.hostGrace = null }
+      if (this.role === 'host') this.ensureHostSignalRunner().onPhoneConnected()
       c.send({ t: 'hello', name: deviceName() })
       this.set({ status: 'connected', error: '' })
       this.wireIceRecovery(c)
@@ -661,6 +684,9 @@ export class Link {
     }
     if (this.role === 'host') {
       const peer = this.peer
+      if (this.everConnected && !this.conn?.open) {
+        this.ensureHostSignalRunner().onSignalingDrop()
+      }
       if (
         peer
         && shouldHostReconnectHalfOpen(this.role, this.destroyed, !!peer.open, !!this.conn?.open)
