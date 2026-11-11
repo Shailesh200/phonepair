@@ -19,7 +19,7 @@ import { isRelayOnly } from '../features/pairing/relay'
 import { hostUnavailableIdBackoffMs, hostUnavailableIdGiveUp } from '../features/pairing/hostClaim'
 import { guestUnavailableRetries, redialDelayMs } from '../features/pairing/reconnect'
 import { linkTeardownSendsBye } from '../features/pairing/teardown'
-import { shouldCallPeerReconnect } from '../features/pairing/peerReconnect'
+import { shouldCallPeerReconnect, shouldHostReconnect } from '../features/pairing/peerReconnect'
 import { rememberLastLaptop } from '../features/pairing/session'
 
 export type { Role }
@@ -91,8 +91,10 @@ export class Link {
     this.peer = peer
     peer.on('open', () => {
       this.retry = 0
-      if (this.role === 'host') this.set({ status: this.conn?.open ? 'connected' : 'waiting' })
-      else if (guestShouldRedialOnPeerOpen(this.role, this.status, !!this.conn?.open)) this.dial()
+      if (this.role === 'host') {
+        this.hostFails = 0
+        this.set({ status: this.conn?.open ? 'connected' : 'waiting', error: '' })
+      } else if (guestShouldRedialOnPeerOpen(this.role, this.status, !!this.conn?.open)) this.dial()
     })
     peer.on('connection', (c) => {
       if (this.role !== 'host') { c.close(); return }
@@ -104,7 +106,21 @@ export class Link {
     peer.on('disconnected', () => {
       if (this.destroyed) return
       this.set({ status: this.everConnected ? 'reconnecting' : this.status })
-      window.setTimeout(() => this.tryGuestPeerReconnect(peer), 1500)
+      window.setTimeout(() => {
+        if (this.role === 'host') {
+          if (shouldHostReconnect({
+            role: 'host',
+            linkDestroyed: this.destroyed,
+            samePeer: peer === this.peer,
+            disconnected: peer.disconnected,
+            peerDestroyed: peer.destroyed,
+          })) {
+            try { peer.reconnect() } catch {}
+          }
+          return
+        }
+        this.tryGuestPeerReconnect(peer)
+      }, 1500)
     })
     peer.on('error', (e: any) => {
       const t = e?.type
@@ -454,6 +470,15 @@ export class Link {
     const peer = this.peer
     if (this.role === 'guest' && peer && peer.disconnected && !peer.destroyed && !this.destroyed) {
       this.tryGuestPeerReconnect(peer)
+    }
+    if (this.role === 'host' && peer && shouldHostReconnect({
+      role: 'host',
+      linkDestroyed: this.destroyed,
+      samePeer: true,
+      disconnected: peer.disconnected,
+      peerDestroyed: peer.destroyed,
+    })) {
+      try { peer.reconnect() } catch {}
     }
     const c = this.conn
     if (c?.open) {
