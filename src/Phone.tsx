@@ -168,6 +168,13 @@ export function PhoneEntry(props: {
   onHost?: () => void
   onRemember?: (lap: SavedLaptop) => void
   error?: string
+  onForgetDenied?: () => void
+  onClearRememberError?: () => void
 }) {
-  return <CodeEntry {...props} />
+  return (
+    <CodeEntry
+      {...props}
+      onClearError={props.onClearRememberError}
+    />
+  )
 }

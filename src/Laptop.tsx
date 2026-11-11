@@ -32,6 +32,7 @@ function Landing({ ctx, cardPhase }: { ctx: CoreCtx; cardPhase: ReturnType<typeo
         </ol>
         <div className="chips landing-chips">{[['file', 'Files'], ['clip', 'Clipboard'], ['pointer', 'Remote'], ['screen', 'Screen view']].map(([i, t]) => <span key={t} className="chip static"><Icon n={i} />{t}</span>)}</div>
       </section>
+      <SavedPhonesPanel ctx={ctx} />
       <QrCard
         link={ctx.link}
         phase={cardPhase}

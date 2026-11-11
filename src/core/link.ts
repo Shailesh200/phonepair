@@ -27,6 +27,7 @@ import { guestAcceptsRememberOk } from '../remember/guestAuth'
 import { peerForOutboundCall } from '../remember/callPeer'
 import { signPhoneProof } from '../remember/proof'
 import type { HostAuthFailReason } from '../remember/hostAuth'
+import { canPromoteDataConn } from '../remember/promoteEligibility'
 import { REMEMBER_PROOF_TIMEOUT_MS, type RememberGatePhase } from '../remember/gate'
 import { RememberHostAuth } from '../remember/hostAuth'
 import { shouldAcceptIncomingCall, shouldLinkSend } from '../remember/hostAuthSend'
@@ -47,6 +48,7 @@ export type { Role }
 export type Status = 'starting' | 'waiting' | 'connecting' | 'connected' | 'reconnecting' | 'error' | 'closed'
 
 const SIGNAL = { host: 'signal.167.233.223.123.sslip.io', port: 443, path: '/peerjs', secure: true, key: 'peerjs' }
+const REMEMBER_GUEST_HOME_MS = 10_000
 
 export { newPairCode as newCode, normalizePairCode as cleanCode } from '../features/pairing/code'
 
@@ -97,6 +99,7 @@ export class Link {
   private dialTarget: string | null = null
   private rememberGuestAuth: { phoneId: string; key: Uint8Array; listenId: string } | null = null
   private rememberGuestFailCount = 0
+  private rememberGuestSince = 0
   private listenPeer: Peer | null = null
   private connPeer: Peer | null = null
   private listenRetry = 0
@@ -118,6 +121,7 @@ export class Link {
       const g = opts.rememberGuest
       this.dialTarget = listenPeerId(g.listenId)
       this.rememberGuestAuth = { phoneId: g.phoneId, key: phoneKeyBytes(g), listenId: g.listenId }
+      this.rememberGuestSince = Date.now()
     }
   }
 
@@ -623,7 +627,14 @@ export class Link {
       return
     }
     const fromAuth = this.authPending?.conn === c
-    if (!fromAuth && c !== this.inFlightDial && c !== this.pending && c !== this.conn) return
+    if (!canPromoteDataConn({
+      fromGuestAuthPending: fromAuth,
+      fromRememberListen: fromListenPeer,
+      conn: c,
+      inFlightDial: this.inFlightDial,
+      pending: this.pending,
+      liveConn: this.conn,
+    })) return
     this.lastSeen = Date.now()
     this.everConnected = true
     this.retry = 0
@@ -767,7 +778,27 @@ export class Link {
     }
   }
 
+  private tickRememberGuestHome() {
+    if (!this.rememberGuestAuth || this.destroyed || this.status === 'connected' || this.status === 'error') return
+    if (!this.rememberGuestSince) return
+    if (Date.now() - this.rememberGuestSince <= REMEMBER_GUEST_HOME_MS) return
+    this.failRememberGuestHome()
+  }
+
+  private failRememberGuestHome() {
+    const c = this.authPending?.conn ?? this.inFlightDial
+    if (c) {
+      this.clearAuthPending()
+      try { c.close() } catch {}
+    }
+    this.releaseInFlightDial()
+    if (this.dialWait) clearTimeout(this.dialWait)
+    this.dialWait = null
+    this.set({ status: 'error', error: MSG_REMEMBER_UNREACHABLE })
+  }
+
   private tickGuestWatchdog() {
+    this.tickRememberGuestHome()
     if (this.role !== 'guest' || this.destroyed || this.status === 'error') return
     if (this.status !== 'connecting' || this.conn?.open) return
     if (!this.connectingSince) return

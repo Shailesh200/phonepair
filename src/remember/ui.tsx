@@ -1,7 +1,8 @@
-import React, { useState } from 'react'
+import React from 'react'
 import type { CoreCtx } from '../core/bus'
 import { allowRemember, denyRemember, forgetGuestLaptopLocal, forgetHostPhone, rememberPrompt } from './index'
 import { loadGuestStore, loadHostStore } from './storage'
+import { rememberStorageEpoch } from './storageNotify'
 import type { SavedLaptop } from './storage'
 
 export function RememberPrompt({ ctx }: { ctx: CoreCtx }) {
@@ -22,7 +23,7 @@ export function RememberPrompt({ ctx }: { ctx: CoreCtx }) {
 }
 
 export function SavedPhonesPanel({ ctx }: { ctx: CoreCtx }) {
-  const [, bump] = useState(0)
+  rememberStorageEpoch.use()
   const store = loadHostStore()
   if (!store?.phones.length) return null
   return (
@@ -36,7 +37,7 @@ export function SavedPhonesPanel({ ctx }: { ctx: CoreCtx }) {
               type="button"
               className="linkbtn"
               data-testid="saved-phone-forget"
-              onClick={() => { forgetHostPhone(ctx, p.id); bump((x) => x + 1) }}
+              onClick={() => { forgetHostPhone(ctx, p.id) }}
             >
               Forget
             </button>
@@ -52,7 +53,7 @@ export function SavedLaptopsList({
 }: {
   onPick: (lap: SavedLaptop) => void
 }) {
-  const [, bump] = useState(0)
+  rememberStorageEpoch.use()
   const { laptops } = loadGuestStore()
   if (!laptops.length) return null
   return (
@@ -77,7 +78,7 @@ export function SavedLaptopsList({
               type="button"
               className="linkbtn"
               data-testid="saved-laptop-forget"
-              onClick={(e) => { e.stopPropagation(); forgetGuestLaptopLocal(lap.listenId); bump((x) => x + 1) }}
+              onClick={(e) => { e.stopPropagation(); forgetGuestLaptopLocal(lap.listenId) }}
             >
               Forget
             </button>

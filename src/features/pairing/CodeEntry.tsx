@@ -1,7 +1,7 @@
 import React, { useRef } from 'react'
 import { Logo } from '../../core/ui'
 import { CodeBoxes } from './CodeBoxes'
-import { MSG_REMEMBER_DENIED } from './errors'
+import { MSG_REMEMBER_DENIED, MSG_REMEMBER_UNREACHABLE } from './errors'
 import { lastLaptopSession } from './session'
 import { SavedLaptopsList } from '../../remember/ui'
 import type { SavedLaptop } from '../../remember/storage'
@@ -55,7 +55,17 @@ export function CodeEntry({
               onComplete={complete}
             />
             {error && (
-              <div className="err-block" role="alert">
+              <div
+                className="err-block"
+                role="alert"
+                data-testid={
+                  error === MSG_REMEMBER_DENIED
+                    ? 'remember-denied'
+                    : error === MSG_REMEMBER_UNREACHABLE
+                      ? 'remember-unreachable'
+                      : undefined
+                }
+              >
                 <p className="err">{error}</p>
                 {error === MSG_REMEMBER_DENIED && onForgetDenied && (
                   <button

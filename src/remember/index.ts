@@ -66,7 +66,7 @@ export function allowRemember(ctx: CoreCtx) {
   const grant = createRememberGrant(prev?.listenId)
   const store = upsertHostPhone(prev, {
     id: grant.phoneId,
-    name: 'Phone',
+    name: '…',
     key: phoneKeyStored(grant.key),
   })
   saveHostStore(store)
