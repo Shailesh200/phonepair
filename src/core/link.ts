@@ -19,7 +19,7 @@ import { isRelayOnly } from '../features/pairing/relay'
 import { hostUnavailableIdBackoffMs, hostUnavailableIdGiveUp } from '../features/pairing/hostClaim'
 import { guestUnavailableRetries, redialDelayMs } from '../features/pairing/reconnect'
 import { linkTeardownSendsBye } from '../features/pairing/teardown'
-import { shouldCallPeerReconnect } from '../features/pairing/peerReconnect'
+import { shouldCallPeerReconnect, shouldHostReconnect } from '../features/pairing/peerReconnect'
 import { rememberLastLaptop } from '../features/pairing/session'
 
 export type { Role }
@@ -104,7 +104,21 @@ export class Link {
     peer.on('disconnected', () => {
       if (this.destroyed) return
       this.set({ status: this.everConnected ? 'reconnecting' : this.status })
-      window.setTimeout(() => this.tryGuestPeerReconnect(peer), 1500)
+      window.setTimeout(() => {
+        if (this.role === 'host') {
+          if (shouldHostReconnect({
+            role: 'host',
+            linkDestroyed: this.destroyed,
+            samePeer: peer === this.peer,
+            disconnected: peer.disconnected,
+            peerDestroyed: peer.destroyed,
+          })) {
+            try { peer.reconnect() } catch {}
+          }
+          return
+        }
+        this.tryGuestPeerReconnect(peer)
+      }, 1500)
     })
     peer.on('error', (e: any) => {
       const t = e?.type
