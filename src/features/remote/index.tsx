@@ -283,6 +283,8 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
   const [fingers, setFingers] = useState<{ id: number; x: number; y: number }[]>([])
   const [stripOn, setStripOn] = useState(false)
   const pad = useRef<HTMLDivElement>(null)
+  const pageRef = useRef<HTMLDivElement>(null)
+  const focusTimer = useRef(0)
   const st = useRef({ pts: new Map<number, { x: number; y: number }>(), accX: 0, accY: 0, scrX: 0, scrY: 0, raf: 0, down: 0, moved: 0, multi: false })
   const last = useRef('')
   const ctxRef = useRef(ctx)
@@ -294,6 +296,35 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
   useEffect(() => {
     if (ctx.link.status === 'connected') ctx.send({ t: 'remote:pointer', on: tab === 'pointer' })
   }, [tab, ctx, ctx.link.status])
+  useEffect(() => {
+    const page = pageRef.current?.closest('.phone-page') as HTMLElement | null
+    if (!page) return
+    const apply = () => {
+      const vv = window.visualViewport
+      const h = vv ? vv.height : window.innerHeight
+      page.style.setProperty('--vvh', `${Math.round(h)}px`)
+      const input = document.activeElement
+      if (input instanceof HTMLElement && input.dataset.testid === 'kb-input') {
+        requestAnimationFrame(() => input.scrollIntoView({ block: 'nearest' }))
+      }
+    }
+    apply()
+    const vv = window.visualViewport
+    vv?.addEventListener('resize', apply)
+    vv?.addEventListener('scroll', apply)
+    return () => {
+      vv?.removeEventListener('resize', apply)
+      vv?.removeEventListener('scroll', apply)
+      window.clearTimeout(focusTimer.current)
+      page.style.removeProperty('--vvh')
+    }
+  }, [])
+  const revealInput = (el: HTMLElement) => {
+    window.clearTimeout(focusTimer.current)
+    requestAnimationFrame(() => {
+      focusTimer.current = window.setTimeout(() => el.scrollIntoView({ block: 'nearest' }), 50)
+    })
+  }
   useEffect(() => () => {
     const s = st.current
     if (s.raf) cancelAnimationFrame(s.raf)
@@ -389,7 +420,7 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
     try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) } catch { /* already released */ }
   }
 
-  return <div className="pg remote" data-remote-name={linked}>
+  return <div className="pg remote" data-remote-name={linked} ref={pageRef}>
     <div className="seg" role="tablist" aria-label="Remote mode">
       {(['trackpad', 'clicker', 'pointer'] as const).map((t) => <button key={t} type="button" role="tab" aria-selected={tab === t} data-testid={`rtab-${t}`} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t === 'trackpad' ? 'Trackpad' : t === 'clicker' ? 'Clicker' : 'Pointer'}</button>)}
     </div>
@@ -417,7 +448,7 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
     </div>
     <button type="button" className="btn ghost big kb-btn" data-testid="kb-toggle" onClick={() => setKb((v) => { if (!v) last.current = ''; return !v })}><Icon n="keyboard" />Keyboard</button>
     {kb && <form className="kb-form" onSubmit={(e) => { e.preventDefault(); ctx.send({ t: 'remote:key', key: 'Enter' }); const input = e.currentTarget.elements[0] as HTMLInputElement; input.value = ''; last.current = '' }}>
-      <input autoFocus data-testid="kb-input" className="kb" placeholder="Type here, it appears on the laptop" autoCapitalize="off" autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="send" onChange={(e) => {
+      <input autoFocus data-testid="kb-input" className="kb" placeholder="Type here, it appears on the laptop" autoCapitalize="off" autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="send" onFocus={(e) => revealInput(e.currentTarget)} onChange={(e) => {
         const v = e.target.value
         const p = last.current
         let i = 0
