@@ -12,7 +12,9 @@ import {
 import { fetchTurnPayload, TURN_FETCH_MS } from './turnFetch.ts'
 import { buildRtcConfiguration, mergeIceServers } from './peerConfig.ts'
 import { joinPathFor, withRelayQuery } from './relay.ts'
+import { hostUnavailableIdBackoffMs, hostUnavailableIdGiveUp, HOST_UNAVAILABLE_ID_MAX_TRIES } from './hostClaim.ts'
 import { redialDelayMs } from './reconnect.ts'
+import { linkTeardownSendsBye } from './teardown.ts'
 import { phoneHostLabel } from './session.ts'
 import {
   dialOpenTimeoutMs,
@@ -124,6 +126,24 @@ describe('guest errors', () => {
   it('uses expired when code was paired before', () => {
     const r = classifyGuestPairError({ code: 'ABCDEF', everConnectedThisSession: false, previouslyPairedCode: 'ABCDEF' })
     assert.equal(guestErrorText(r), MSG_CODE_EXPIRED)
+  })
+})
+
+describe('link teardown', () => {
+  it('sends bye only on explicit disconnect, not destroy', () => {
+    assert.equal(linkTeardownSendsBye('destroy'), false)
+    assert.equal(linkTeardownSendsBye('disconnect'), true)
+  })
+})
+
+describe('host id claim', () => {
+  it('retries unavailable-id with backoff for ~15s before giving up', () => {
+    assert.equal(hostUnavailableIdGiveUp(1), false)
+    assert.equal(hostUnavailableIdGiveUp(HOST_UNAVAILABLE_ID_MAX_TRIES), false)
+    assert.equal(hostUnavailableIdGiveUp(HOST_UNAVAILABLE_ID_MAX_TRIES + 1), true)
+    let total = 0
+    for (let i = 1; i <= HOST_UNAVAILABLE_ID_MAX_TRIES; i++) total += hostUnavailableIdBackoffMs(i)
+    assert.ok(total >= 10_000 && total <= 16_000)
   })
 })
 

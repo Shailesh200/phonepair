@@ -16,7 +16,9 @@ import {
   shouldDeferDialUntilPeerOpen,
 } from '../features/pairing/dialGuard'
 import { isRelayOnly } from '../features/pairing/relay'
+import { hostUnavailableIdBackoffMs, hostUnavailableIdGiveUp } from '../features/pairing/hostClaim'
 import { guestUnavailableRetries, redialDelayMs } from '../features/pairing/reconnect'
+import { linkTeardownSendsBye } from '../features/pairing/teardown'
 import { rememberLastLaptop } from '../features/pairing/session'
 
 export type { Role }
@@ -107,11 +109,11 @@ export class Link {
       if (t === 'unavailable-id' && this.role === 'host') {
         this.retry++
         peer.destroy()
-        if (this.retry > 4) {
+        if (hostUnavailableIdGiveUp(this.retry)) {
           this.set({ status: 'error', error: 'Could not claim this pairing code. Try again.' })
           return
         }
-        window.setTimeout(() => this.start(), 2500)
+        window.setTimeout(() => this.start(), hostUnavailableIdBackoffMs(this.retry))
         return
       }
       if (t === 'peer-unavailable') {
@@ -451,7 +453,9 @@ export class Link {
   }
 
   disconnect() {
-    try { this.conn?.send({ t: 'bye' }) } catch {}
+    if (linkTeardownSendsBye('disconnect')) {
+      try { this.conn?.send({ t: 'bye' }) } catch {}
+    }
     this.set({ status: this.role === 'host' ? 'waiting' : 'closed' })
     const c = this.conn
     this.conn = null
@@ -466,7 +470,6 @@ export class Link {
     this.dialOnOpenPending = false
     this.releaseInFlightDial()
     this.closePending()
-    try { this.conn?.send({ t: 'bye' }) } catch {}
     this.peer?.destroy()
   }
 }
