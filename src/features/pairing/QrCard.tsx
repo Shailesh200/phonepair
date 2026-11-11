@@ -22,7 +22,7 @@ export function QrCard({
   const url = joinUrl(location.origin, code)
   const [qr, setQr] = useState('')
   useEffect(() => {
-    QRCode.toDataURL(url, { margin: 1, width: 520, color: { dark: '#14110E', light: '#FFFCF7' }, errorCorrectionLevel: 'M' }).then(setQr)
+    QRCode.toDataURL(url, { margin: 1, width: 520, color: { dark: '#2A1C16', light: '#FFFEFA' }, errorCorrectionLevel: 'M' }).then(setQr)
   }, [url])
 
   const s = link.status
@@ -75,9 +75,10 @@ export function QrCard({
           {statusLine.text}
         </p>
       )}
-      <p className="qr-type">or type this code at <b>{location.host}</b></p>
+      <div className="qr-rule" />
+      <p className="qr-type">or open <b>{location.host}</b> on your phone and type the code</p>
       <div className="qr-actions">
-        <button type="button" className="linkbtn muted sm refresh-link" data-testid="new-code" onClick={onNewCode}>New code</button>
+        <button type="button" className="linkbtn sm refresh-link" data-testid="new-code" onClick={onNewCode}>New code</button>
       </div>
     </section>
   )

@@ -62,21 +62,21 @@ function HomeGlyph({ id, icon, hero }: { id: string; icon: string; hero?: boolea
   }
   if (id === 'clipboard') {
     return <svg viewBox="0 0 28 28" fill="none" aria-hidden="true">
-      <rect x="7" y="6.5" width="14" height="17" rx="2.2" stroke="#C6C6C2" strokeWidth="1.6" />
-      <path d="M11 6.5V5.2A2.2 2.2 0 0 1 13.2 3h1.6A2.2 2.2 0 0 1 17 5.2v1.3" stroke="#C6F432" strokeWidth="1.6" strokeLinecap="round" />
+      <rect x="7" y="6.5" width="14" height="17" rx="2.2" stroke="#5C564E" strokeWidth="1.6" />
+      <path d="M11 6.5V5.2A2.2 2.2 0 0 1 13.2 3h1.6A2.2 2.2 0 0 1 17 5.2v1.3" stroke="#2A1C16" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   }
   if (id === 'remote') {
     return <svg viewBox="0 0 28 28" fill="none" aria-hidden="true">
-      <path d="M6 4.5l16 11.6-7.8.7-3.7 7.8z" stroke="#C6C6C2" strokeWidth="1.6" strokeLinejoin="round" />
-      <path d="M14.2 16.8l3.6 6.8" stroke="#C6F432" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M6 4.5l16 11.6-7.8.7-3.7 7.8z" stroke="#5C564E" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M14.2 16.8l3.6 6.8" stroke="#2A1C16" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   }
   if (id === 'screen') {
     return <svg viewBox="0 0 28 28" fill="none" aria-hidden="true">
-      <rect x="2.5" y="5.5" width="23" height="14" rx="2.2" stroke="#C6C6C2" strokeWidth="1.6" />
-      <path d="M10 24h8" stroke="#C6F432" strokeWidth="1.6" strokeLinecap="round" />
-      <path d="M14 19.5V24" stroke="#C6F432" strokeWidth="1.6" strokeLinecap="round" />
+      <rect x="2.5" y="5.5" width="23" height="14" rx="2.2" stroke="#5C564E" strokeWidth="1.6" />
+      <path d="M10 24h8" stroke="#2A1C16" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M14 19.5V24" stroke="#2A1C16" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   }
   return <Icon n={icon} />

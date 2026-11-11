@@ -263,7 +263,7 @@ function LaptopOverlay() {
     return () => { if (cursorEl === ref.current) cursorEl = null }
   }, [])
   return <div ref={ref} className="ptr" data-testid="pointer" aria-hidden="true">
-    <svg viewBox="0 0 24 24" width="44" height="44" aria-hidden="true"><path d="M4 2l16 10-7 1.8L9.6 21z" fill="#C6F432" stroke="#0E0E10" strokeWidth="1.6" strokeLinejoin="round" /></svg>
+    <svg viewBox="0 0 24 24" width="44" height="44" aria-hidden="true"><path d="M4 2l16 10-7 1.8L9.6 21z" fill="#2A1C16" stroke="#F6F0E6" strokeWidth="1.6" strokeLinejoin="round" /></svg>
     <span className="dot" />
   </div>
 }

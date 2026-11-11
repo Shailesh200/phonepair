@@ -41,8 +41,8 @@
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: rgba(198, 244, 50, .22);
-  box-shadow: 0 0 0 14px rgba(198, 244, 50, .08);
+  background: rgba(42, 28, 22, .14);
+  box-shadow: 0 0 0 14px rgba(42, 28, 22, .06);
   transform: translate(-50%, -50%);
   pointer-events: none;
   z-index: 1;
@@ -65,7 +65,7 @@
   cursor: ns-resize;
 }
 .pg.remote .pad-scroll svg { width: 16px; height: 16px; color: var(--mut); }
-.pg.remote .pad-scroll.on { background: rgba(198, 244, 50, 0.16); color: var(--accent); }
+.pg.remote .pad-scroll.on { background: rgba(42, 28, 22, 0.08); color: var(--accent); }
 
 .pg.remote .clicks { margin-top: 10px; }
 .pg.remote .clicks .btn {
@@ -86,7 +86,7 @@
   gap: 8px;
 }
 .pg.remote .nav2 .btn svg { width: 22px; height: 22px; }
-.pg.remote .nav2 .btn:not(.soft) { box-shadow: 0 12px 24px -12px rgba(198, 244, 50, .45); }
+.pg.remote .nav2 .btn:not(.soft) { box-shadow: none; }
 .pg.remote .nav2.tall .btn { min-height: 150px; height: auto; font-size: 22px; }
 
 .pg.remote .kb-btn.btn {

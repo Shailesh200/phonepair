@@ -17,28 +17,77 @@ export function Laptop({ ctx }: { ctx: CoreCtx }) {
 
 function Landing({ ctx, cardPhase }: { ctx: CoreCtx; cardPhase: ReturnType<typeof useHostPairFlow>['cardPhase'] }) {
   return <div className="landing">
-    <header className="nav">
-      <Logo />
-      <nav><a href="#how">How it works</a></nav>
-    </header>
-    <div className="landing-copy">
-      <h1>Your phone.<br />On your laptop.</h1>
-      <p className="lead">Scan the code. Send files, text, and a remote — right in the browser.</p>
+    <div className="hero-fit">
+      <header className="nav">
+        <Logo />
+        <nav><a href="#how">How it works</a></nav>
+      </header>
+      <div className="landing-copy">
+        <h1>Your phone.<br />On your laptop.</h1>
+        <p className="lead">Scan the code. Send files, a clipboard, or a remote, right in the browser.</p>
+      </div>
+      <div className="stage-row">
+        <StudioStage />
+        <QrCard
+          link={ctx.link}
+          phase={cardPhase}
+          onNewCode={() => ctx.link.rollHostCode()}
+          onTryAgain={() => ctx.link.restartHost()}
+          onToast={ctx.toast}
+        />
+      </div>
     </div>
-    <div className="stage-row" id="how">
-      <StudioStage />
-      <QrCard
-        link={ctx.link}
-        phase={cardPhase}
-        onNewCode={() => ctx.link.rollHostCode()}
-        onTryAgain={() => ctx.link.restartHost()}
-        onToast={ctx.toast}
-      />
+    <section className="how" id="how">
+      <h2>How it works</h2>
+      <ol className="steps">
+        <li><span className="step-n">1</span><div><strong>Scan</strong><p>Point your camera at the code on this page.</p></div></li>
+        <li><span className="step-n">2</span><div><strong>Pair</strong><p>The phone and laptop connect directly.</p></div></li>
+        <li><span className="step-n">3</span><div><strong>Share</strong><p>Send files, a clipboard, or a remote.</p></div></li>
+      </ol>
+    </section>
+    <div className="feat-row">
+      <Feature title="Send files" hint="Photos, PDFs, anything" icon="files" />
+      <Feature title="Clipboard" hint="Copy on one, paste on the other" icon="clip" />
+      <Feature title="Remote" hint="Trackpad, keyboard, and clicks" icon="remote" />
+      <Feature title="Screen view" hint="See the laptop screen live" icon="screen" />
     </div>
-    <footer className="landing-foot">
-      Works in any browser<span className="sep">·</span><span id="privacy">Direct and encrypted</span><span className="sep">·</span>Free
-    </footer>
+    <p className="trust" id="privacy">Direct peer-to-peer · Encrypted · No sign-up · Free</p>
   </div>
+}
+
+function Feature({ title, hint, icon }: { title: string; hint: string; icon: 'files' | 'clip' | 'remote' | 'screen' }) {
+  return <div className="feat">
+    <FeatIcon name={icon} />
+    <b>{title}</b>
+    <span>{hint}</span>
+  </div>
+}
+
+function FeatIcon({ name }: { name: 'files' | 'clip' | 'remote' | 'screen' }) {
+  if (name === 'files') {
+    return <svg viewBox="0 0 28 28" fill="none" aria-hidden="true">
+      <path d="M14 18V6" stroke="#5C564E" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M9 11l5-5 5 5" stroke="#2A1C16" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M6 16v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6" stroke="#5C564E" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  }
+  if (name === 'clip') {
+    return <svg viewBox="0 0 28 28" fill="none" aria-hidden="true">
+      <rect x="7" y="6.5" width="14" height="17" rx="2.2" stroke="#5C564E" strokeWidth="1.6" />
+      <path d="M11 6.5V5.2A2.2 2.2 0 0 1 13.2 3h1.6A2.2 2.2 0 0 1 17 5.2v1.3" stroke="#2A1C16" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  }
+  if (name === 'remote') {
+    return <svg viewBox="0 0 28 28" fill="none" aria-hidden="true">
+      <path d="M6 4.5l16 11.6-7.8.7-3.7 7.8z" stroke="#5C564E" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M14.2 16.8l3.6 6.8" stroke="#2A1C16" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  }
+  return <svg viewBox="0 0 28 28" fill="none" aria-hidden="true">
+    <rect x="2.5" y="5.5" width="23" height="14" rx="2.2" stroke="#5C564E" strokeWidth="1.6" />
+    <path d="M10 24h8" stroke="#2A1C16" strokeWidth="1.6" strokeLinecap="round" />
+    <path d="M14 19.5V24" stroke="#2A1C16" strokeWidth="1.6" strokeLinecap="round" />
+  </svg>
 }
 
 function StudioStage() {
