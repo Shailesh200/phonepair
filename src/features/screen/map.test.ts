@@ -11,6 +11,7 @@ import {
   mapTouchToContent,
   moveAllowed,
   readAvail,
+  screenControlNote,
   viewOnlyDetail,
   type Effect,
   type Finger,
@@ -301,9 +302,21 @@ describe('control availability copy', () => {
   it('shows view-only with the surface hint or the helper reason', () => {
     assert.equal(viewOnlyDetail(undefined), SC_SURFACE_HINT)
     assert.equal(viewOnlyDetail(SC_REASON_SURFACE), SC_SURFACE_HINT)
-    assert.equal(viewOnlyDetail(SC_REASON_HELPER), 'Full laptop is off')
+    assert.equal(viewOnlyDetail(SC_REASON_HELPER), 'Control needs Full laptop on (helper running on the Mac) and the whole screen shared.')
     assert.equal(viewOnlyDetail(SC_REASON_EMPTY), SC_EMPTY_HINT)
     assert.equal(viewOnlyDetail('Window share'), 'Window share')
+  })
+
+  it('selects the helper hint when control is unavailable because of the helper', () => {
+    const hint = 'Control needs Full laptop on (helper running on the Mac) and the whole screen shared.'
+    assert.equal(viewOnlyDetail(SC_REASON_HELPER), hint)
+    assert.equal(viewOnlyDetail(' helper '), hint)
+    assert.equal(screenControlNote(false, false, SC_REASON_HELPER), hint)
+    assert.equal(screenControlNote(false, false, ' helper '), hint)
+    assert.equal(screenControlNote(false, false, SC_REASON_SURFACE), `View only · ${SC_SURFACE_HINT}`)
+    assert.equal(screenControlNote(false, false, SC_REASON_EMPTY), `View only · ${SC_EMPTY_HINT}`)
+    assert.equal(screenControlNote(false, false, undefined), `View only · ${SC_SURFACE_HINT}`)
+    assert.equal(screenControlNote(false, false, 'Window share'), 'View only · Window share')
   })
 })
 
