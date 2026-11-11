@@ -2,6 +2,21 @@ export type LinkRole = 'host' | 'guest'
 
 export const HOST_HIDDEN_RECONNECT_MS = 30_000
 export const FORCED_HOST_SIGNAL_RECONNECT_MIN_MS = 5000
+export const HOST_FORCE_SIGNAL_TIMEOUT_MS = 10_000
+
+export function shouldExpireHostForceSignalInFlight(
+  forceInFlight: boolean,
+  forceStartedAt: number,
+  now: number,
+  timeoutMs = HOST_FORCE_SIGNAL_TIMEOUT_MS,
+): boolean {
+  if (!forceInFlight || forceStartedAt <= 0) return false
+  return now - forceStartedAt >= timeoutMs
+}
+
+export function shouldClearHostForceSignalOnPeerError(forceInFlight: boolean, samePeer: boolean): boolean {
+  return forceInFlight && samePeer
+}
 
 export type HostSignalReconnectPlan = 'skip' | 'reconnect' | 'disconnect-then-reconnect'
 

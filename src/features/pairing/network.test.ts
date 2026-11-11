@@ -4,7 +4,10 @@ import {
   FORCED_HOST_SIGNAL_RECONNECT_MIN_MS,
   HOST_HIDDEN_RECONNECT_MS,
   isHalfOpenSignalConn,
+  HOST_FORCE_SIGNAL_TIMEOUT_MS,
   planHostSignalReconnect,
+  shouldClearHostForceSignalOnPeerError,
+  shouldExpireHostForceSignalInFlight,
   shouldHostReconnectAfterVisibility,
   shouldHostReconnectHalfOpen,
   shouldHostReconnectOnOnline,
@@ -72,6 +75,15 @@ describe('host signal reconnect', () => {
     )
     assert.equal(shouldSkipHostDisconnectedHandler(true), true)
     assert.equal(shouldSkipHostDisconnectedHandler(false), false)
+  })
+
+  it('expires stuck host force flag after safety timeout', () => {
+    const t0 = 50_000
+    assert.equal(shouldExpireHostForceSignalInFlight(true, t0, t0 + HOST_FORCE_SIGNAL_TIMEOUT_MS - 1), false)
+    assert.equal(shouldExpireHostForceSignalInFlight(true, t0, t0 + HOST_FORCE_SIGNAL_TIMEOUT_MS), true)
+    assert.equal(shouldExpireHostForceSignalInFlight(false, t0, t0 + HOST_FORCE_SIGNAL_TIMEOUT_MS), false)
+    assert.equal(shouldClearHostForceSignalOnPeerError(true, true), true)
+    assert.equal(shouldClearHostForceSignalOnPeerError(true, false), false)
   })
 })
 

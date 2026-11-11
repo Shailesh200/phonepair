@@ -23,6 +23,9 @@ import { shouldCallPeerReconnect, shouldHostReconnect } from '../features/pairin
 import {
   hostKeepsConnectedStatusOnSignalDrop,
   planHostSignalReconnect,
+  HOST_FORCE_SIGNAL_TIMEOUT_MS,
+  shouldClearHostForceSignalOnPeerError,
+  shouldExpireHostForceSignalInFlight,
   shouldHostReconnectAfterVisibility,
   shouldHostReconnectHalfOpen,
   shouldHostReconnectOnOnline,
@@ -101,6 +104,8 @@ export class Link {
   private iceRedialTimer: number | null = null
   private iceWatchCleanup: (() => void) | null = null
   private hostForceSignalInFlight = false
+  private hostForceSignalStartedAt = 0
+  private hostForceSignalTimer: number | null = null
   connViaRelay: boolean | null = null
 
   constructor(role: Role, code: string) {
@@ -150,6 +155,29 @@ export class Link {
     }
   }
 
+  private clearHostForceSignalInFlight() {
+    this.hostForceSignalInFlight = false
+    this.hostForceSignalStartedAt = 0
+    if (this.hostForceSignalTimer) {
+      clearTimeout(this.hostForceSignalTimer)
+      this.hostForceSignalTimer = null
+    }
+  }
+
+  private armHostForceSignalTimeout(peer: Peer) {
+    if (this.hostForceSignalTimer) clearTimeout(this.hostForceSignalTimer)
+    const started = this.hostForceSignalStartedAt
+    this.hostForceSignalTimer = window.setTimeout(() => {
+      this.hostForceSignalTimer = null
+      if (peer !== this.peer || this.destroyed) return
+      if (!shouldExpireHostForceSignalInFlight(this.hostForceSignalInFlight, started, Date.now())) return
+      this.clearHostForceSignalInFlight()
+      if (this.role === 'host' && peer.disconnected && !peer.destroyed) {
+        try { peer.reconnect() } catch {}
+      }
+    }, HOST_FORCE_SIGNAL_TIMEOUT_MS)
+  }
+
   private forceHostPeerSignalReconnect() {
     const peer = this.peer
     if (!peer) return
@@ -165,7 +193,9 @@ export class Link {
     })
     if (plan === 'skip') return
     this.hostForceSignalInFlight = true
+    this.hostForceSignalStartedAt = now
     this.lastPeerReconnectAt = now
+    this.armHostForceSignalTimeout(peer)
     try {
       if (plan === 'reconnect') peer.reconnect()
       else {
@@ -173,7 +203,7 @@ export class Link {
         peer.reconnect()
       }
     } catch {
-      this.hostForceSignalInFlight = false
+      this.clearHostForceSignalInFlight()
     }
   }
 
@@ -291,7 +321,7 @@ export class Link {
     const peer = id ? new Peer(id, { ...SIGNAL, config }) : new Peer({ ...SIGNAL, config })
     this.peer = peer
     peer.on('open', () => {
-      this.hostForceSignalInFlight = false
+      this.clearHostForceSignalInFlight()
       this.retry = 0
       if (this.role === 'host') {
         this.hostFails = 0
@@ -331,6 +361,9 @@ export class Link {
       }, 1500)
     })
     peer.on('error', (e: any) => {
+      if (shouldClearHostForceSignalOnPeerError(this.hostForceSignalInFlight, peer === this.peer)) {
+        this.clearHostForceSignalInFlight()
+      }
       const t = e?.type
       if (t === 'unavailable-id' && this.role === 'host') {
         this.retry++
@@ -730,6 +763,7 @@ export class Link {
   destroy() {
     this.destroyed = true
     this.clearTickTimers()
+    this.clearHostForceSignalInFlight()
     this.networkWatchersCleanup?.()
     this.clearIceRecovery()
     if (this.dialWait) clearTimeout(this.dialWait)
