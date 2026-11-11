@@ -9,7 +9,7 @@ Live: [phonepair.vercel.app](https://phonepair.vercel.app)
 
 ## Features
 
-1. **Pairing by QR and a 6-character code, with auto-reconnect.** The laptop shows a QR code and the code next to it. The phone scans the QR (it opens `/j/` plus the code) or types the code. Codes are six characters drawn from an alphabet that leaves out `I`, `O`, `0`, and `1`. The laptop keeps its code in `sessionStorage`, so a reload uses the same code and the phone reconnects on its own. A ping goes out every 4 seconds. After 15 seconds of silence the phone redials, and the laptop goes back to waiting on that same code.
+1. **Pairing by QR and a 6-character code, with auto-reconnect.** The laptop shows a QR code and the code next to it. The phone scans the QR (it opens `/j/` plus the code) or types the code. Codes are six characters drawn from an alphabet that leaves out `I`, `O`, `0`, and `1`. The laptop keeps its code in `sessionStorage`, so a reload uses the same code and the phone reconnects on its own. A ping goes out every 4 seconds. After 15 seconds of silence the phone redials, and the laptop goes back to waiting on that same code. If the old code is still held after 5 retries (about 12s), the laptop gets a new code and the phone needs to pair again.
 
 2. **Text and links, both ways.** Either device can send a note or a URL. Links in the text stay clickable, and both sides keep the thread.
 
