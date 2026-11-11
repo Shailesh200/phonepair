@@ -20,6 +20,20 @@ import { hostUnavailableIdBackoffMs, hostUnavailableIdGiveUp } from '../features
 import { guestUnavailableRetries, redialDelayMs } from '../features/pairing/reconnect'
 import { linkTeardownSendsBye } from '../features/pairing/teardown'
 import { shouldCallPeerReconnect, shouldHostReconnect } from '../features/pairing/peerReconnect'
+import {
+  shouldHostReconnectAfterVisibility,
+  shouldHostReconnectHalfOpen,
+  shouldHostReconnectOnOnline,
+} from '../features/pairing/hostSignalReconnect'
+import {
+  canAttemptIceRestart,
+  isDataConnIceOfferer,
+  iceTransportRecovered,
+  ICE_RESTART_RECOVERY_MS,
+  shouldRedialAfterIceRestart,
+  shouldRestartIce,
+} from '../features/pairing/iceRecovery'
+import { candidatePairUsesRelay } from '../features/pairing/relayStats'
 import { rememberLastLaptop } from '../features/pairing/session'
 
 export type { Role }
@@ -73,6 +87,14 @@ export class Link {
   private inFlightDial: DataConnection | null = null
   private dialHangTimer: number | null = null
   private lastPeerReconnectAt = 0
+  private documentHiddenAt: number | null = null
+  private networkWatchersCleanup: (() => void) | null = null
+  private iceDisconnectedAt: number | null = null
+  private iceRestartAt = 0
+  private iceRestartInFlight = false
+  private iceRedialTimer: number | null = null
+  private iceWatchCleanup: (() => void) | null = null
+  connViaRelay: boolean | null = null
 
   constructor(role: Role, code: string) {
     this.role = role
@@ -83,9 +105,145 @@ export class Link {
   onCall(h: CallHandler) { this.callHandlers.add(h); return () => { this.callHandlers.delete(h) } }
   private set(s: Partial<Link>) { Object.assign(this, s); this.listeners.forEach((l) => l()) }
 
+  private clearTickTimers() {
+    for (const id of this.timers) clearInterval(id)
+    this.timers = []
+  }
+
+  private bindNetworkWatchers() {
+    if (this.networkWatchersCleanup) return
+    const onOnline = () => {
+      if (shouldHostReconnectOnOnline(this.role, this.destroyed)) this.forceHostPeerSignalReconnect()
+      this.onIceNetworkChange()
+    }
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') {
+        this.documentHiddenAt = Date.now()
+        return
+      }
+      if (this.documentHiddenAt != null) {
+        const hiddenMs = Date.now() - this.documentHiddenAt
+        this.documentHiddenAt = null
+        if (this.role === 'host' && shouldHostReconnectAfterVisibility(hiddenMs)) {
+          this.forceHostPeerSignalReconnect()
+        }
+      }
+    }
+    window.addEventListener('online', onOnline)
+    document.addEventListener('visibilitychange', onVis)
+    const nav = navigator as Navigator & { connection?: { addEventListener: (e: string, h: () => void) => void; removeEventListener: (e: string, h: () => void) => void } }
+    const conn = nav.connection
+    const onNetChange = () => this.onIceNetworkChange()
+    conn?.addEventListener?.('change', onNetChange)
+    this.networkWatchersCleanup = () => {
+      window.removeEventListener('online', onOnline)
+      document.removeEventListener('visibilitychange', onVis)
+      conn?.removeEventListener?.('change', onNetChange)
+      this.networkWatchersCleanup = null
+    }
+  }
+
+  private forceHostPeerSignalReconnect() {
+    const peer = this.peer
+    if (!peer || peer.destroyed || this.destroyed || this.role !== 'host') return
+    this.lastPeerReconnectAt = Date.now()
+    try { peer.reconnect() } catch {}
+  }
+
+  private clearIceRecovery() {
+    if (this.iceRedialTimer) {
+      clearTimeout(this.iceRedialTimer)
+      this.iceRedialTimer = null
+    }
+    this.iceWatchCleanup?.()
+    this.iceWatchCleanup = null
+    this.iceDisconnectedAt = null
+    this.iceRestartAt = 0
+    this.iceRestartInFlight = false
+  }
+
+  private peerConnectionOf(c: DataConnection): RTCPeerConnection | null {
+    const pc = (c as DataConnection & { peerConnection?: RTCPeerConnection }).peerConnection
+    return pc ?? null
+  }
+
+  async refreshConnRelay() {
+    const pc = this.conn ? this.peerConnectionOf(this.conn) : null
+    if (!pc) {
+      this.connViaRelay = null
+      this.listeners.forEach((l) => l())
+      return
+    }
+    try {
+      this.connViaRelay = candidatePairUsesRelay(await pc.getStats())
+    } catch {
+      this.connViaRelay = null
+    }
+    this.listeners.forEach((l) => l())
+  }
+
+  private onIceNetworkChange() {
+    if (!isDataConnIceOfferer(this.role) || this.destroyed) return
+    const pc = this.conn ? this.peerConnectionOf(this.conn) : null
+    if (!pc) return
+    this.maybeRestartIce(pc)
+  }
+
+  private maybeRestartIce(pc: RTCPeerConnection) {
+    const now = Date.now()
+    const state = pc.iceConnectionState
+    if (iceTransportRecovered(state)) {
+      this.iceDisconnectedAt = null
+      return
+    }
+    if (state === 'disconnected' && this.iceDisconnectedAt == null) this.iceDisconnectedAt = now
+    if (!isDataConnIceOfferer(this.role)) return
+    if (!shouldRestartIce(state, this.iceDisconnectedAt, now)) return
+    if (!canAttemptIceRestart(this.iceRestartInFlight, this.iceRestartAt, now)) return
+    void this.attemptIceRestart(pc)
+  }
+
+  private async attemptIceRestart(pc: RTCPeerConnection) {
+    this.iceRestartInFlight = true
+    this.iceRestartAt = Date.now()
+    try {
+      pc.restartIce()
+    } catch {
+      this.iceRestartInFlight = false
+      return
+    }
+    this.iceRestartInFlight = false
+    void this.refreshConnRelay()
+    if (this.iceRedialTimer) clearTimeout(this.iceRedialTimer)
+    const restartAt = this.iceRestartAt
+    this.iceRedialTimer = window.setTimeout(() => {
+      this.iceRedialTimer = null
+      if (this.destroyed) return
+      if (shouldRedialAfterIceRestart(restartAt, pc.iceConnectionState, Date.now())) {
+        if (this.role === 'guest') this.redialGuestNow()
+      }
+    }, ICE_RESTART_RECOVERY_MS)
+  }
+
+  private wireIceRecovery(c: DataConnection) {
+    this.clearIceRecovery()
+    const pc = this.peerConnectionOf(c)
+    if (!pc) return
+    const onIce = () => this.maybeRestartIce(pc)
+    pc.addEventListener('iceconnectionstatechange', onIce)
+    const onPeerIce = () => onIce()
+    c.on('iceStateChanged', onPeerIce)
+    this.iceWatchCleanup = () => {
+      pc.removeEventListener('iceconnectionstatechange', onIce)
+      c.off('iceStateChanged', onPeerIce)
+    }
+  }
+
   async start() {
+    this.clearTickTimers()
     const config = await loadRtcConfiguration()
     if (this.destroyed) return
+    this.bindNetworkWatchers()
     const id = this.role === 'host' ? peerIdForCode(this.code) : undefined
     const peer = id ? new Peer(id, { ...SIGNAL, config }) : new Peer({ ...SIGNAL, config })
     this.peer = peer
@@ -163,7 +321,6 @@ export class Link {
         if (this.role === 'guest' && this.peer && !this.conn?.open && !this.hasInFlightDial()) this.scheduleDial()
         return
       }
-      console.warn('peer error', t, e)
     })
     this.timers.push(window.setInterval(() => this.tick(), 4000))
   }
@@ -236,6 +393,8 @@ export class Link {
     if (this.conn && !this.conn.open) {
       try { this.conn.close() } catch {}
     }
+    this.clearIceRecovery()
+    this.connViaRelay = null
     this.conn = null
   }
 
@@ -372,6 +531,8 @@ export class Link {
       if (this.hostGrace) { clearTimeout(this.hostGrace); this.hostGrace = null }
       c.send({ t: 'hello', name: deviceName() })
       this.set({ status: 'connected', error: '' })
+      this.wireIceRecovery(c)
+      void this.refreshConnRelay()
       if (this.role === 'guest') {
         rememberGuestPairedCode(this.code)
         this.clearGuestWatchdog()
@@ -412,6 +573,13 @@ export class Link {
       this.dropConn()
     }
     if (this.role === 'host') {
+      const peer = this.peer
+      if (
+        peer
+        && shouldHostReconnectHalfOpen(this.role, this.destroyed, !!peer.open, !!this.conn?.open)
+      ) {
+        this.forceHostPeerSignalReconnect()
+      }
       if (this.everConnected) {
         this.set({ status: 'reconnecting' })
         if (!this.hostGrace) {
@@ -511,7 +679,9 @@ export class Link {
 
   destroy() {
     this.destroyed = true
-    this.timers.forEach(clearInterval)
+    this.clearTickTimers()
+    this.networkWatchersCleanup?.()
+    this.clearIceRecovery()
     if (this.dialWait) clearTimeout(this.dialWait)
     this.clearGuestWatchdog()
     this.dialOnOpenPending = false

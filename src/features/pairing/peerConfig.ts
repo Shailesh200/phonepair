@@ -1,3 +1,5 @@
+import { iceServersFromTurnApi } from './iceServerMap.ts'
+
 export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }]
 
 export type TurnPayload = { iceServers?: RTCIceServer[] }
@@ -13,7 +15,7 @@ export function buildRtcConfiguration(
 }
 
 export function mergeIceServers(fetched: TurnPayload | null | undefined): RTCIceServer[] {
-  const fromApi = fetched?.iceServers
-  if (Array.isArray(fromApi) && fromApi.length) return fromApi
+  const fromApi = iceServersFromTurnApi(fetched?.iceServers)
+  if (fromApi.length) return fromApi
   return DEFAULT_ICE_SERVERS
 }
