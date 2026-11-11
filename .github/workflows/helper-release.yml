@@ -3,6 +3,8 @@ name: Helper release
 on:
   workflow_dispatch:
   push:
+    branches:
+      - feat/helper-app # TEMP: remove before merge to main
     tags:
       - 'helper-v*'
 
@@ -113,15 +115,22 @@ jobs:
             grep -E -q 'Signature=adhoc|adhoc' "$RUNNER_TEMP/codesign.txt"
           fi
 
-      - name: Upload macOS builds
+      - name: Print macOS artifact sizes
+        run: find desktop/release -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' \) -exec ls -l {} \;
+
+      - name: Upload macOS DMG
         uses: actions/upload-artifact@v4
         with:
-          name: phonepair-helper-mac
+          name: phonepair-helper-mac-dmg
           if-no-files-found: error
-          path: |
-            desktop/release/*.dmg
-            desktop/release/*.zip
-            desktop/release/*.blockmap
+          path: desktop/release/*.dmg
+
+      - name: Upload macOS ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: phonepair-helper-mac-zip
+          if-no-files-found: error
+          path: desktop/release/*.zip
 
   release-win:
     runs-on: windows-2022
@@ -152,6 +161,10 @@ jobs:
         run: npx electron-builder --win --x64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Print Windows artifact size
+        shell: bash
+        run: find desktop/release -maxdepth 1 -type f -name '*.exe' -exec ls -l {} \;
 
       - name: Upload Windows build
         uses: actions/upload-artifact@v4

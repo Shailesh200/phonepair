@@ -20,13 +20,21 @@
     "productName": "PhonePair Helper",
     "asar": true,
     "npmRebuild": false,
+    "afterPack": "./scripts/after-pack.cjs",
     "directories": {
       "output": "release",
       "buildResources": "build"
     },
     "files": [
-      "out",
-      "package.json"
+      "out/**/*",
+      "package.json",
+      "!**/*.map",
+      "!**/*.{ts,tsx}",
+      "!**/*.md",
+      "!**/test/**",
+      "!**/tests/**",
+      "!**/__tests__/**",
+      "!**/docs/**"
     ],
     "asarUnpack": [
       "**/*.node"
