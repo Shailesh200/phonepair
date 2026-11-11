@@ -12,7 +12,10 @@ import {
 import { fetchTurnPayload, TURN_FETCH_MS } from './turnFetch.ts'
 import { buildRtcConfiguration, mergeIceServers } from './peerConfig.ts'
 import { joinPathFor, withRelayQuery } from './relay.ts'
+import { hostUnavailableIdBackoffMs, hostUnavailableIdGiveUp, HOST_UNAVAILABLE_ID_MAX_TRIES } from './hostClaim.ts'
 import { redialDelayMs } from './reconnect.ts'
+import { PEER_RECONNECT_MIN_MS, shouldCallPeerReconnect } from './peerReconnect.ts'
+import { linkTeardownSendsBye } from './teardown.ts'
 import { phoneHostLabel } from './session.ts'
 import {
   dialOpenTimeoutMs,
@@ -124,6 +127,55 @@ describe('guest errors', () => {
   it('uses expired when code was paired before', () => {
     const r = classifyGuestPairError({ code: 'ABCDEF', everConnectedThisSession: false, previouslyPairedCode: 'ABCDEF' })
     assert.equal(guestErrorText(r), MSG_CODE_EXPIRED)
+  })
+})
+
+describe('link teardown', () => {
+  it('sends bye only on explicit disconnect, not destroy', () => {
+    assert.equal(linkTeardownSendsBye('destroy'), false)
+    assert.equal(linkTeardownSendsBye('disconnect'), true)
+  })
+})
+
+describe('guest peer reconnect', () => {
+  const base = {
+    role: 'guest' as const,
+    disconnected: true,
+    peerDestroyed: false,
+    linkDestroyed: false,
+    lastPeerReconnectAt: 0,
+  }
+
+  it('allows reconnect when disconnected and idle long enough', () => {
+    const now = 50_000
+    assert.equal(shouldCallPeerReconnect({ ...base, now }), true)
+    assert.equal(
+      shouldCallPeerReconnect({ ...base, lastPeerReconnectAt: now - PEER_RECONNECT_MIN_MS, now }),
+      true,
+    )
+  })
+
+  it('blocks reconnect within 3s or when not disconnected / destroyed', () => {
+    const now = 50_000
+    assert.equal(
+      shouldCallPeerReconnect({ ...base, lastPeerReconnectAt: now - (PEER_RECONNECT_MIN_MS - 1), now }),
+      false,
+    )
+    assert.equal(shouldCallPeerReconnect({ ...base, disconnected: false, now }), false)
+    assert.equal(shouldCallPeerReconnect({ ...base, peerDestroyed: true, now }), false)
+    assert.equal(shouldCallPeerReconnect({ ...base, linkDestroyed: true, now }), false)
+    assert.equal(shouldCallPeerReconnect({ ...base, role: 'host', now }), false)
+  })
+})
+
+describe('host id claim', () => {
+  it('retries unavailable-id with backoff for ~15s before giving up', () => {
+    assert.equal(hostUnavailableIdGiveUp(1), false)
+    assert.equal(hostUnavailableIdGiveUp(HOST_UNAVAILABLE_ID_MAX_TRIES), false)
+    assert.equal(hostUnavailableIdGiveUp(HOST_UNAVAILABLE_ID_MAX_TRIES + 1), true)
+    let total = 0
+    for (let i = 1; i <= HOST_UNAVAILABLE_ID_MAX_TRIES; i++) total += hostUnavailableIdBackoffMs(i)
+    assert.ok(total >= 10_000 && total <= 16_000)
   })
 })
 
