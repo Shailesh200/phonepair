@@ -53,8 +53,8 @@ Run this on a Mac after the helper is allowed under Accessibility.
 9. Drag with two fingers: scroll.
 10. Open the keyboard and type a few characters.
 11. On the laptop, confirm the banner **Phone is controlling this laptop** with **Stop**. Primary display only.
-12. Press **Stop**. The banner goes away and the pointer button is released. Press Control again, drag, and press **Esc**. The banner goes away the same way.
+12. Press **Stop**. The banner goes away and the pointer button is released. Press Control again, drag, and press **Esc** while the PhonePair tab is focused. The banner goes away the same way. Esc does not stop control when another window is in front. Ctrl+C in the helper terminal is the global stop.
 13. Stop sharing, then share a single window. Confirm the laptop shows **Share your entire screen to control it**, the phone stays view-only, and taps do nothing on the desktop.
 14. Turn Full laptop off while a monitor is shared. Confirm the phone is view-only until Full laptop is connected again.
 
-Stop, Esc, unpair, helper disconnect, and a 3-second gap with no messages each release a button the helper is holding.
+Stop and Esc end control from the PhonePair tab. Esc only works while that tab has focus. Ctrl+C in the helper terminal is the global stop and works even when the tab is in the background. Unpair, helper disconnect, and a 3-second gap with no messages each release a button the helper is holding.

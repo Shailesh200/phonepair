@@ -557,7 +557,7 @@ function ControlBanner({ ctx }: { ctx: CoreCtx }) {
   const on = controlling.use()
   if (!on) return null
   return <div className="pp-control-banner" role="status" aria-live="assertive" data-testid="screen-control-banner">
-    <p><strong>Phone is controlling this laptop</strong><small>Primary display only</small></p>
+    <p><strong>Phone is controlling this laptop</strong><small>Primary display only</small><small>Esc stops control only while this PhonePair tab is focused. Ctrl+C in the helper terminal is the global stop.</small></p>
     <button type="button" data-testid="screen-control-stop" onClick={() => endControl(ctx)}>Stop</button>
   </div>
 }

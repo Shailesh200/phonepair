@@ -293,9 +293,9 @@
   color: #991B1B;
   box-shadow: 0 16px 40px rgba(153, 27, 27, 0.18);
 }
-.pp-control-banner p { margin: 0; display: flex; flex-direction: column; gap: 2px; }
+.pp-control-banner p { margin: 0; display: flex; flex-direction: column; gap: 2px; max-width: 440px; }
 .pp-control-banner strong { font-size: 15px; font-weight: 800; letter-spacing: -0.01em; }
-.pp-control-banner small { font-size: 12px; font-weight: 600; color: #B91C1C; }
+.pp-control-banner small { font-size: 12px; font-weight: 600; color: #B91C1C; line-height: 1.35; }
 .pp-control-banner button {
   height: 36px;
   padding: 0 14px;
