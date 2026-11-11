@@ -1,5 +1,6 @@
 import {
   SC_ACTIONS,
+  SC_REASON_EMPTY,
   SC_REASON_HELPER,
   SC_REASON_SURFACE,
   type ScAction,
@@ -43,6 +44,7 @@ export function readDisplaySurface(settings: { displaySurface?: unknown } | null
 /** on is true only while sharing a monitor and the helper is connected. */
 export function availability(helperOn: boolean, displaySurface: string | undefined, sharing: boolean): ScAvailMsg {
   if (!sharing) return { t: 'sc:avail', on: false }
+  if (!displaySurface) return { t: 'sc:avail', on: false, reason: SC_REASON_EMPTY }
   if (displaySurface !== 'monitor') return { t: 'sc:avail', on: false, reason: SC_REASON_SURFACE }
   if (!helperOn) return { t: 'sc:avail', on: false, reason: SC_REASON_HELPER }
   return { t: 'sc:avail', on: true }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { availability, helperCommands, initialControlGate, readDisplaySurface, SCROLL_LIMIT, stepControl } from './control.ts'
-import { SC_REASON_HELPER, SC_REASON_SURFACE } from './sc.ts'
+import { SC_REASON_EMPTY, SC_REASON_HELPER, SC_REASON_SURFACE } from './sc.ts'
 
 describe('screen control availability', () => {
   it('is on only for a monitor share with the helper connected', () => {
@@ -9,7 +9,8 @@ describe('screen control availability', () => {
     assert.deepEqual(availability(true, 'window', true), { t: 'sc:avail', on: false, reason: SC_REASON_SURFACE })
     assert.deepEqual(availability(true, 'browser', true), { t: 'sc:avail', on: false, reason: SC_REASON_SURFACE })
     assert.deepEqual(availability(false, 'monitor', true), { t: 'sc:avail', on: false, reason: SC_REASON_HELPER })
-    assert.deepEqual(availability(true, undefined, true), { t: 'sc:avail', on: false, reason: SC_REASON_SURFACE })
+    assert.deepEqual(availability(true, undefined, true), { t: 'sc:avail', on: false, reason: SC_REASON_EMPTY })
+    assert.deepEqual(availability(true, '', true), { t: 'sc:avail', on: false, reason: SC_REASON_EMPTY })
     assert.deepEqual(availability(true, 'monitor', false), { t: 'sc:avail', on: false })
   })
 

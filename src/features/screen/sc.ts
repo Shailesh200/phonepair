@@ -47,12 +47,16 @@ export type ScStartMsg = {
 /** Stable `sc:avail` reason codes. */
 export const SC_REASON_SURFACE = 'surface'
 export const SC_REASON_HELPER = 'helper'
+/** `getSettings().displaySurface` was missing or empty. */
+export const SC_REASON_EMPTY = 'empty'
 
 /** Phone copy when `reason` is `surface`. Send no `sc` events in that case. */
 export const SC_SURFACE_HINT = 'Share your entire screen to control it'
+/** Phone and laptop copy when the shared track reports no displaySurface. */
+export const SC_EMPTY_HINT = 'Share your entire screen to enable control'
 
-/** `surface`: not a full-screen monitor share. `helper`: Full laptop is off, so the phone stays view-only. */
-export type ScAvailReason = typeof SC_REASON_SURFACE | typeof SC_REASON_HELPER
+/** `surface`: not a full-screen monitor share. `empty`: displaySurface was blank. `helper`: Full laptop is off, so the phone stays view-only. */
+export type ScAvailReason = typeof SC_REASON_SURFACE | typeof SC_REASON_HELPER | typeof SC_REASON_EMPTY
 
 /** Laptop -> phone. `on` is true only for a connected helper and `displaySurface === 'monitor'`. */
 export type ScAvailMsg = {

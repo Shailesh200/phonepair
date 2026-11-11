@@ -20,7 +20,7 @@ import {
 } from './map'
 import { forwardHelper, helperConnected, subscribeHelper } from '../remote'
 import { availability, helperCommands, initialControlGate, readDisplaySurface, stepControl, type ControlGate } from './control'
-import { SC_REASON_HELPER, SC_REASON_SURFACE, SC_SURFACE_HINT, type ScAvailMsg } from './sc'
+import { SC_EMPTY_HINT, SC_REASON_EMPTY, SC_REASON_HELPER, SC_REASON_SURFACE, SC_SURFACE_HINT, type ScAvailMsg } from './sc'
 import './screen.css'
 
 const sharing = createStore(false)
@@ -28,6 +28,7 @@ const requested = createStore(false)
 const incoming = createStore<MediaStream | null>(null)
 const controlAvail = createStore<{ on: boolean; reason?: string } | null>(null)
 const controlEpoch = createStore(0)
+const stopQuiet = createStore(false)
 const controlling = createStore(false)
 const availState = createStore<ScAvailMsg>({ t: 'sc:avail', on: false })
 
@@ -223,23 +224,26 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
     window.clearTimeout(timers.current[key])
     timers.current[key] = 0
   }
-  const releaseControl = () => {
+  const releaseControl = (quiet = false) => {
     gen.current += 1
     clearTimer('long')
     clearTimer('click')
     clearTimer('move')
-    const step = gestureStep(gRef.current, { type: 'cancel', now: Date.now() })
+    const step = gestureStep(gRef.current, { type: 'cancel', now: Date.now(), quiet })
     gRef.current = step.state
+    if (quiet) return
     for (const effect of step.effects) {
       if (effect.type === 'send') ctxRef.current.send(effect.msg)
     }
   }
   const turnOffRef = useRef<() => void>(() => {})
   turnOffRef.current = () => {
+    const quiet = stopQuiet.get()
     controlRef.current = false
     setControl(false)
     setKb(false)
-    releaseControl()
+    releaseControl(quiet)
+    if (quiet) stopQuiet.set(false)
   }
   const turnOn = () => {
     if (!allowedRef.current) return
@@ -578,6 +582,7 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
       <b>{on ? 'Stop sharing' : 'Share screen'}</b>
       <small>{on ? 'Your phone is viewing' : 'Show this screen on phone'}</small>
     </button>
+    {on && offer.reason === SC_REASON_EMPTY && <p className="mut small" data-testid="screen-empty-hint">{SC_EMPTY_HINT}</p>}
     {on && offer.reason === SC_REASON_SURFACE && <p className="mut small" data-testid="screen-surface-hint">{SC_SURFACE_HINT}</p>}
     {on && offer.reason === SC_REASON_HELPER && <p className="mut small" data-testid="screen-helper-hint">View only until Full laptop is connected. Primary display only.</p>}
     {on && offer.on && <p className="mut small" data-testid="screen-primary-hint">Primary display only.</p>}
@@ -634,6 +639,7 @@ registerFeature({
     })
     const offScStop = onMessage('sc:stop', (_m, c) => {
       if (c.role === 'guest') {
+        stopQuiet.set(true)
         controlEpoch.set(controlEpoch.get() + 1)
         return
       }
@@ -701,6 +707,7 @@ registerFeature({
       clearIncoming()
       requested.set(false)
       controlEpoch.set(0)
+      stopQuiet.set(false)
       gate = initialControlGate()
       controlling.set(false)
       availSent = false

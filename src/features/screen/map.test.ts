@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { SC_REASON_HELPER, SC_REASON_SURFACE, SC_SURFACE_HINT } from './sc.ts'
+import { SC_EMPTY_HINT, SC_REASON_EMPTY, SC_REASON_HELPER, SC_REASON_SURFACE, SC_SURFACE_HINT } from './sc.ts'
 import {
   DOUBLE_TAP_MS,
   LONG_PRESS_MS,
@@ -56,9 +56,7 @@ describe('mapTouchToContent letterbox', () => {
       scale: 1,
       pan: { x: 0, y: 0 },
     })
-    assert.ok(letterbox)
-    near(letterbox.x, 0.5)
-    near(letterbox.y, 0)
+    assert.equal(letterbox, null)
 
     const below = mapTouchToContent({
       touch: { x: 80, y: 100 },
@@ -67,8 +65,7 @@ describe('mapTouchToContent letterbox', () => {
       scale: 1,
       pan: { x: 0, y: 0 },
     })
-    assert.ok(below)
-    near(below.y, 1)
+    assert.equal(below, null)
   })
 
   it('removes side bars for a portrait video in a landscape frame', () => {
@@ -90,8 +87,7 @@ describe('mapTouchToContent letterbox', () => {
       scale: 1,
       pan: { x: 0, y: 0 },
     })
-    assert.ok(leftBar)
-    near(leftBar.x, 0)
+    assert.equal(leftBar, null)
 
     const leftEdge = mapTouchToContent({
       touch: { x: 51.875, y: 50 },
@@ -135,9 +131,7 @@ describe('mapTouchToContent letterbox', () => {
       scale: 1,
       pan: { x: 0, y: 0 },
     })
-    assert.ok(topBar)
-    near(topBar.y, 0)
-    near(topBar.x, 0.5)
+    assert.equal(topBar, null)
   })
 })
 
@@ -207,15 +201,21 @@ describe('mapTouchToContent zoom and pan', () => {
     near(mapped.y, 0)
   })
 
-  it('clamps points outside the content box', () => {
-    const mapped = mapTouchToContent({
+  it('ignores a tap in the letterbox instead of clamping to the edge', () => {
+    assert.equal(mapTouchToContent({
+      touch: { x: 10, y: 50 },
+      frame,
+      video: portrait,
+      scale: 1,
+      pan: { x: 0, y: 0 },
+    }), null)
+    assert.equal(mapTouchToContent({
       touch: { x: -1000, y: 5000 },
       frame: full,
       video: full,
       scale: 1,
       pan: { x: 0, y: 0 },
-    })
-    assert.deepEqual(mapped, { x: 0, y: 1 })
+    }), null)
   })
 
   it('keeps every mapped point inside 0..1 while zoomed, panned, and rotated', () => {
@@ -228,7 +228,7 @@ describe('mapTouchToContent zoom and pan', () => {
         pan: { x: i * 3 - 20, y: 10 - i },
         rotate: i * 15,
       })
-      assert.ok(mapped)
+      if (!mapped) continue
       assert.ok(mapped.x >= 0 && mapped.x <= 1)
       assert.ok(mapped.y >= 0 && mapped.y <= 1)
     }
@@ -302,6 +302,7 @@ describe('control availability copy', () => {
     assert.equal(viewOnlyDetail(undefined), SC_SURFACE_HINT)
     assert.equal(viewOnlyDetail(SC_REASON_SURFACE), SC_SURFACE_HINT)
     assert.equal(viewOnlyDetail(SC_REASON_HELPER), 'Full laptop is off')
+    assert.equal(viewOnlyDetail(SC_REASON_EMPTY), SC_EMPTY_HINT)
     assert.equal(viewOnlyDetail('Window share'), 'Window share')
   })
 })
@@ -410,6 +411,18 @@ describe('control gestures', () => {
     assert.ok(zoom && zoom.type === 'zoom')
     assert.ok(zoom.scale > 1.5)
     assert.ok(zoom.scale <= 5)
+  })
+
+  it('sends nothing when a drag is cancelled after stop', () => {
+    const origin = finger(1, 0, 0, 0.2, 0.2)
+    const mid = finger(1, 24, 0, 0.5, 0.2)
+    const { effects, state } = play([
+      { type: 'down', finger: origin, now: 0, scale: 1 },
+      { type: 'move', finger: mid, now: 16, scale: 1 },
+      { type: 'cancel', now: 40, quiet: true },
+    ])
+    assert.equal(sent(effects).some((m) => m.a === 'up'), false)
+    assert.equal(state.phase, 'idle')
   })
 
   it('releases a held button when control is cancelled', () => {

@@ -3,7 +3,7 @@
  * Coordinates are normalized on the video content box after object-fit letterboxing,
  * then inverted through the CSS zoom, pan, and rotation around the frame center.
  */
-import { SC_REASON_HELPER, SC_REASON_SURFACE, SC_SURFACE_HINT, type ScAction, type ScMsg } from './sc.ts'
+import { SC_EMPTY_HINT, SC_REASON_EMPTY, SC_REASON_HELPER, SC_REASON_SURFACE, SC_SURFACE_HINT, type ScAction, type ScMsg } from './sc.ts'
 
 export const MOVE_INTERVAL_MS = 1000 / 60
 export const TAP_SLOP_PX = 10
@@ -51,6 +51,7 @@ export function viewOnlyDetail(reason: unknown): string {
   const text = reason.trim()
   if (!text || text === SC_REASON_SURFACE) return SC_SURFACE_HINT
   if (text === SC_REASON_HELPER) return 'Full laptop is off'
+  if (text === SC_REASON_EMPTY) return SC_EMPTY_HINT
   return text
 }
 
@@ -59,12 +60,6 @@ export function readAvail(on: unknown, reason: unknown): { on: boolean; reason?:
   if (on === true) return { on: true }
   const text = typeof reason === 'string' && reason.trim() ? reason.trim() : undefined
   return text ? { on: false, reason: text } : { on: false }
-}
-
-function clamp01(n: number): number {
-  if (n <= 0) return 0
-  if (n >= 1) return 1
-  return n
 }
 
 function contentBox(frame: Box, video: Box): { x: number; y: number; w: number; h: number } | null {
@@ -103,10 +98,10 @@ export function mapTouchToContent(input: MapTouchInput): Point | null {
   const sin = Math.sin(rad)
   const localX = dx * cos - dy * sin + cx
   const localY = dx * sin + dy * cos + cy
-  return {
-    x: clamp01((localX - box.x) / box.w),
-    y: clamp01((localY - box.y) / box.h),
-  }
+  const x = (localX - box.x) / box.w
+  const y = (localY - box.y) / box.h
+  if (x < 0 || x > 1 || y < 0 || y > 1) return null
+  return { x, y }
 }
 
 export type Finger = { id: number; px: number; py: number; nx: number; ny: number }
@@ -133,7 +128,7 @@ export type GestureEvent =
   | { type: 'long'; now: number }
   | { type: 'clickDue'; now: number }
   | { type: 'moveDue'; now: number }
-  | { type: 'cancel'; now: number }
+  | { type: 'cancel'; now: number; quiet?: boolean }
 
 export type Effect =
   | { type: 'send'; msg: ScMsg }
@@ -304,7 +299,7 @@ export function gestureStep(prev: GestureState, ev: GestureEvent): { state: Gest
   const effects: Effect[] = []
 
   if (ev.type === 'cancel') {
-    if (state.phase === 'drag') {
+    if (state.phase === 'drag' && !ev.quiet) {
       const finger = state.fingers[0]
       effects.push(point('up', finger?.nx ?? 0, finger?.ny ?? 0))
     }
