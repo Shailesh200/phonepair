@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
 import { Link, newCode, cleanCode, isPhoneUA } from './core/link'
+import { joinPath, syncRelayFromUrl } from './features/pairing/relay'
 import { CoreCtx, Role, dispatch, dispatchCall, getFeatures } from './core/bus'
 import { uid } from './core/util'
 import { Laptop } from './Laptop'
@@ -7,6 +8,7 @@ import { Phone, PhoneEntry } from './Phone'
 import './features'
 
 function routeInfo(): { role: Role | null; code: string } {
+  syncRelayFromUrl()
   const m = location.pathname.match(/^\/j\/([A-Za-z0-9]{6})/)
   const q = new URLSearchParams(location.search)
   const c = m?.[1] || q.get('c')
@@ -58,7 +60,7 @@ export default function App() {
   }, [ctx])
 
   const toastsEl = <div className="toasts" aria-live="polite">{toasts.map((t) => <div key={t.id} className="toast">{t.t}</div>)}</div>
-  if (!route.role) return <><PhoneEntry onCode={(c) => { history.pushState(null, '', `/j/${c}`); setRoute({ role: 'guest', code: c }) }} onHost={() => setRoute({ role: 'host', code: '' })} />{toastsEl}</>
+  if (!route.role) return <><PhoneEntry onCode={(c) => { const path = joinPath(c); history.pushState(null, '', path); setRoute({ role: 'guest', code: cleanCode(c) }) }} onHost={() => setRoute({ role: 'host', code: '' })} />{toastsEl}</>
   if (!ctx) return null
   return <>{route.role === 'host' ? <Laptop ctx={ctx} /> : <Phone ctx={ctx} page={page} setPage={setPage} onLeave={() => { ctx.link.disconnect(); history.pushState(null, '', '/'); setRoute({ role: null, code: '' }) }} />}{toastsEl}</>
 }
