@@ -5,6 +5,7 @@ import {
   MAX_TEXT,
   canonicalKey,
   clampDelta,
+  clampUnit,
   originAllowed,
   parseInput,
   parsePair,
@@ -113,6 +114,53 @@ test('typed text must be printable and bounded', () => {
   assert.equal(parseInput({ t: 'type', text: 'x'.repeat(MAX_TEXT) }).ok, true)
   assert.equal(parseInput({ t: 'type', text: 'x'.repeat(MAX_TEXT + 1) }).ok, false)
   assert.equal(parseInput({ t: 'type', text: 12 }).ok, false)
+})
+
+test('absolute points clamp into 0..1 and reject bad numbers', () => {
+  assert.equal(clampUnit(0.25), 0.25)
+  assert.equal(clampUnit(-0.4), 0)
+  assert.equal(clampUnit(1.7), 1)
+  assert.equal(clampUnit(-0), 0)
+  assert.deepEqual(parseInput({ t: 'abs', x: 0, y: 1 }).msg, { t: 'abs', x: 0, y: 1 })
+  assert.deepEqual(parseInput({ t: 'abs', x: -4, y: 3.2 }).msg, { t: 'abs', x: 0, y: 1 })
+  assert.deepEqual(parseInput({ t: 'abs', x: 0.5, y: 0.25, shell: 'id' }).msg, { t: 'abs', x: 0.5, y: 0.25 })
+  for (const bad of [
+    { t: 'abs', x: '0.2', y: 0.2 },
+    { t: 'abs', x: NaN, y: 0.2 },
+    { t: 'abs', x: Infinity, y: 0.2 },
+    { t: 'abs', x: 0.2, y: null },
+    { t: 'abs', x: 0.2 },
+    { t: 'abs', y: 0.2 },
+    { t: 'abs' },
+  ]) {
+    assert.equal(parseInput(bad).ok, false, JSON.stringify(bad))
+  }
+})
+
+test('button drags are left or right, down or up, and double-click is empty', () => {
+  assert.deepEqual(parseInput({ t: 'btn', btn: 'left', state: 'down' }).msg, { t: 'btn', btn: 'left', state: 'down' })
+  assert.deepEqual(parseInput({ t: 'btn', btn: 'right', state: 'up' }).msg, { t: 'btn', btn: 'right', state: 'up' })
+  assert.deepEqual(parseInput({ t: 'dbl', extra: true }).msg, { t: 'dbl' })
+  for (const bad of [
+    { t: 'btn', btn: 'middle', state: 'down' },
+    { t: 'btn', btn: 'LEFT', state: 'down' },
+    { t: 'btn', btn: 'left', state: 'DOWN' },
+    { t: 'btn', btn: 'left', state: 'click' },
+    { t: 'btn', btn: 'left' },
+    { t: 'btn', state: 'down' },
+    { t: 'btn', btn: 0, state: 'down' },
+    { t: 'dbl', x: NaN },
+  ]) {
+    if (bad.t === 'dbl') {
+      assert.equal(parseInput(bad).ok, true)
+      assert.deepEqual(parseInput(bad).msg, { t: 'dbl' })
+    } else {
+      assert.equal(parseInput(bad).ok, false, JSON.stringify(bad))
+    }
+  }
+  assert.equal(parseInput({ t: 'abs' }).ok, false)
+  assert.equal(parseInput({ t: 'file', path: '/etc/passwd' }).ok, false)
+  assert.equal(parseInput({ t: 'shell', command: 'open' }).ok, false)
 })
 
 test('the first message must be a 6-digit pair code', () => {

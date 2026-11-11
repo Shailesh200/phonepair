@@ -33,7 +33,10 @@ export type ClickMsg = { t: 'click'; btn: 'left' | 'right' }
 export type ScrollMsg = { t: 'scroll'; dx: number; dy: number }
 export type KeyMsg = { t: 'key'; key: string; mods: Mod[] }
 export type TypeMsg = { t: 'type'; text: string }
-export type InputMsg = MoveMsg | ClickMsg | ScrollMsg | KeyMsg | TypeMsg
+export type AbsMsg = { t: 'abs'; x: number; y: number }
+export type BtnMsg = { t: 'btn'; btn: 'left' | 'right'; state: 'down' | 'up' }
+export type DblMsg = { t: 'dbl' }
+export type InputMsg = MoveMsg | ClickMsg | ScrollMsg | KeyMsg | TypeMsg | AbsMsg | BtnMsg | DblMsg
 
 export type Parsed<T> = { ok: true; msg: T } | { ok: false }
 
@@ -50,6 +53,12 @@ export function isPrintableChar(ch: string): boolean {
 
 export function clampDelta(n: number): number {
   const clamped = Math.max(-MAX_DELTA, Math.min(MAX_DELTA, n))
+  return clamped === 0 ? 0 : clamped
+}
+
+/** Normalized screen coordinate. Non-finite values never reach here. */
+export function clampUnit(n: number): number {
+  const clamped = Math.max(0, Math.min(1, n))
   return clamped === 0 ? 0 : clamped
 }
 
@@ -112,6 +121,17 @@ export function parseInput(value: unknown): Parsed<InputMsg> {
       if (value.btn !== 'left' && value.btn !== 'right') return { ok: false }
       return { ok: true, msg: { t: 'click', btn: value.btn } }
     }
+    case 'abs': {
+      if (!finite(value.x) || !finite(value.y)) return { ok: false }
+      return { ok: true, msg: { t: 'abs', x: clampUnit(value.x), y: clampUnit(value.y) } }
+    }
+    case 'btn': {
+      if (value.btn !== 'left' && value.btn !== 'right') return { ok: false }
+      if (value.state !== 'down' && value.state !== 'up') return { ok: false }
+      return { ok: true, msg: { t: 'btn', btn: value.btn, state: value.state } }
+    }
+    case 'dbl':
+      return { ok: true, msg: { t: 'dbl' } }
     case 'key': {
       const key = canonicalKey(value.key)
       if (!key) return { ok: false }
