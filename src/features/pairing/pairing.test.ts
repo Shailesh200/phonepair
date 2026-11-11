@@ -15,7 +15,11 @@ import { joinPathFor, withRelayQuery } from './relay.ts'
 import { redialDelayMs } from './reconnect.ts'
 import { phoneHostLabel } from './session.ts'
 import {
+  dialOpenTimeoutMs,
+  GUEST_CONNECTING_WATCHDOG_MS,
+  guestDialInFlight,
   guestShouldRedialOnPeerOpen,
+  guestWatchdogShouldRedial,
   reopenListenerShouldDial,
   shouldDeferDialUntilPeerOpen,
 } from './dialGuard.ts'
@@ -77,6 +81,24 @@ describe('dial guard', () => {
   it('dials only from the main open handler on reconnect', () => {
     assert.equal(reopenListenerShouldDial(), false)
     assert.equal(guestShouldRedialOnPeerOpen('guest', 'connecting', false), true)
+  })
+
+  it('allows only one in-flight guest dial window', () => {
+    const now = 1_000_000
+    assert.equal(guestDialInFlight(now + 5000, now), true)
+    assert.equal(guestDialInFlight(now - 1, now), false)
+  })
+
+  it('uses longer dial timeout in relay mode', () => {
+    assert.equal(dialOpenTimeoutMs(false), 12_000)
+    assert.equal(dialOpenTimeoutMs(true), 25_000)
+  })
+
+  it('does not redial from the watchdog while a dial is still in flight at 15s', () => {
+    assert.equal(guestWatchdogShouldRedial(true, GUEST_CONNECTING_WATCHDOG_MS), false)
+    assert.equal(guestWatchdogShouldRedial(true, GUEST_CONNECTING_WATCHDOG_MS + 5000), false)
+    assert.equal(guestWatchdogShouldRedial(false, GUEST_CONNECTING_WATCHDOG_MS), true)
+    assert.equal(guestWatchdogShouldRedial(false, GUEST_CONNECTING_WATCHDOG_MS - 1), false)
   })
 })
 

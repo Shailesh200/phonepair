@@ -9,10 +9,13 @@ import {
 } from '../features/pairing/errors'
 import { loadRtcConfiguration } from '../features/pairing/ice'
 import {
+  dialOpenTimeoutMs,
   GUEST_CONNECTING_WATCHDOG_MS,
+  guestDialInFlight,
   guestShouldRedialOnPeerOpen,
   shouldDeferDialUntilPeerOpen,
 } from '../features/pairing/dialGuard'
+import { isRelayOnly } from '../features/pairing/relay'
 import { guestUnavailableRetries, redialDelayMs } from '../features/pairing/reconnect'
 import { rememberLastLaptop } from '../features/pairing/session'
 
@@ -63,6 +66,9 @@ export class Link {
   private hostFails = 0
   private connectingSince = 0
   private dialOnOpenPending = false
+  private inFlightDialUntil = 0
+  private inFlightDial: DataConnection | null = null
+  private dialHangTimer: number | null = null
 
   constructor(role: Role, code: string) {
     this.role = role
@@ -109,8 +115,8 @@ export class Link {
         return
       }
       if (t === 'peer-unavailable') {
-        this.closePending()
-        this.conn = null
+        this.releaseInFlightDial()
+        this.dropConn()
         if (guestFailFastOnPeerUnavailable(this.role, this.everConnected)) {
           this.failGuestHostNotFound()
           return
@@ -134,7 +140,7 @@ export class Link {
           }
         }
         this.set({ status: this.everConnected ? 'reconnecting' : this.status, error: '' })
-        if (this.role === 'guest' && this.peer && !this.conn?.open) this.scheduleDial()
+        if (this.role === 'guest' && this.peer && !this.conn?.open && !this.hasInFlightDial()) this.scheduleDial()
         return
       }
       console.warn('peer error', t, e)
@@ -154,8 +160,9 @@ export class Link {
     this.dialWait = null
     if (this.hostGrace) clearTimeout(this.hostGrace)
     this.hostGrace = null
-    this.closePending()
-    try { this.conn?.close() } catch {}
+    this.releaseInFlightDial()
+    this.dropConn()
+    try { this.conn?.open && this.conn.close() } catch {}
     this.conn = null
     this.peer?.destroy()
     this.peer = null
@@ -177,8 +184,8 @@ export class Link {
     this.retry = 0
     if (this.dialWait) clearTimeout(this.dialWait)
     this.dialWait = null
-    this.closePending()
-    this.conn = null
+    this.releaseInFlightDial()
+    this.dropConn()
     this.connectingSince = Date.now()
     this.set({ status: 'connecting', error: '' })
     this.dial()
@@ -205,14 +212,41 @@ export class Link {
     await this.start()
   }
 
+  private dropConn() {
+    if (this.conn && !this.conn.open) {
+      try { this.conn.close() } catch {}
+    }
+    this.conn = null
+  }
+
+  private releaseInFlightDial() {
+    if (this.dialHangTimer) {
+      clearTimeout(this.dialHangTimer)
+      this.dialHangTimer = null
+    }
+    const c = this.inFlightDial
+    if (c && !c.open) {
+      try { c.close() } catch {}
+    }
+    this.inFlightDial = null
+    this.inFlightDialUntil = 0
+    if (this.pending === c) this.pending = null
+  }
+
+  private hasInFlightDial() {
+    return guestDialInFlight(this.inFlightDialUntil)
+  }
+
   private closePending() {
     if (!this.pending) return
-    try { this.pending.close() } catch {}
+    if (!this.pending.open) {
+      try { this.pending.close() } catch {}
+    }
     this.pending = null
   }
 
   private scheduleDial() {
-    if (this.status === 'error' || this.dialWait) return
+    if (this.status === 'error' || this.dialWait || this.hasInFlightDial()) return
     const delay = redialDelayMs(this.retry, this.everConnected)
     if (delay <= 0) {
       this.dial()
@@ -246,8 +280,8 @@ export class Link {
     this.dialWait = null
     this.clearGuestWatchdog()
     this.dialOnOpenPending = false
-    this.closePending()
-    this.conn = null
+    this.releaseInFlightDial()
+    this.dropConn()
     this.retry = 0
     this.set({ status: 'error', error: MSG_HOST_NOT_FOUND })
   }
@@ -255,6 +289,7 @@ export class Link {
   private dial() {
     if (this.destroyed || this.status === 'error') return
     if (this.conn?.open) return
+    if (this.hasInFlightDial()) return
     const peer = this.peer
     if (!peer || peer.destroyed) return
     if (
@@ -273,20 +308,28 @@ export class Link {
       }
       return
     }
-    if (this.pending && !this.pending.open) this.closePending()
+    this.releaseInFlightDial()
+    this.dropConn()
     this.set({ status: this.everConnected ? 'reconnecting' : 'connecting' })
     if (this.role === 'guest' && !this.connectingSince) this.connectingSince = Date.now()
     const c = peer.connect(peerIdForCode(this.code), { reliable: true, serialization: 'binary' })
+    const ms = dialOpenTimeoutMs(isRelayOnly())
+    this.inFlightDial = c
     this.pending = c
+    this.inFlightDialUntil = Date.now() + ms
     this.attach(c)
-    window.setTimeout(() => {
-      if (!this.destroyed && this.conn === c && !c.open) {
-        this.conn = null
-        try { c.close() } catch {}
-        if (this.pending === c) this.pending = null
+    this.dialHangTimer = window.setTimeout(() => {
+      this.dialHangTimer = null
+      if (!this.destroyed && this.inFlightDial === c && !c.open) {
+        this.releaseInFlightDial()
+        this.dropConn()
         if (this.role === 'guest' && !this.destroyed) this.scheduleDial()
       }
-    }, 12000)
+    }, ms)
+  }
+
+  private ownConn(c: DataConnection) {
+    return c === this.conn || c === this.pending || c === this.inFlightDial
   }
 
   private attach(c: DataConnection) {
@@ -294,13 +337,18 @@ export class Link {
       try { c.close() } catch {}
       return
     }
-    this.conn = c
-    if (this.pending === c) this.pending = null
+    if (this.role === 'host' || c.open) this.conn = c
     const onOpen = () => {
+      if (c !== this.inFlightDial && c !== this.pending && c !== this.conn) return
       this.lastSeen = Date.now()
       this.everConnected = true
       this.retry = 0
       this.hostFails = 0
+      if (this.dialHangTimer) { clearTimeout(this.dialHangTimer); this.dialHangTimer = null }
+      this.inFlightDial = null
+      this.inFlightDialUntil = 0
+      this.pending = null
+      this.conn = c
       if (this.hostGrace) { clearTimeout(this.hostGrace); this.hostGrace = null }
       c.send({ t: 'hello', name: deviceName() })
       this.set({ status: 'connected', error: '' })
@@ -311,6 +359,7 @@ export class Link {
     }
     if (c.open) onOpen(); else c.on('open', onOpen)
     c.on('data', (m: any) => {
+      if (c !== this.conn) return
       this.lastSeen = Date.now()
       if (!m || typeof m !== 'object') return
       if (m.t === 'ping') return
@@ -334,9 +383,14 @@ export class Link {
   }
 
   private lost(c: DataConnection) {
-    if (this.conn !== c || this.destroyed) return
+    if (!this.ownConn(c) || this.destroyed) return
     if (this.status === 'closed') return
-    this.conn = null
+    if (c === this.inFlightDial || (c === this.pending && !c.open)) {
+      this.releaseInFlightDial()
+      this.dropConn()
+    } else if (this.conn === c) {
+      this.dropConn()
+    }
     if (this.role === 'host') {
       if (this.everConnected) {
         this.set({ status: 'reconnecting' })
@@ -350,7 +404,7 @@ export class Link {
         this.set({ status: 'waiting' })
       }
     }
-    else {
+    else if (!this.hasInFlightDial()) {
       this.set({ status: 'reconnecting' })
       this.scheduleDial()
     }
@@ -360,7 +414,15 @@ export class Link {
     if (this.role !== 'guest' || this.destroyed || this.status === 'error') return
     if (this.status !== 'connecting' || this.conn?.open) return
     if (!this.connectingSince) return
-    if (Date.now() - this.connectingSince < GUEST_CONNECTING_WATCHDOG_MS) return
+    const elapsed = Date.now() - this.connectingSince
+    if (elapsed < GUEST_CONNECTING_WATCHDOG_MS) return
+    if (this.hasInFlightDial()) {
+      if (!this.guestStallRetrying) {
+        this.guestStallRetrying = true
+        this.listeners.forEach((l) => l())
+      }
+      return
+    }
     this.connectingSince = Date.now()
     this.guestStallRetrying = true
     this.listeners.forEach((l) => l())
@@ -374,7 +436,7 @@ export class Link {
       try { c.send({ t: 'ping' }) } catch {}
       if (Date.now() - this.lastSeen > 15000) { try { c.close() } catch {}; this.lost(c) }
     } else if (this.role === 'guest' && (this.status === 'reconnecting' || this.status === 'connecting') && this.peer && !this.peer.disconnected) {
-      if (!this.dialWait) this.scheduleDial()
+      if (!this.dialWait && !this.hasInFlightDial()) this.scheduleDial()
     }
   }
 
@@ -402,6 +464,7 @@ export class Link {
     if (this.dialWait) clearTimeout(this.dialWait)
     this.clearGuestWatchdog()
     this.dialOnOpenPending = false
+    this.releaseInFlightDial()
     this.closePending()
     try { this.conn?.send({ t: 'bye' }) } catch {}
     this.peer?.destroy()
