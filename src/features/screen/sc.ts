@@ -54,6 +54,8 @@ export const SC_REASON_EMPTY = 'empty'
 export const SC_SURFACE_HINT = 'Share your entire screen to control it'
 /** Phone and laptop copy when the shared track reports no displaySurface. */
 export const SC_EMPTY_HINT = 'Share your entire screen to enable control'
+/** Phone copy when `reason` is `helper` (Full laptop / the helper is not connected). */
+export const SC_HELPER_HINT = 'Control needs Full laptop on (helper running on the Mac) and the whole screen shared.'
 
 /** `surface`: not a full-screen monitor share. `empty`: displaySurface was blank. `helper`: Full laptop is off, so the phone stays view-only. */
 export type ScAvailReason = typeof SC_REASON_SURFACE | typeof SC_REASON_HELPER | typeof SC_REASON_EMPTY

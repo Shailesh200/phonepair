@@ -14,7 +14,7 @@ import {
   mapTouchToContent,
   initialGesture,
   readAvail,
-  viewOnlyDetail,
+  screenControlNote,
   type Finger,
   type GestureEvent,
 } from './map'
@@ -483,11 +483,7 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
   </div>
 
   const device = (ctx.link.remoteName || 'Laptop').trim() || 'Laptop'
-  const note = control
-    ? 'Controlling the primary display'
-    : allowed
-      ? 'Primary display only'
-      : `View only · ${viewOnlyDetail(avail?.reason)}`
+  const note = screenControlNote(control, allowed, avail?.reason)
   return <div className="pp-screen-live" data-testid="screen-live" data-controlling={control ? 'true' : 'false'}>
     <div className="pp-screen-top">
       <button className="iconbtn" aria-label="Back" onClick={back}><Icon n="back" /></button>
