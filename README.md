@@ -19,7 +19,7 @@ Live: [phonepair.vercel.app](https://phonepair.vercel.app)
 
 5. **Phone as a remote.** The phone is a trackpad for the laptop, with Prev and Next controls and a keyboard. With the desktop helper, that same remote can control the whole laptop.
 
-6. **Laptop screen on the phone.** View the laptop screen from the phone.
+6. **Laptop screen on the phone.** View the laptop screen from the phone. Control, off until you turn it on, sends taps and drags to the laptop. It works on the primary display only, and only while the laptop is sharing the entire screen with Full laptop connected. Otherwise the phone stays view-only.
 
 ## How it works
 

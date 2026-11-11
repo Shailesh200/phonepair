@@ -1,15 +1,30 @@
-// Laptop screen on the phone. Messages: screen:request, screen:stop. Page turns use remote:nav.
+// Laptop screen on the phone. Messages: screen:request, screen:stop, sc, sc:avail, sc:stop.
+// Page turns use remote:nav. Keys while Control is on use remote:key and remote:type.
 import React, { useEffect, useRef, useState } from 'react'
 import type { MediaConnection } from 'peerjs'
 import { createStore, registerFeature, onMessage, onCall, CoreCtx } from '../../core/bus'
 import { Icon } from '../../core/icons'
 import { Video } from '../../core/ui'
 import { download } from '../../core/util'
+import {
+  DOUBLE_TAP_MS,
+  LONG_PRESS_MS,
+  frameScale,
+  gestureStep,
+  mapTouchToContent,
+  initialGesture,
+  readAvail,
+  viewOnlyDetail,
+  type Finger,
+  type GestureEvent,
+} from './map'
 import './screen.css'
 
 const sharing = createStore(false)
 const requested = createStore(false)
 const incoming = createStore<MediaStream | null>(null)
+const controlAvail = createStore<{ on: boolean; reason?: string } | null>(null)
+const controlEpoch = createStore(0)
 
 let outCall: MediaConnection | null = null
 let outStream: MediaStream | null = null
@@ -67,6 +82,7 @@ function clearIncoming() {
   pendingCall = null
   pendingIn = false
   incoming.set(null)
+  controlAvail.set(null)
   try { call?.close() } catch { /* already closed */ }
   if (pending && pending !== call) { try { pending.close() } catch { /* already closed */ } }
 }
@@ -130,8 +146,72 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
   const box = useRef<HTMLDivElement>(null)
   const zRef = useRef(z)
   zRef.current = z
+  const rotRef = useRef(rot)
+  rotRef.current = rot
+  const avail = controlAvail.use()
+  const epoch = controlEpoch.use()
+  const allowed = avail?.on === true
+  const [control, setControl] = useState(false)
+  const [kb, setKb] = useState(false)
+  const controlRef = useRef(false)
+  const allowedRef = useRef(false)
+  controlRef.current = control
+  allowedRef.current = allowed
+  const ctxRef = useRef(ctx)
+  ctxRef.current = ctx
+  const kbLast = useRef('')
+  const gRef = useRef(initialGesture())
+  const gen = useRef(0)
+  const timers = useRef({ long: 0, click: 0, move: 0 })
+  const stopSeen = useRef(epoch)
+  const dispatchRef = useRef<(ev: GestureEvent) => void>(() => {})
   const gesture = useRef<{ pinch: boolean; d0: number; s0: number; x0: number; y0: number; px: number; py: number } | null>(null)
   const tap = useRef({ t: 0, x: 0, y: 0 })
+
+  const clearTimer = (key: 'long' | 'click' | 'move') => {
+    window.clearTimeout(timers.current[key])
+    timers.current[key] = 0
+  }
+  const releaseControl = () => {
+    gen.current += 1
+    clearTimer('long')
+    clearTimer('click')
+    clearTimer('move')
+    const step = gestureStep(gRef.current, { type: 'cancel', now: Date.now() })
+    gRef.current = step.state
+    for (const effect of step.effects) {
+      if (effect.type === 'send') ctxRef.current.send(effect.msg)
+    }
+  }
+  const turnOffRef = useRef<() => void>(() => {})
+  turnOffRef.current = () => {
+    controlRef.current = false
+    setControl(false)
+    setKb(false)
+    releaseControl()
+  }
+  const turnOn = () => {
+    if (!allowedRef.current) return
+    gesture.current = null
+    gRef.current = initialGesture()
+    controlRef.current = true
+    setControl(true)
+  }
+
+  useEffect(() => {
+    if (!allowed) turnOffRef.current()
+  }, [allowed])
+  useEffect(() => {
+    if (stopSeen.current === epoch) return
+    stopSeen.current = epoch
+    turnOffRef.current()
+  }, [epoch])
+  useEffect(() => {
+    if (!stream) turnOffRef.current()
+  }, [stream])
+  const releaseRef = useRef(releaseControl)
+  releaseRef.current = releaseControl
+  useEffect(() => () => { releaseRef.current() }, [])
 
   useEffect(() => {
     if (ctx.role !== 'guest' || incoming.get() || pendingIn || inCall) return
@@ -203,6 +283,7 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
 
   const dist = (t: React.TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY)
   const onStart = (e: React.TouchEvent) => {
+    if (controlRef.current) return
     if (e.touches.length === 2) {
       gesture.current = { pinch: true, d0: dist(e.touches), s0: zRef.current.s, x0: zRef.current.x, y0: zRef.current.y, px: 0, py: 0 }
     } else if (e.touches.length === 1) {
@@ -211,6 +292,7 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
     }
   }
   const onMove = (e: React.TouchEvent) => {
+    if (controlRef.current) return
     const g = gesture.current
     if (!g) return
     if (e.touches.length === 2 && g.pinch && g.d0) {
@@ -222,6 +304,7 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
     }
   }
   const onEnd = (e: React.TouchEvent) => {
+    if (controlRef.current) return
     if (e.touches.length > 0) return
     const pinched = !!gesture.current?.pinch
     gesture.current = null
@@ -232,6 +315,67 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
       setZ({ s: 1, x: 0, y: 0 })
       tap.current.t = 0
     } else tap.current = { t: now, x: t.clientX, y: t.clientY }
+  }
+
+  const arm = (key: 'long' | 'click' | 'move', ms: number, kind: 'long' | 'clickDue' | 'moveDue') => {
+    clearTimer(key)
+    const token = gen.current
+    timers.current[key] = window.setTimeout(() => {
+      timers.current[key] = 0
+      if (token !== gen.current || !controlRef.current) return
+      dispatchRef.current({ type: kind, now: Date.now() })
+    }, ms)
+  }
+  const fingerOf = (e: React.PointerEvent): Finger | null => {
+    const el = box.current
+    const video = el?.querySelector('video')
+    if (!el || !video) return null
+    const rect = el.getBoundingClientRect()
+    const mapped = mapTouchToContent({
+      touch: { x: e.clientX - rect.left, y: e.clientY - rect.top },
+      frame: { width: rect.width, height: rect.height },
+      video: { width: video.videoWidth, height: video.videoHeight },
+      scale: frameScale(zRef.current.s, rotRef.current),
+      pan: { x: zRef.current.x, y: zRef.current.y },
+      rotate: rotRef.current,
+    })
+    if (!mapped) return null
+    return { id: e.pointerId, px: e.clientX, py: e.clientY, nx: mapped.x, ny: mapped.y }
+  }
+  const dispatch = (ev: GestureEvent) => {
+    const step = gestureStep(gRef.current, ev)
+    gRef.current = step.state
+    for (const effect of step.effects) {
+      if (effect.type === 'send') ctxRef.current.send(effect.msg)
+      else if (effect.type === 'zoom') {
+        zRef.current = { ...zRef.current, s: effect.scale }
+        setZ(zRef.current)
+      } else if (effect.type === 'armLong') arm('long', LONG_PRESS_MS, 'long')
+      else if (effect.type === 'armClick') arm('click', DOUBLE_TAP_MS, 'clickDue')
+      else if (effect.type === 'armMove') arm('move', effect.waitMs, 'moveDue')
+      else if (effect.type === 'clearLong') clearTimer('long')
+      else if (effect.type === 'clearClick') clearTimer('click')
+      else if (effect.type === 'clearMove') clearTimer('move')
+    }
+  }
+  dispatchRef.current = dispatch
+  const onPtrDown = (e: React.PointerEvent) => {
+    if (!controlRef.current || e.button !== 0) return
+    e.preventDefault()
+    try { box.current?.setPointerCapture(e.pointerId) } catch { /* already captured */ }
+    const finger = fingerOf(e)
+    if (!finger) return
+    dispatch({ type: 'down', finger, now: Date.now(), scale: zRef.current.s })
+  }
+  const onPtrMove = (e: React.PointerEvent) => {
+    if (!controlRef.current) return
+    const finger = fingerOf(e)
+    if (!finger) return
+    dispatch({ type: 'move', finger, now: Date.now(), scale: zRef.current.s })
+  }
+  const onPtrUp = (e: React.PointerEvent) => {
+    if (!controlRef.current) return
+    dispatch({ type: 'up', id: e.pointerId, now: Date.now(), at: fingerOf(e) })
   }
 
   const full = () => {
@@ -267,6 +411,7 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
     }, 'image/png')
   }
   const stopViewing = () => {
+    turnOffRef.current()
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
     clearIncoming()
     ctx.send({ t: 'screen:stop' })
@@ -282,26 +427,62 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
   </div>
 
   const device = (ctx.link.remoteName || 'Laptop').trim() || 'Laptop'
-  const fit = rot % 180 === 0 ? 1 : 10 / 16
-  return <div className="pp-screen-live" data-testid="screen-live">
+  const note = control
+    ? 'Controlling the primary display'
+    : allowed
+      ? 'Primary display only'
+      : `View only · ${viewOnlyDetail(avail?.reason)}`
+  return <div className="pp-screen-live" data-testid="screen-live" data-controlling={control ? 'true' : 'false'}>
     <div className="pp-screen-top">
       <button className="iconbtn" aria-label="Back" onClick={back}><Icon n="back" /></button>
       <b className="pp-screen-title">{device} screen</b>
       <span className="pp-live"><i />LIVE</span>
     </div>
     <div
-      className="pp-frame"
+      className={'pp-frame' + (control ? ' controlling' : '')}
       ref={box}
       onTouchStart={onStart}
       onTouchMove={onMove}
       onTouchEnd={onEnd}
-      onDoubleClick={() => setZ({ s: 1, x: 0, y: 0 })}
+      onPointerDown={onPtrDown}
+      onPointerMove={onPtrMove}
+      onPointerUp={onPtrUp}
+      onPointerCancel={onPtrUp}
+      onDoubleClick={() => { if (!controlRef.current) setZ({ s: 1, x: 0, y: 0 }) }}
     >
-      <div className="pp-frame-inner" style={{ transform: `translate(${z.x}px, ${z.y}px) scale(${z.s * fit}) rotate(${rot}deg)` }}>
+      <div className="pp-frame-inner" style={{ transform: `translate(${z.x}px, ${z.y}px) scale(${frameScale(z.s, rot)}) rotate(${rot}deg)` }}>
         <Video stream={stream} testid="remote-screen" />
       </div>
     </div>
     <p className="pp-stats" data-testid="screen-stats">{info || 'Connecting…'}</p>
+    <div className="pp-control">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={control}
+        aria-label="Control"
+        data-testid="screen-control-toggle"
+        className={'pp-switch' + (control ? ' on' : '')}
+        disabled={!allowed}
+        onClick={() => { if (control) turnOffRef.current(); else turnOn() }}
+      >
+        <span className="pp-knob" aria-hidden="true"><i /></span>
+        Control
+      </button>
+      {control && <button type="button" className="pp-kb-btn" data-testid="screen-keyboard" onClick={() => setKb((v) => { if (!v) kbLast.current = ''; return !v })}><Icon n="keyboard" />Keyboard</button>}
+    </div>
+    <p className="pp-control-note" data-testid="screen-control-note">{note}</p>
+    {control && kb && <form className="pp-kb" onSubmit={(e) => { e.preventDefault(); ctx.send({ t: 'remote:key', key: 'Enter' }); const input = e.currentTarget.elements[0] as HTMLInputElement; input.value = ''; kbLast.current = '' }}>
+      <input autoFocus data-testid="screen-kb-input" className="kb" placeholder="Type here, it appears on the laptop" autoCapitalize="off" autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="send" onChange={(e) => {
+        const v = e.target.value
+        const p = kbLast.current
+        let i = 0
+        while (i < v.length && i < p.length && v[i] === p[i]) i++
+        for (let k = 0; k < p.length - i; k++) ctx.send({ t: 'remote:key', key: 'Backspace' })
+        if (v.length > i) ctx.send({ t: 'remote:type', text: v.slice(i) })
+        kbLast.current = v
+      }} onKeyDown={(e) => { if (e.key === 'Backspace' && !(e.target as HTMLInputElement).value) ctx.send({ t: 'remote:key', key: 'Backspace' }) }} />
+    </form>}
     <div className="pp-tools">
       <button className={fs ? 'on' : ''} data-testid="screen-fullscreen" onClick={full}><i><Icon n="screen" /></i>Fullscreen</button>
       <button data-testid="screen-zoom" onClick={() => setZ((v) => (v.s > 1 ? { s: 1, x: 0, y: 0 } : { s: 2, x: 0, y: 0 }))}><i><Icon n="zoom" /></i>Zoom</button>
@@ -310,7 +491,7 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
     </div>
     <div className="card pp-hint">
       <span className="pp-hint-ic"><Icon n="rotate" /></span>
-      <div><b>Turn your phone sideways</b><small>for a bigger view · pinch to zoom</small></div>
+      <div><b>Turn your phone sideways</b><small>{control ? 'tap to click · drag to move · two fingers to scroll · pinch to zoom' : 'for a bigger view · pinch to zoom'}</small></div>
     </div>
     <div className="pp-bottom">
       <button className="pp-nav" aria-label="Previous" data-testid="screen-prev" onClick={() => ctx.send({ t: 'remote:nav', dir: 'prev' })}><Icon n="back" /></button>
@@ -369,6 +550,7 @@ registerFeature({
         if (inCall === call) {
           inCall = null
           incoming.set(null)
+          controlAvail.set(null)
         }
       })
       call.on('error', () => {
@@ -380,6 +562,14 @@ registerFeature({
       if (c.role === 'host') stopSharing(c, false)
       else clearIncoming()
     })
+    const offAvail = onMessage('sc:avail', (m, c) => {
+      if (c.role !== 'guest') return
+      controlAvail.set(readAvail(m.on, m.reason))
+    })
+    const offScStop = onMessage('sc:stop', (_m, c) => {
+      if (c.role !== 'guest') return
+      controlEpoch.set(controlEpoch.get() + 1)
+    })
     const offReq = onMessage('screen:request', (_m, c) => {
       if (c.role !== 'host' || sharing.get()) return
       requested.set(true)
@@ -387,10 +577,11 @@ registerFeature({
     })
     const unsubLink = ctx.link.subscribe(() => { if (!ctx.link.connected) { stopSharing(ctx, false); clearIncoming() } })
     return () => {
-      offCall(); offStop(); offReq(); unsubLink()
+      offCall(); offStop(); offAvail(); offScStop(); offReq(); unsubLink()
       stopSharing(ctx, false)
       clearIncoming()
       requested.set(false)
+      controlEpoch.set(0)
     }
   },
 })
