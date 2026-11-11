@@ -5,8 +5,7 @@
 
 Pair your phone with your laptop in the browser. Scan a QR code, or type a 6-character code, and move things between the two devices. No app install.
 
-Live: _coming soon_
-<!-- LIVE_URL -->
+Live: [phonepair.vercel.app](https://phonepair.vercel.app)
 
 ## Features
 
@@ -40,7 +39,7 @@ When a direct path is blocked, a coturn TURN relay carries the traffic. The page
 ## Local development
 
 ```bash
-npm i
+npm ci
 npm run dev
 ```
 
