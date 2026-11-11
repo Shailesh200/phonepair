@@ -3,8 +3,6 @@ name: Helper release
 on:
   workflow_dispatch:
   push:
-    branches:
-      - feat/helper-app
     tags:
       - 'helper-v*'
 
