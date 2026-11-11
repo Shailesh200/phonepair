@@ -465,11 +465,13 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
           <a className="linkbtn sm" href="https://github.com/Shailesh200/phonepair/releases/latest" target="_blank" rel="noreferrer" data-testid="download-mac">Download for Mac</a>
           <a className="linkbtn sm" href="https://github.com/Shailesh200/phonepair/releases/latest" target="_blank" rel="noreferrer" data-testid="download-win">Download for Windows</a>
         </p>
+        <p className="mut small" data-testid="mac-open-steps">{'Open the DMG, drag PhonePair Helper to Applications, and open it. If macOS blocks it, go to System Settings > Privacy & Security and click Open Anyway. Then allow Accessibility when asked so Control works.'}</p>
+        <p className="mut small" data-testid="win-open-steps">{'If SmartScreen appears, click More info, then Run anyway.'}</p>
         <input className="helper-code" data-testid="helper-code" inputMode="numeric" autoComplete="off" spellCheck={false} maxLength={6} placeholder="6-digit code" aria-label="Helper code" value={code} onChange={(e) => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setNote('') }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); toggle() } }} />
       </>}
       {note ? <p className="err">{note}</p> : null}
     </div>
-    <p className="mut small helper-dev-note" data-testid="helper-dev-note">For developers: <code>cd helper && npm start</code></p>
+    <p className="mut small helper-dev-note" data-testid="helper-dev-note">or run from source: <code>cd helper && npm start</code></p>
     {link.status === 'connected' ? <p className="mut small">Your phone controls the whole laptop. Turn Full laptop off to keep control inside this tab.</p> : null}
   </div>
 }

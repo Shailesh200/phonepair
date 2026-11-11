@@ -95,9 +95,23 @@ jobs:
         if: steps.sign.outputs.enabled != 'true'
         timeout-minutes: 90
         working-directory: desktop
-        run: npx electron-builder --mac --publish never -c.mac.identity=null -c.mac.notarize=false -c.dmg.sign=false
+        run: npx electron-builder --mac --publish never -c.mac.identity=- -c.mac.notarize=false -c.dmg.sign=false
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Show macOS code signature
+        run: |
+          set -euo pipefail
+          app="$(find desktop/release -type d -name '*.app' -print -quit)"
+          if [ -z "${app}" ]; then
+            echo "No .app was produced" >&2
+            exit 1
+          fi
+          echo "codesign -dv --verbose=4 ${app}"
+          codesign -dv --verbose=4 "${app}" 2>&1 | tee "$RUNNER_TEMP/codesign.txt"
+          if [ "${{ steps.sign.outputs.enabled }}" != "true" ]; then
+            grep -E -q 'Signature=adhoc|adhoc' "$RUNNER_TEMP/codesign.txt"
+          fi
 
       - name: Upload macOS builds
         uses: actions/upload-artifact@v4

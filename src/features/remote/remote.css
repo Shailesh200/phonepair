@@ -120,6 +120,7 @@
 .full-laptop .helper-code:focus { border-color: var(--a); box-shadow: 0 0 0 3px var(--a2); }
 .helper-downloads { display: flex; flex-wrap: wrap; gap: 14px; }
 .helper-downloads .linkbtn { margin-top: 0; }
+.card .helper-dev-note { font-size: 12px; }
 .card .helper-dev-note code { font-size: 12px; }
 .full-laptop .switch {
   width: 44px;
