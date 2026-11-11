@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, test } from 'node:test'
 
 const require = createRequire(import.meta.url)
@@ -75,7 +76,7 @@ test('main logic listens on 47811 and prints a 6-digit code', async (t) => {
 
 test('packaged main logic ignores PHONEPAIR_DEV', async () => {
   const scriptUrl = new URL('./packaged-origin.mjs', import.meta.url)
-  const child = spawn(process.execPath, [scriptUrl.pathname], {
+  const child = spawn(process.execPath, [fileURLToPath(scriptUrl)], {
     env: { ...process.env, PHONEPAIR_DEV: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
