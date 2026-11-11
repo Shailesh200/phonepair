@@ -32,7 +32,7 @@ The host stores its code in `sessionStorage` under `pp-code`. A laptop reload ke
 
 Features talk to the other device through the bus.
 
-- `ctx.send({ t: 'area:thing', ... })` delivers a message to the other device. Prefix the type with the feature area (`text:`, `file:`, `clip:`, and the same shape for any other area). Payloads may include `Uint8Array` or `ArrayBuffer`.
+- `ctx.send({ t: 'area:thing', ... })` delivers a message to the other device. Prefix the type with the feature area (`file:`, `clip:`, and the same shape for any other area). Payloads may include `Uint8Array` or `ArrayBuffer`.
 - `onMessage(type, handler)` subscribes for the life of the link. Register it from `init`, so it runs while that feature's page is closed. `onMessage('*', ...)` sees every dispatched message. `useMessage` is the same subscription, tied to a component.
 - `createStore(initial)` returns `{ get, set, use, subscribe }`. The value lives at module scope, so it survives phone page changes.
 - `ctx.role` is `'host'` or `'guest'`. `ctx.toast`, `ctx.openPage(featureId)` (phone), and `ctx.link` (status, remote name, code, the data connection, `disconnect`) are on the same object.
@@ -46,7 +46,6 @@ Add `src/features/<area>/index.tsx`. The module calls `registerFeature` as it lo
 
 ```ts
 import './files'
-import './text'
 import './clipboard'
 ```
 
@@ -58,18 +57,18 @@ import { registerFeature, onMessage, createStore } from '../../core/bus'
 const state = createStore<string[]>([])
 
 registerFeature({
-  id: 'text',
-  title: 'Text / link',
-  icon: 'link',
-  order: 20,
+  id: 'files',
+  title: 'Send file',
+  icon: 'upload',
+  order: 10,
   laptopColumn: 'left',
   PhonePage: ({ ctx }) => null,
   LaptopPanel: ({ ctx }) => null,
-  init: (ctx) => onMessage('text:msg', (m, ctx) => { /* receiving device */ }),
+  init: (ctx) => onMessage('file:start', (m, ctx) => { /* receiving device */ }),
 })
 ```
 
-`getFeatures()` sorts by `order`. The phone home screen renders a tile per feature that has `PhonePage`. The laptop dashboard renders `LaptopPanel` in the left or right column, and `LaptopOverlay` as a full-screen layer. The modules wired in `src/features/index.ts` are files (order 10), text (20), and clipboard (30). Suggested orders for further areas, using this same hook: remote 40, camera 50, mic 55, scan 60, screen 70.
+`getFeatures()` sorts by `order`. The phone home screen renders a tile per feature that has `PhonePage`. The laptop dashboard renders `LaptopPanel` in the left or right column, and `LaptopOverlay` as a full-screen layer. The modules wired in `src/features/index.ts` are files (order 10) and clipboard (30). Suggested orders for further areas, using this same hook: remote 40, camera 50, mic 55, scan 60, screen 70.
 
 ## `/api/turn`
 

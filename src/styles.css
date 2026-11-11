@@ -414,22 +414,17 @@ button.chip:active{transform:scale(.98)}
 .remember-saved .saved-h{margin:0 0 8px}
 .phone-page .top{display:flex;align-items:center;gap:8px}
 
-/* Text and Remote shells fit one viewport, padding included (border-box). */
-html:has(.text-phone),
+/* Remote shell fits one viewport, padding included (border-box). */
 html:has(.pg.remote),
-body:has(.text-phone),
 body:has(.pg.remote){
   height:100vh;height:100dvh;max-height:100dvh;overflow:hidden;
 }
-#root:has(.text-phone),
 #root:has(.pg.remote){
   height:100%;min-height:0;max-height:100%;overflow:hidden;
 }
-.phone-wrap:has(.text-phone),
 .phone-wrap:has(.pg.remote){
   height:100%;min-height:0;max-height:100%;overflow:hidden;
 }
-.phone-page:has(.text-phone),
 .phone-page:has(.pg.remote){
   box-sizing:border-box;
   height:100vh;height:100dvh;
@@ -437,7 +432,6 @@ body:has(.pg.remote){
   display:flex;flex-direction:column;overflow:hidden;
   padding-bottom:max(12px, env(safe-area-inset-bottom));
 }
-.phone-page:has(.text-phone) > .top,
 .phone-page:has(.pg.remote) > .top{
   flex:none;position:sticky;top:0;z-index:40;
   padding-top:calc(14px + env(safe-area-inset-top));

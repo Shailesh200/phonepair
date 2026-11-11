@@ -4,6 +4,8 @@ const child = spawn(process.execPath, [
   '--experimental-strip-types',
   '--test',
   'src/features/pairing/pairing.test.ts',
+  'src/features/screen/map.test.ts',
+  'src/features/screen/control.test.ts',
   'src/remember/remember.test.ts',
   'src/remember/linkRemember.test.ts',
   'src/remember/mutualAuth.test.ts',
