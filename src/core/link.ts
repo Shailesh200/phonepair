@@ -32,6 +32,7 @@ import {
   forceSignalReconnect,
   shouldForceSignalOnVisibility,
 } from '../features/pairing/forceSignalReconnect'
+import { notifyHostPhoneConnected } from '../features/pairing/hostDualForceRunner'
 import { shouldCallPeerReconnect, shouldHostReconnect } from '../features/pairing/peerReconnect'
 import {
   hostKeepsConnectedStatusOnSignalDrop,
@@ -1001,7 +1002,9 @@ export class Link {
       this.conn = c
       this.connPeer = this.peer
       if (this.hostGrace) { clearTimeout(this.hostGrace); this.hostGrace = null }
-      if (this.role === 'host') this.ensureHostSignalRunner().onPhoneConnected()
+      if (this.role === 'host') {
+        notifyHostPhoneConnected(this.listenForceRunner, this.hostSignalRunner)
+      }
       c.send({ t: 'hello', name: deviceName() })
       this.set({ status: 'connected', error: '' })
       if (this.role === 'host' && !this.rememberGuestAuth) this.clearRememberListenGiveUp()
@@ -1141,8 +1144,7 @@ export class Link {
     this.connPeer = fromListenPeer ? this.listenPeer : this.peer
     if (fromListenPeer && rememberPhoneId) this.authenticatedRememberPhoneId = rememberPhoneId
     if (this.role === 'host') {
-      if (fromListenPeer) this.ensureListenForceRunner().onPhoneConnected()
-      else this.ensureHostSignalRunner().onPhoneConnected()
+      notifyHostPhoneConnected(this.listenForceRunner, this.hostSignalRunner)
     }
     this.sessionPaired = true
     this.rememberGuestFailCount = 0

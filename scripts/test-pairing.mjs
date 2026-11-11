@@ -6,6 +6,7 @@ const child = spawn(process.execPath, [
   'src/features/pairing/pairing.test.ts',
   'src/features/pairing/network.test.ts',
   'src/features/pairing/forceSignalReconnect.test.ts',
+  'src/features/pairing/hostDualForceRunner.test.ts',
   'src/features/screen/map.test.ts',
   'src/features/screen/control.test.ts',
   'src/features/remote/helperProbe.test.ts',
