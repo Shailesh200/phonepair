@@ -212,22 +212,28 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/download-artifact@v4
         with:
+          pattern: phonepair-helper-*
           path: dist
+          merge-multiple: true
 
       - name: Publish GitHub Release
         run: |
           set -euo pipefail
-          files=()
-          while IFS= read -r -d '' f; do
-            files+=("$f")
-          done < <(find dist -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.blockmap' \) -print0)
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "No build artifacts to publish" >&2
+          shopt -s nullglob
+          dmgs=(dist/*.dmg)
+          zips=(dist/*.zip)
+          exes=(dist/*.exe)
+          if [ "${#dmgs[@]}" -ne 1 ] || [ "${#zips[@]}" -ne 1 ] || [ "${#exes[@]}" -ne 1 ]; then
+            echo "Expected one Mac DMG, one Mac ZIP, and one Windows NSIS exe in dist/" >&2
+            find dist -maxdepth 1 -type f -print >&2 || true
             exit 1
           fi
+          files=("${dmgs[@]}" "${zips[@]}" "${exes[@]}")
           tag="${GITHUB_REF_NAME}"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "${files[@]}" --clobber
