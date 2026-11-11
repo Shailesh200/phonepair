@@ -3,4 +3,6 @@
 import './files'
 import './text'
 import './clipboard'
+import './remote'
+import './camera'
 import './screen'

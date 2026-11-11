@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test": "node scripts/test-pairing.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
+    "jsqr": "^1.4.0",
     "peerjs": "^1.5.4",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
