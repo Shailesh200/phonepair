@@ -77,6 +77,7 @@ export function allowRemember(ctx: CoreCtx) {
     key: phoneKeyStored(grant.key),
     laptopName: grant.laptopName,
   })
+  ctx.link.clearRememberListenGiveUp()
   ctx.link.refreshRememberListen()
 }
 
@@ -106,7 +107,7 @@ export function forgetGuestLaptop(ctx: CoreCtx, listenId: string) {
   const lap = store.laptops.find((l) => l.listenId === listenId)
   if (ctx.link.connected && lap) {
     try {
-      ctx.send({ t: 'remember:forget', phoneId: lap.phoneId })
+      ctx.send({ t: 'remember:forget', phoneId: lap.phoneId, listenId: lap.listenId })
     } catch {}
   }
   forgetGuestLaptopLocal(listenId)

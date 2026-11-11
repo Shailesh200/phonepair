@@ -6,8 +6,8 @@ import { CodeEntry } from './features/pairing/CodeEntry'
 import { PhoneConnecting } from './features/pairing/PhoneConnecting'
 import { joinPath } from './features/pairing/relay'
 import type { SavedLaptop } from './remember/storage'
-import { MSG_REMEMBER_DENIED, MSG_REMEMBER_UNREACHABLE } from './features/pairing/errors'
-import { forgetGuestLaptopLocal } from './remember'
+import { MSG_REMEMBER_DENIED } from './features/pairing/errors'
+import { forgetGuestLaptop } from './remember'
 import { phoneHostLabel } from './features/pairing/session'
 
 function entryPath() {
@@ -44,7 +44,7 @@ export function Phone({
   }, [dcIn, ctx])
 
   if (s === 'error') {
-    const err = ctx.link.error || MSG_REMEMBER_UNREACHABLE
+    const err = ctx.link.error || undefined
     const listenId = ctx.link.rememberListenId
     return (
       <CodeEntry
@@ -55,7 +55,7 @@ export function Phone({
         onForgetDenied={
           err === MSG_REMEMBER_DENIED && listenId
             ? () => {
-              forgetGuestLaptopLocal(listenId)
+              forgetGuestLaptop(ctx, listenId)
               location.assign(entryPath())
             }
             : undefined
@@ -95,23 +95,25 @@ export function Phone({
         {!cur ? (
           <div className="top">
             <Logo small />
-            <button
-              type="button"
-              className="iconbtn"
-              aria-label="Remember this laptop"
-              data-testid="remember-laptop"
-              onClick={() => ctx.send({ t: 'remember:ask' })}
-            >
-              <Icon n="heart" />
-            </button>
-            <button
-              className="iconbtn"
-              aria-label="Disconnect"
-              data-testid="phone-disconnect"
-              onClick={() => setDcIn(5)}
-            >
-              <Icon n="x" />
-            </button>
+            <div className="top-end">
+              <button
+                type="button"
+                className="iconbtn"
+                aria-label="Remember this laptop"
+                data-testid="remember-laptop"
+                onClick={() => ctx.send({ t: 'remember:ask' })}
+              >
+                <Icon n="heart" />
+              </button>
+              <button
+                className="iconbtn"
+                aria-label="Disconnect"
+                data-testid="phone-disconnect"
+                onClick={() => setDcIn(5)}
+              >
+                <Icon n="x" />
+              </button>
+            </div>
           </div>
         ) : (
           <div className="top">

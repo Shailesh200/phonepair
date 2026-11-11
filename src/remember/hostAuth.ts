@@ -18,12 +18,13 @@ export type AuthPending = {
   nonce: Uint8Array | null
   phoneNonce: Uint8Array | null
   phone: RememberPhoneRecord | null
+  phoneId: string | null
 }
 
 export type HostAuthFailReason = 'denied' | 'fail'
 
 export type HostAuthCallbacks = {
-  onPromote: (conn: RememberConn, remoteName: string) => void
+  onPromote: (conn: RememberConn, remoteName: string, phoneId: string) => void
   onFail: (conn: RememberConn, reason: HostAuthFailReason) => void
   onDispatch: (conn: RememberConn, m: unknown) => void
   onTimeout: (conn: RememberConn) => void
@@ -62,7 +63,7 @@ export class RememberHostAuth {
       return
     }
     this.promoted = false
-    this.authPending = { conn, phase: 'await-hello', nonce: null, phoneNonce: null, phone: null }
+    this.authPending = { conn, phase: 'await-hello', nonce: null, phoneNonce: null, phone: null, phoneId: null }
     this.armTimeout(conn, cb)
   }
 
@@ -122,7 +123,7 @@ export class RememberHostAuth {
       try { phoneNonce = bytesFromB64(msg.phoneNonce) } catch { this.failDenied(conn, cb); return }
       if (phoneNonce.length !== 32) { this.failDenied(conn, cb); return }
       const nonce = randomBytes(32)
-      this.authPending = { conn, phase: 'await-proof', nonce, phoneNonce, phone: rec }
+      this.authPending = { conn, phase: 'await-proof', nonce, phoneNonce, phone: rec, phoneId }
       try { conn.send({ t: 'remember:challenge', nonce: bytesToB64(nonce) }) } catch {}
       this.armTimeout(conn, cb)
       return
@@ -149,7 +150,8 @@ export class RememberHostAuth {
       if (this.timer) clearTimeout(this.timer)
       this.timer = null
       try { conn.send({ t: 'remember:ok', hostProof: bytesToB64(hostProof) }) } catch {}
-      cb.onPromote(conn, name)
+      if (!pending.phoneId) return
+      cb.onPromote(conn, name, pending.phoneId)
       this.authPending = null
     }
   }

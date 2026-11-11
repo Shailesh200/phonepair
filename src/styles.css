@@ -283,7 +283,8 @@ button.chip:active{transform:scale(.98)}
 
 .phone-wrap{min-height:100vh;min-height:100dvh;display:flex;justify-content:center}
 .phone-page{width:100%;max-width:480px;min-height:100vh;min-height:100dvh;padding-bottom:calc(24px + env(safe-area-inset-bottom))}
-.phone-page .top{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:calc(14px + env(safe-area-inset-top)) 20px 0}
+.phone-page .top{display:flex;align-items:center;gap:12px;padding:calc(14px + env(safe-area-inset-top)) 20px 0}
+.phone-page .top .top-end{margin-left:auto;display:flex;align-items:center;gap:12px;flex:none}
 .ttl{font-size:17px;flex:1;text-align:center;letter-spacing:-.02em;min-width:0}
 .phone-page.center{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:32px 24px;gap:12px}
 .phone-page.center h2{font-size:var(--fs-22);line-height:var(--lh-22);margin-top:4px;font-weight:800}
@@ -412,8 +413,6 @@ button.chip:active{transform:scale(.98)}
 .remember-list li{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .remember-saved{margin-bottom:16px}
 .remember-saved .saved-h{margin:0 0 8px}
-.phone-page .top{display:flex;align-items:center;gap:8px}
-
 /* Remote shell fits one viewport, padding included (border-box). */
 html:has(.pg.remote),
 body:has(.pg.remote){

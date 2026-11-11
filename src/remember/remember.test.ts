@@ -10,6 +10,11 @@ import {
 } from './gate.ts'
 import { shouldRestartListenPeer } from './allowListen.ts'
 import { rememberStorageEpoch, notifyRememberStorageChanged } from './storageNotify.ts'
+import { shouldTickBootstrapListen } from './listenGiveUp.ts'
+import { guestForgetMatchesSavedLaptop } from './guestForgetMatch.ts'
+import { shouldFailRememberGuestHome } from './guestHomeWatchdog.ts'
+import { hostAcceptsRememberForget } from './hostForgetAuth.ts'
+import { connBlockedByRememberAuth } from './hostAuthSend.ts'
 import { forgetHostPhoneRecord, upsertGuestLaptop, type HostStore } from './records.ts'
 
 describe('remember hmac', () => {
@@ -45,6 +50,66 @@ describe('remember guest storage v1', () => {
     const second = upsertGuestLaptop(first, b)
     assert.equal(second.laptops.length, 1)
     assert.equal(second.laptops[0].listenId, 'b')
+  })
+})
+
+describe('remember listen give up', () => {
+  const base = { hasPhones: true, listenMissing: true, listenGaveUp: false, bootstrapInFlight: false, backoffUntil: 0, now: 1000 }
+  it('does not tick-bootstrap listen after unavailable-id give-up or during backoff', () => {
+    assert.equal(shouldTickBootstrapListen(base), true)
+    assert.equal(shouldTickBootstrapListen({ ...base, listenGaveUp: true }), false)
+    assert.equal(shouldTickBootstrapListen({ ...base, bootstrapInFlight: true }), false)
+    assert.equal(shouldTickBootstrapListen({ ...base, backoffUntil: 2000 }), false)
+    assert.equal(shouldTickBootstrapListen({ ...base, hasPhones: false }), false)
+  })
+})
+
+describe('remember guest home watchdog', () => {
+  it('does not fail home after the guest has ever connected', () => {
+    const limit = 10_000
+    assert.equal(shouldFailRememberGuestHome({
+      rememberGuest: true,
+      everConnected: true,
+      status: 'reconnecting',
+      elapsedMs: limit + 1,
+      limitMs: limit,
+    }), false)
+    assert.equal(shouldFailRememberGuestHome({
+      rememberGuest: true,
+      everConnected: false,
+      status: 'connecting',
+      elapsedMs: limit + 1,
+      limitMs: limit,
+    }), true)
+  })
+})
+
+describe('remember host forget auth', () => {
+  it('rejects forget on code-paired or wrong phone', () => {
+    assert.equal(hostAcceptsRememberForget(true, 'p-a', 'p-a'), true)
+    assert.equal(hostAcceptsRememberForget(false, 'p-a', 'p-a'), false)
+    assert.equal(hostAcceptsRememberForget(true, 'p-a', 'p-b'), false)
+  })
+})
+
+describe('remember call gate', () => {
+  it('blocks call only when this conn is the unproven auth conn', () => {
+    const live = { open: true, peer: 'a' }
+    const otherPending = { open: true, peer: 'b' }
+    assert.equal(connBlockedByRememberAuth(live, otherPending, null), false)
+    assert.equal(connBlockedByRememberAuth(live, live, null), true)
+    assert.equal(connBlockedByRememberAuth(live, null, otherPending), false)
+  })
+})
+
+describe('remember guest forget match', () => {
+  it('ignores forget for another phoneId on the same listen slot', () => {
+    const store = {
+      laptops: [{ listenId: 'lid-a', phoneId: 'p-a', name: 'Laptop', key: 'k' }],
+    }
+    assert.equal(guestForgetMatchesSavedLaptop(store, 'lid-a', 'p-a'), true)
+    assert.equal(guestForgetMatchesSavedLaptop(store, 'lid-a', 'p-b'), false)
+    assert.equal(guestForgetMatchesSavedLaptop(store, 'lid-b', 'p-a'), false)
   })
 })
 

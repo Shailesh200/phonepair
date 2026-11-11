@@ -28,9 +28,13 @@ import { peerForOutboundCall } from '../remember/callPeer'
 import { signPhoneProof } from '../remember/proof'
 import type { HostAuthFailReason } from '../remember/hostAuth'
 import { canPromoteDataConn } from '../remember/promoteEligibility'
+import { shouldTickBootstrapListen } from '../remember/listenGiveUp'
+import { guestForgetMatchesSavedLaptop } from '../remember/guestForgetMatch'
 import { REMEMBER_PROOF_TIMEOUT_MS, type RememberGatePhase } from '../remember/gate'
 import { RememberHostAuth } from '../remember/hostAuth'
-import { shouldAcceptIncomingCall, shouldLinkSend } from '../remember/hostAuthSend'
+import { connBlockedByRememberAuth, shouldAcceptIncomingCall, shouldLinkSend } from '../remember/hostAuthSend'
+import { hostAcceptsRememberForget } from '../remember/hostForgetAuth'
+import { shouldFailRememberGuestHome } from '../remember/guestHomeWatchdog'
 import { bytesFromB64, bytesToB64, listenPeerId, randomBytes } from '../remember/ids'
 import {
   forgetGuestLaptopRecord,
@@ -103,6 +107,10 @@ export class Link {
   private listenPeer: Peer | null = null
   private connPeer: Peer | null = null
   private listenRetry = 0
+  private listenGaveUp = false
+  private listenBootstrapInFlight = false
+  private listenBackoffUntil = 0
+  private authenticatedRememberPhoneId: string | null = null
   private listenLastReconnectAt = 0
   private authTimer: number | null = null
   private authPending: {
@@ -121,12 +129,22 @@ export class Link {
       const g = opts.rememberGuest
       this.dialTarget = listenPeerId(g.listenId)
       this.rememberGuestAuth = { phoneId: g.phoneId, key: phoneKeyBytes(g), listenId: g.listenId }
-      this.rememberGuestSince = Date.now()
     }
   }
 
   isRememberConnOnListenPeer(): boolean {
     return !!(this.conn?.open && this.listenPeer && this.connPeer === this.listenPeer)
+  }
+
+  clearRememberListenGiveUp() {
+    this.listenGaveUp = false
+    this.listenRetry = 0
+    this.listenBackoffUntil = 0
+  }
+
+  private markRememberGuestDial() {
+    if (!this.rememberGuestAuth || this.everConnected) return
+    this.rememberGuestSince = Date.now()
   }
 
   reloadRememberPhonesMap() {
@@ -248,7 +266,8 @@ export class Link {
       this.reloadRememberPhonesMap()
       return
     }
-    try { this.listenPeer?.destroy() } catch {}
+    const old = this.listenPeer
+    if (old) { try { old.destroy() } catch {} }
     this.listenPeer = null
     void this.bootstrapRememberListen()
   }
@@ -256,15 +275,32 @@ export class Link {
   private async bootstrapRememberListen(config?: RTCConfiguration) {
     const store = loadHostStore()
     if (!hostHasPhones(store) || !store) return
+    if (this.listenGaveUp || this.listenBootstrapInFlight) return
+    if (Date.now() < this.listenBackoffUntil) return
+    if (this.listenPeer && !this.listenPeer.destroyed) return
+    this.listenBootstrapInFlight = true
     const rtc = config ?? (await loadRtcConfiguration())
-    if (this.destroyed) return
+    if (this.destroyed || this.listenGaveUp) {
+      this.listenBootstrapInFlight = false
+      return
+    }
+    if (Date.now() < this.listenBackoffUntil) {
+      this.listenBootstrapInFlight = false
+      return
+    }
+    if (this.listenPeer && !this.listenPeer.destroyed) {
+      this.listenBootstrapInFlight = false
+      return
+    }
     this.rememberPhones = new Map(
       store.phones.map((p) => [p.id, { key: phoneKeyBytes(p), name: p.name }]),
     )
     const id = listenPeerId(store.listenId)
-    if (this.listenPeer && !this.listenPeer.destroyed) return
     const peer = new Peer(id, { ...SIGNAL, config: rtc })
+    const prev = this.listenPeer
+    if (prev && prev !== peer) { try { prev.destroy() } catch {} }
     this.listenPeer = peer
+    this.listenBootstrapInFlight = false
     peer.on('connection', (c) => {
       if (this.role !== 'host' || this.destroyed) { try { c.close() } catch {}; return }
       if (!this.rememberHostAuth.canAcceptConnection(c, this.conn)) {
@@ -294,10 +330,15 @@ export class Link {
     peer.on('error', (e: any) => {
       if (e?.type !== 'unavailable-id' || this.destroyed) return
       this.listenRetry++
-      peer.destroy()
-      this.listenPeer = null
-      if (hostUnavailableIdGiveUp(this.listenRetry)) return
-      window.setTimeout(() => { if (!this.destroyed) void this.bootstrapRememberListen(rtc) }, hostUnavailableIdBackoffMs(this.listenRetry))
+      const delay = hostUnavailableIdBackoffMs(this.listenRetry)
+      this.listenBackoffUntil = Date.now() + delay
+      try { peer.destroy() } catch {}
+      if (this.listenPeer === peer) this.listenPeer = null
+      if (hostUnavailableIdGiveUp(this.listenRetry)) {
+        this.listenGaveUp = true
+        return
+      }
+      window.setTimeout(() => { if (!this.destroyed) void this.bootstrapRememberListen(rtc) }, delay)
     })
   }
 
@@ -341,6 +382,7 @@ export class Link {
     this.dropConn()
     this.connectingSince = Date.now()
     this.set({ status: 'connecting', error: '' })
+    this.markRememberGuestDial()
     this.dial()
   }
 
@@ -371,6 +413,7 @@ export class Link {
     }
     this.conn = null
     this.connPeer = null
+    this.authenticatedRememberPhoneId = null
   }
 
   private releaseInFlightDial() {
@@ -466,6 +509,7 @@ export class Link {
     this.dropConn()
     this.set({ status: this.everConnected ? 'reconnecting' : 'connecting' })
     if (this.role === 'guest' && !this.connectingSince) this.connectingSince = Date.now()
+    this.markRememberGuestDial()
     const target = this.dialTarget ?? peerIdForCode(this.code)
     const c = peer.connect(target, { reliable: true, serialization: 'binary' })
     const ms = dialOpenTimeoutMs(isRelayOnly())
@@ -570,6 +614,11 @@ export class Link {
     if (m.t === 'remember:forget') {
       const phoneId = String(m.phoneId ?? '')
       if (this.role === 'host' && phoneId) {
+        if (!hostAcceptsRememberForget(
+          this.isRememberConnOnListenPeer(),
+          this.authenticatedRememberPhoneId,
+          phoneId,
+        )) return
         const store = loadHostStore()
         if (store?.phones.some((p) => p.id === phoneId)) {
           const { next, stopListen } = forgetHostPhoneRecord(store, phoneId)
@@ -579,8 +628,11 @@ export class Link {
       }
       if (this.role === 'guest') {
         const listenId = String(m.listenId ?? '')
-        if (listenId) {
-          saveGuestStore(forgetGuestLaptopRecord(loadGuestStore(), listenId))
+        if (listenId && phoneId) {
+          const store = loadGuestStore()
+          if (guestForgetMatchesSavedLaptop(store, listenId, phoneId)) {
+            saveGuestStore(forgetGuestLaptopRecord(store, listenId))
+          }
         }
       }
       return
@@ -621,7 +673,7 @@ export class Link {
     if (!this.hasInFlightDial()) this.scheduleDial()
   }
 
-  private promoteConnected(c: DataConnection, remoteHint?: string, fromListenPeer = false) {
+  private promoteConnected(c: DataConnection, remoteHint?: string, fromListenPeer = false, rememberPhoneId?: string) {
     if (this.conn?.open && this.conn !== c) {
       try { c.close() } catch {}
       return
@@ -646,7 +698,9 @@ export class Link {
     this.clearAuthPending()
     this.conn = c
     this.connPeer = fromListenPeer ? this.listenPeer : this.peer
+    if (fromListenPeer && rememberPhoneId) this.authenticatedRememberPhoneId = rememberPhoneId
     this.rememberGuestFailCount = 0
+    if (this.role === 'guest' && this.rememberGuestAuth) this.rememberGuestSince = 0
     if (this.hostGrace) { clearTimeout(this.hostGrace); this.hostGrace = null }
     try { c.send({ t: 'hello', name: deviceName() }) } catch {}
     if (remoteHint) this.set({ remoteName: remoteHint })
@@ -680,6 +734,7 @@ export class Link {
         })
       } catch {}
       this.armAuthTimeout(c)
+      this.markRememberGuestDial()
       this.set({ status: this.everConnected ? 'reconnecting' : 'connecting' })
     }
     if (c.open) greet(); else c.on('open', greet)
@@ -724,7 +779,7 @@ export class Link {
 
   private hostAuthCallbacks(): import('../remember/hostAuth').HostAuthCallbacks {
     return {
-      onPromote: (conn, remoteName) => this.promoteConnected(conn as DataConnection, remoteName, true),
+      onPromote: (conn, remoteName, phoneId) => this.promoteConnected(conn as DataConnection, remoteName, true, phoneId),
       onFail: (conn, reason) => this.failRememberAuth(conn as DataConnection, reason),
       onDispatch: (conn, m) => this.dispatchPayload(m as any, conn as DataConnection),
       onTimeout: (conn) => this.failRememberAuth(conn as DataConnection, 'fail'),
@@ -779,9 +834,15 @@ export class Link {
   }
 
   private tickRememberGuestHome() {
-    if (!this.rememberGuestAuth || this.destroyed || this.status === 'connected' || this.status === 'error') return
-    if (!this.rememberGuestSince) return
-    if (Date.now() - this.rememberGuestSince <= REMEMBER_GUEST_HOME_MS) return
+    if (!this.rememberGuestSince || this.destroyed) return
+    const elapsed = Date.now() - this.rememberGuestSince
+    if (!shouldFailRememberGuestHome({
+      rememberGuest: !!this.rememberGuestAuth,
+      everConnected: this.everConnected,
+      status: this.status,
+      elapsedMs: elapsed,
+      limitMs: REMEMBER_GUEST_HOME_MS,
+    })) return
     this.failRememberGuestHome()
   }
 
@@ -849,7 +910,18 @@ export class Link {
       try { peer.reconnect() } catch {}
     }
     const lp = this.listenPeer
-    if (this.role === 'host' && hostHasPhones(loadHostStore()) && (!lp || lp.destroyed)) {
+    const store = loadHostStore()
+    if (
+      this.role === 'host'
+      && shouldTickBootstrapListen({
+        hasPhones: !!hostHasPhones(store),
+        listenMissing: !lp || !!lp.destroyed,
+        listenGaveUp: this.listenGaveUp,
+        bootstrapInFlight: this.listenBootstrapInFlight,
+        backoffUntil: this.listenBackoffUntil,
+        now: Date.now(),
+      })
+    ) {
       void this.bootstrapRememberListen()
     } else if (this.role === 'host' && lp && lp.disconnected && !lp.destroyed && shouldHostReconnect({
       role: 'host',
@@ -878,15 +950,20 @@ export class Link {
 
   send(m: any) {
     if (!this.rememberGuestLive()) return
-    const pending = this.authPending || this.rememberHostAuth.authPending
-    if (!shouldLinkSend(this.conn, pending)) return
+    const guestPen = this.authPending?.conn === this.conn ? this.authPending : null
+    const hostPen = this.rememberHostAuth.authPending?.conn === this.conn ? this.rememberHostAuth.authPending : null
+    if (!shouldLinkSend(this.conn, guestPen || hostPen)) return
     try { this.conn!.send(m) } catch {}
   }
 
   call(stream: MediaStream, kind: string) {
     if (!this.rememberGuestLive()) throw new Error('Not connected')
-    const pending = this.authPending || this.rememberHostAuth.authPending
-    if (!this.peer || !this.remoteId || pending) throw new Error('Not connected')
+    if (connBlockedByRememberAuth(
+      this.conn,
+      this.authPending?.conn,
+      this.rememberHostAuth.authPending?.conn,
+    )) throw new Error('Not connected')
+    if (!this.peer || !this.remoteId) throw new Error('Not connected')
     const outbound = peerForOutboundCall(this.connPeer, this.peer)
     if (!outbound) throw new Error('Not connected')
     return outbound.call(this.remoteId, stream, { metadata: { kind } })
