@@ -25,7 +25,11 @@ import {
   hostUnavailableIdShouldGiveUp,
   shouldUseHostIdReclaimWindow,
 } from '../features/pairing/hostIdReclaim'
-import { guestUnavailableRetries, redialDelayMs } from '../features/pairing/reconnect'
+import {
+  guestRedialPlanAfterSignalRecovery,
+  guestUnavailableShouldGiveUp,
+  redialDelayMs,
+} from '../features/pairing/reconnect'
 import { linkTeardownSendsBye } from '../features/pairing/teardown'
 import {
   ForceSignalRunner,
@@ -36,11 +40,21 @@ import { notifyHostPhoneConnected } from '../features/pairing/hostDualForceRunne
 import { hostListenStaggerUntil, shouldDeferListenForce } from '../features/pairing/hostSignalStagger'
 import { peerAsForceSignal, trackListenPeerSocketOpen } from '../features/pairing/peerForceAdapter'
 import {
-  ppDebugIncForce,
+  ppDebugIncForceRun,
+  ppDebugIncGuestForce,
+  ppDebugIncGuestSocketOpen,
+  ppDebugRecordGuestRedial,
+  ppDebugIncListenBootstrap,
   ppDebugIncListenReject,
   ppDebugIncListenSocketClosedConnecting,
   ppDebugIncListenSocketOpen,
+  ppDebugIncListenUnavailableId,
 } from '../features/pairing/ppDebug'
+import {
+  ppDebugRememberAuthSent,
+  ppDebugRememberDial,
+  ppDebugRememberDialError,
+} from '../features/pairing/ppDebugRemember'
 import { shouldCallPeerReconnect, shouldHostReconnect } from '../features/pairing/peerReconnect'
 import {
   hostKeepsConnectedStatusOnSignalDrop,
@@ -53,10 +67,16 @@ import {
   isDataConnIceOfferer,
   iceTransportRecovered,
   shouldActOnIceNetworkChange,
+  shouldAbandonDataConnOnSignalDrop,
   shouldArmIceGraceTimer,
   shouldRedialAfterDisconnectedGrace,
   shouldRedialImmediatelyOnIceFailed,
 } from '../features/pairing/iceRecovery'
+import {
+  ppDebugIncAbandonOnSignalDrop,
+  ppDebugRecordDataConnected,
+  ppDebugRecordIceTransport,
+} from '../features/pairing/ppDebugIce'
 import { candidatePairUsesRelay } from '../features/pairing/relayStats'
 import { rememberLastLaptop } from '../features/pairing/session'
 import { guestAcceptsRememberOk } from '../remember/guestAuth'
@@ -173,6 +193,7 @@ export class Link {
   private networkWatchersCleanup: (() => void) | null = null
   private iceDisconnectedAt: number | null = null
   private iceRedialTimer: number | null = null
+  private guestUnavailableSince: number | null = null
   private hostIdReclaimSince: number | null = null
   private hostUnavailableRetry = 0
   private iceWatchCleanup: (() => void) | null = null
@@ -250,7 +271,6 @@ export class Link {
             const lp = this.listenPeer
             if (lp && !lp.destroyed && this.listenPeerEverOpen) {
               if (!shouldDeferListenForce(!!this.peer?.open, this.hostListenStaggerUntil, Date.now())) {
-                ppDebugIncForce('listen')
                 this.ensureListenForceRunner().hook(peerAsForceSignal(lp), false)
               }
             }
@@ -266,7 +286,6 @@ export class Link {
         if (!lp || lp.destroyed || !this.listenPeerEverOpen) return
         const run = () => {
           if (lp !== this.listenPeer || lp.destroyed) return
-          ppDebugIncForce('listen')
           this.ensureListenForceRunner().hookOnline(peerAsForceSignal(lp), false)
         }
         const deferMs = shouldDeferListenForce(!!this.peer?.open, this.hostListenStaggerUntil, Date.now())
@@ -282,11 +301,14 @@ export class Link {
 
   private ensureListenForceRunner(): ForceSignalRunner {
     if (!this.listenForceRunner) {
-      this.listenForceRunner = new ForceSignalRunner({
-        setTimeout: (fn, ms) => window.setTimeout(fn, ms),
-        clearTimeout: (id) => { if (id != null) window.clearTimeout(id) },
-        now: () => Date.now(),
-      })
+      this.listenForceRunner = new ForceSignalRunner(
+        {
+          setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+          clearTimeout: (id) => { if (id != null) window.clearTimeout(id) },
+          now: () => Date.now(),
+        },
+        { onRunForce: (kind) => ppDebugIncForceRun('listen', kind) },
+      )
     }
     return this.listenForceRunner
   }
@@ -321,7 +343,13 @@ export class Link {
       status: this.status,
       listenMissingOrDead: !lp.open,
     })
-    this.ensureListenForceRunner().tick(peerAsForceSignal(lp), active, false, peerLooksHealthy, unverified)
+    this.ensureListenForceRunner().tick(
+      peerAsForceSignal(lp),
+      active,
+      false,
+      peerLooksHealthy,
+      unverified,
+    )
   }
 
   private rearmRememberListenPeer() {
@@ -370,10 +398,12 @@ export class Link {
   private bindNetworkWatchers() {
     if (this.networkWatchersCleanup) return
     const onOnline = () => {
+      if (this.role === 'guest' && !this.destroyed && !this.conn?.open && this.status !== 'error') {
+        this.applyGuestSignalRecoveryRedial()
+      }
       if (shouldHostReconnectOnOnline(this.role, this.destroyed)) {
         const peer = this.peer
         if (peer && !peer.destroyed) {
-          ppDebugIncForce('code')
           this.ensureHostSignalRunner().hookOnline(peerAsForceSignal(peer), false)
         }
       }
@@ -390,7 +420,6 @@ export class Link {
         if (this.role === 'host' && shouldForceSignalOnVisibility(hiddenMs, this.hostCodeSignalUnverified())) {
           const peer = this.peer
           if (peer && !peer.destroyed) {
-            ppDebugIncForce('code')
             this.ensureHostSignalRunner().hook(peerAsForceSignal(peer), false)
           }
         }
@@ -412,11 +441,14 @@ export class Link {
 
   private ensureHostSignalRunner(): ForceSignalRunner {
     if (!this.hostSignalRunner) {
-      this.hostSignalRunner = new ForceSignalRunner({
-        setTimeout: (fn, ms) => window.setTimeout(fn, ms),
-        clearTimeout: (id) => { if (id != null) window.clearTimeout(id) },
-        now: () => Date.now(),
-      })
+      this.hostSignalRunner = new ForceSignalRunner(
+        {
+          setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+          clearTimeout: (id) => { if (id != null) window.clearTimeout(id) },
+          now: () => Date.now(),
+        },
+        { onRunForce: (kind) => ppDebugIncForceRun('code', kind) },
+      )
     }
     return this.hostSignalRunner
   }
@@ -453,7 +485,6 @@ export class Link {
   private forceHostPeerSignalReconnect() {
     const peer = this.peer
     if (!peer || peer.destroyed || this.destroyed) return
-    ppDebugIncForce('code')
     this.ensureHostSignalRunner().hook(peerAsForceSignal(peer), false)
   }
 
@@ -510,10 +541,15 @@ export class Link {
     if (!canGuestIceRedial(this.hasInFlightDial(), !!this.dialWait, this.destroyed)) return
     if (this.conn?.open) {
       try { this.conn.close() } catch {}
-      return
     }
     this.set({ status: this.everConnected ? 'reconnecting' : 'connecting', error: '' })
     this.scheduleDial()
+  }
+
+  private abandonOpenDataConnForFreshPc() {
+    if (!shouldAbandonDataConnOnSignalDrop(this.everConnected, !!this.conn?.open)) return
+    ppDebugIncAbandonOnSignalDrop()
+    try { this.conn?.close() } catch {}
   }
 
   private armIceGraceRedial(pc: RTCPeerConnection) {
@@ -554,7 +590,14 @@ export class Link {
     this.clearIceRecovery()
     const pc = this.peerConnectionOf(c)
     if (!pc) return
-    const onIce = () => this.handleGuestIce(pc)
+    const gen = ppDebugRecordDataConnected()
+    const onIce = () => {
+      this.handleGuestIce(pc)
+      const state = pc.iceConnectionState
+      if (state === 'connected' || state === 'completed') {
+        void ppDebugRecordIceTransport(pc, gen)
+      }
+    }
     pc.addEventListener('iceconnectionstatechange', onIce)
     const onPeerIce = () => onIce()
     c.on('iceStateChanged', onPeerIce)
@@ -563,6 +606,9 @@ export class Link {
       c.off('iceStateChanged', onPeerIce)
     }
     this.handleGuestIce(pc)
+    if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+      void ppDebugRecordIceTransport(pc, gen)
+    }
   }
 
   async start() {
@@ -576,6 +622,7 @@ export class Link {
     this.peer = peer
     peer.on('open', () => {
       if (this.role === 'host') this.ensureHostSignalRunner().onOpen()
+      else ppDebugIncGuestSocketOpen()
       this.hostIdReclaimSince = null
       this.hostUnavailableRetry = 0
       this.retry = 0
@@ -583,7 +630,11 @@ export class Link {
         this.hostFails = 0
         const st = this.conn?.open ? 'connected' : 'waiting'
         this.set({ status: st, error: '' })
-      } else if (guestShouldRedialOnPeerOpen(this.role, this.status, !!this.conn?.open)) this.dial()
+      } else if (this.role === 'guest' && !this.conn?.open && this.status !== 'error') {
+        if (this.everConnected || guestShouldRedialOnPeerOpen(this.role, this.status, false)) {
+          this.applyGuestSignalRecoveryRedial()
+        }
+      }
     })
     peer.on('connection', (c) => {
       if (this.role !== 'host') { c.close(); return }
@@ -598,6 +649,7 @@ export class Link {
     peer.on('call', (call) => this.routeIncomingCall(call))
     peer.on('disconnected', () => {
       if (this.destroyed) return
+      this.abandonOpenDataConnForFreshPc()
       if (this.role === 'host' && this.everConnected) {
         const now = Date.now()
         const started = ensureHostReclaimStarted(true, this.hostIdReclaimSince, now)
@@ -605,8 +657,12 @@ export class Link {
           this.hostIdReclaimSince = started
           this.hostUnavailableRetry = 0
         }
-        this.ensureHostSignalRunner().onSignalingDrop()
-        this.hostListenStaggerUntil = hostListenStaggerUntil(now)
+        const store = loadHostStore()
+        if (hostHasPhones(store)) this.markHostDualSignalingDrop()
+        else {
+          this.ensureHostSignalRunner().onSignalingDrop()
+          this.hostListenStaggerUntil = hostListenStaggerUntil(now)
+        }
       }
       const keepHostUi =
         this.role === 'host' && hostKeepsConnectedStatusOnSignalDrop(!!this.conn?.open)
@@ -659,15 +715,25 @@ export class Link {
         return
       }
       if (t === 'peer-unavailable') {
+        if (this.role === 'guest' && this.dialTarget) ppDebugRememberDialError('peer-unavailable')
         this.releaseInFlightDial()
         this.dropConn()
         if (guestFailFastOnPeerUnavailable(this.role, this.everConnected)) {
           this.failGuestHostNotFound()
           return
         }
+        if (this.everConnected && this.guestUnavailableSince == null) {
+          this.guestUnavailableSince = Date.now()
+        }
         this.retry++
-        const max = guestUnavailableRetries(this.everConnected)
-        if (this.retry > max) {
+        if (
+          guestUnavailableShouldGiveUp(
+            this.everConnected,
+            this.retry,
+            this.guestUnavailableSince,
+            Date.now(),
+          )
+        ) {
           this.failGuestHostNotFound()
           return
         }
@@ -676,6 +742,7 @@ export class Link {
         return
       }
       if (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed') {
+        if (this.role === 'guest' && this.dialTarget) ppDebugRememberDialError(String(t))
         if (this.role === 'host') {
           this.hostFails++
           if (this.hostFails > 3) {
@@ -727,6 +794,7 @@ export class Link {
     if (Date.now() < this.listenBackoffUntil) return
     if (this.listenPeer && !this.listenPeer.destroyed && this.listenPeer.open) return
     this.listenBootstrapInFlight = true
+    ppDebugIncListenBootstrap()
     const rtc = config ?? (await loadRtcConfiguration())
     if (this.destroyed || this.listenGaveUp) {
       this.listenBootstrapInFlight = false
@@ -785,15 +853,16 @@ export class Link {
     peer.on('call', (call) => this.routeIncomingCall(call))
     peer.on('disconnected', () => {
       if (this.destroyed) return
+      this.abandonOpenDataConnForFreshPc()
       window.setTimeout(() => {
         const lp = this.listenPeer
         if (!lp || lp !== peer || this.destroyed) return
-        this.ensureListenForceRunner().onSignalingDrop()
-        this.hostListenStaggerUntil = hostListenStaggerUntil(Date.now())
+        this.markHostDualSignalingDrop()
       }, 1500)
     })
     peer.on('error', (e: any) => {
       if (e?.type !== 'unavailable-id' || this.destroyed) return
+      ppDebugIncListenUnavailableId()
       const t = Date.now()
       this.listenReclaimStartedAt = ensureListenReclaimStarted(
         this.listenOwnedBefore,
@@ -864,6 +933,8 @@ export class Link {
   private redialGuestNow() {
     if (this.role !== 'guest' || this.destroyed || this.status === 'error') return
     this.retry = 0
+    this.guestUnavailableSince = null
+    ppDebugRecordGuestRedial(0)
     if (this.dialWait) clearTimeout(this.dialWait)
     this.dialWait = null
     this.releaseInFlightDial()
@@ -932,9 +1003,30 @@ export class Link {
     this.pending = null
   }
 
+  private applyGuestSignalRecoveryRedial() {
+    if (this.role !== 'guest' || this.destroyed || this.status === 'error') return
+    if (this.conn?.open) return
+    const plan = guestRedialPlanAfterSignalRecovery(this.everConnected)
+    this.retry = plan.retry
+    this.guestUnavailableSince = null
+    if (this.dialWait) {
+      clearTimeout(this.dialWait)
+      this.dialWait = null
+    }
+    ppDebugRecordGuestRedial(plan.delayMs)
+    if (plan.delayMs <= 0) this.dial()
+    else {
+      this.dialWait = window.setTimeout(() => {
+        this.dialWait = null
+        this.dial()
+      }, plan.delayMs)
+    }
+  }
+
   private scheduleDial() {
     if (this.status === 'error' || this.dialWait || this.hasInFlightDial()) return
     const delay = redialDelayMs(this.retry, this.everConnected)
+    ppDebugRecordGuestRedial(delay)
     if (delay <= 0) {
       this.dial()
       return
@@ -986,7 +1078,10 @@ export class Link {
     ) {
       this.armDialWhenPeerOpens()
       try {
-        if (peer.disconnected) peer.reconnect()
+        if (peer.disconnected) {
+          ppDebugIncGuestForce('tick')
+          peer.reconnect()
+        }
       } catch {}
       if (this.role === 'guest' && !this.conn?.open) {
         if (!guestShouldRedialOnPeerOpen(this.role, this.status, !!this.conn?.open)) {
@@ -1001,6 +1096,7 @@ export class Link {
     this.set({ status: this.everConnected ? 'reconnecting' : 'connecting' })
     if (this.role === 'guest' && !this.connectingSince) this.connectingSince = Date.now()
     const target = this.dialTarget ?? peerIdForCode(this.code)
+    if (this.dialTarget) ppDebugRememberDial(this.dialTarget)
     const c = peer.connect(target, { reliable: true, serialization: 'binary' })
     const ms = dialOpenTimeoutMs(isRelayOnly())
     this.inFlightDial = c
@@ -1059,6 +1155,7 @@ export class Link {
       this.everConnected = true
       this.sessionPaired = true
       this.retry = 0
+      this.guestUnavailableSince = null
       this.hostFails = 0
       if (this.dialHangTimer) { clearTimeout(this.dialHangTimer); this.dialHangTimer = null }
       this.inFlightDial = null
@@ -1209,6 +1306,7 @@ export class Link {
     this.lastSeen = Date.now()
     this.everConnected = true
     this.retry = 0
+    this.guestUnavailableSince = null
     this.hostFails = 0
     if (this.dialHangTimer) { clearTimeout(this.dialHangTimer); this.dialHangTimer = null }
     this.inFlightDial = null
@@ -1235,12 +1333,14 @@ export class Link {
       if (this.code) rememberGuestPairedCode(this.code)
       this.clearGuestWatchdog()
     }
+    this.wireIceRecovery(c)
+    void this.refreshConnRelay()
   }
 
   private attachRememberGuest(c: DataConnection) {
     if (this.conn?.open) {
-      try { c.close() } catch {}
-      return
+      try { this.conn.close() } catch {}
+      this.dropConn()
     }
     if (this.authPending) {
       try { c.close() } catch {}
@@ -1258,6 +1358,7 @@ export class Link {
           phoneId: this.rememberGuestAuth.phoneId,
           phoneNonce: bytesToB64(phoneNonce),
         })
+        ppDebugRememberAuthSent()
       } catch {}
       this.armAuthTimeout(c)
       this.set({ status: this.everConnected ? 'reconnecting' : 'connecting' })
@@ -1406,7 +1507,10 @@ export class Link {
   private tickGuestWatchdog() {
     this.tickRememberGuestHome()
     if (this.role !== 'guest' || this.destroyed || this.status === 'error') return
-    if (this.status !== 'connecting' || this.conn?.open) return
+    if (
+      (this.status !== 'connecting' && this.status !== 'reconnecting')
+      || this.conn?.open
+    ) return
     if (!this.connectingSince) return
     const elapsed = Date.now() - this.connectingSince
     if (elapsed < GUEST_CONNECTING_WATCHDOG_MS) return
@@ -1436,6 +1540,7 @@ export class Link {
   private tryGuestPeerReconnect(peer: Peer) {
     if (this.role !== 'guest' || !shouldCallPeerReconnect(this.guestPeerReconnectSnapshot(peer))) return
     this.lastPeerReconnectAt = Date.now()
+    ppDebugIncGuestForce('tick')
     try { peer.reconnect() } catch {}
   }
 

@@ -111,6 +111,10 @@ describe('redial backoff', () => {
     assert.equal(redialDelayMs(1, false), 0)
     assert.ok(redialDelayMs(2, false) > 0)
   })
+
+  it('caps post-pair guest redial at 3s', () => {
+    assert.ok(redialDelayMs(12, true) <= 3_000)
+  })
 })
 
 describe('guest errors', () => {

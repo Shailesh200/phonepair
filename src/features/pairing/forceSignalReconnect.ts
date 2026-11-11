@@ -106,6 +106,13 @@ export type ForceSignalTimers = {
 
 type ForceMode = 'hook' | 'tick' | 'cadence' | 'online'
 
+export type RunForceKind = ForceMode | 'retry'
+
+export type ForceSignalRunnerOpts = {
+  reclaimMinMs?: number
+  onRunForce?: (kind: RunForceKind) => void
+}
+
 export class ForceSignalRunner {
   private attempt = 0
   private watchdogId: number | null = null
@@ -117,10 +124,19 @@ export class ForceSignalRunner {
   private stopped = false
   private timers: ForceSignalTimers
   private reclaimMinMs: number
+  private onRunForce?: (kind: RunForceKind) => void
 
-  constructor(timers: ForceSignalTimers, reclaimMinMs = FORCE_SIGNAL_RECLAIM_MIN_MS) {
+  constructor(
+    timers: ForceSignalTimers,
+    reclaimMinMsOrOpts: number | ForceSignalRunnerOpts = FORCE_SIGNAL_RECLAIM_MIN_MS,
+  ) {
     this.timers = timers
-    this.reclaimMinMs = reclaimMinMs
+    if (typeof reclaimMinMsOrOpts === 'number') {
+      this.reclaimMinMs = reclaimMinMsOrOpts
+    } else {
+      this.reclaimMinMs = reclaimMinMsOrOpts.reclaimMinMs ?? FORCE_SIGNAL_RECLAIM_MIN_MS
+      this.onRunForce = reclaimMinMsOrOpts.onRunForce
+    }
   }
 
   stop() {
@@ -181,11 +197,6 @@ export class ForceSignalRunner {
 
   hookOnline(peer: ForceSignalPeerStateExt, idReclaimCap = false) {
     if (this.stopped || peer.destroyed) return
-    if (this.watchdogId != null) return
-    if (this.retryId != null) {
-      this.timers.clearTimeout(this.retryId)
-      this.retryId = null
-    }
     this.clearTimers()
     this.attempt = 0
     const onlineAt = this.timers.now()
@@ -221,20 +232,17 @@ export class ForceSignalRunner {
 
     const now = this.timers.now()
     if (unverified && peer.open && !peer.disconnected) {
-      if (this.dropStartedAt == null) return
-      if (
-        forceSignalCadenceDue(this.dropStartedAt, this.lastCadenceAt, now)
-        && this.watchdogId == null
-        && this.retryId == null
-        && mayForceReplaceSignalSocket(peer, now, this.socketReplaceOpts('cadence'))
-      ) {
-        this.lastCadenceAt = now
-        this.runForce(peer, idReclaimCap, 'cadence')
-      }
+      if (this.watchdogId != null || this.retryId != null) this.clearTimers()
       return
     }
 
-    if (unverified) return
+    if (unverified) {
+      if (this.watchdogId != null || this.retryId != null) return
+      if (!signalPeerNeedsForce(peer, false)) return
+      if (!mayForceReplaceSignalSocket(peer, now, this.socketReplaceOpts('tick'))) return
+      this.runForce(peer, idReclaimCap, 'tick')
+      return
+    }
 
     if (idReclaimCap) {
       this.reclaimStartedAt ??= now
@@ -266,6 +274,7 @@ export class ForceSignalRunner {
     idReclaimCap: boolean,
     mode: ForceMode,
     onlineAt?: number,
+    countKind?: RunForceKind,
   ) {
     if (peer.destroyed || this.stopped) return
     const now = this.timers.now()
@@ -276,6 +285,7 @@ export class ForceSignalRunner {
     }
     this.attempt += 1
     forceSignalReconnect(peer)
+    this.onRunForce?.(countKind ?? mode)
     if (mode === 'cadence') return
     this.armWatchdog(peer, idReclaimCap, mode, onlineAt)
   }
@@ -290,7 +300,6 @@ export class ForceSignalRunner {
       this.timers.clearTimeout(this.watchdogId)
       this.watchdogId = null
     }
-    const trustOpen = mode === 'tick'
     const now = this.timers.now()
     const watchdogMs = forceSignalWatchdogDelayMs(
       peer,
@@ -301,7 +310,10 @@ export class ForceSignalRunner {
     this.watchdogId = this.timers.setTimeout(() => {
       this.watchdogId = null
       if (peer.destroyed || this.stopped) return
-      if (trustOpen && peer.open) return
+      if (peer.open) {
+        this.clearTimers()
+        return
+      }
       const t = this.timers.now()
       if (!mayForceReplaceSignalSocket(peer, t, this.socketReplaceOpts(mode, onlineAt))) {
         this.armWatchdog(peer, idReclaimCap, mode, onlineAt)
@@ -316,14 +328,17 @@ export class ForceSignalRunner {
       this.retryId = this.timers.setTimeout(() => {
         this.retryId = null
         if (peer.destroyed || this.stopped) return
-        if (trustOpen && peer.open) return
+        if (peer.open) {
+          this.clearTimers()
+          return
+        }
         const retryNow = this.timers.now()
         if (!mayForceReplaceSignalSocket(peer, retryNow, this.socketReplaceOpts(mode, onlineAt))) {
           this.armWatchdog(peer, idReclaimCap, mode, onlineAt)
           return
         }
         if (idReclaimCap && forceReclaimExpired(this.reclaimStartedAt, retryNow, this.reclaimMinMs)) return
-        this.runForce(peer, idReclaimCap, mode, onlineAt)
+        this.runForce(peer, idReclaimCap, mode, onlineAt, 'retry')
       }, delay)
     }, watchdogMs)
   }

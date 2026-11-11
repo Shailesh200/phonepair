@@ -17,7 +17,10 @@ export function trackListenPeerSocketOpen(peer: Peer, onOpen?: () => void): void
   })
 }
 
-export function peerAsForceSignal(peer: Peer): ForceSignalPeerStateExt {
+export function peerAsForceSignal(
+  peer: Peer,
+  onForce?: () => void,
+): ForceSignalPeerStateExt {
   const bound: ForceSignalPeerStateExt = {
     get destroyed() {
       return peer.destroyed
@@ -35,6 +38,7 @@ export function peerAsForceSignal(peer: Peer): ForceSignalPeerStateExt {
     },
     reconnect: () => {
       connectStarted.set(peer, Date.now())
+      onForce?.()
       peer.reconnect()
     },
     signalReadyState: () => socketReadyState(peer),

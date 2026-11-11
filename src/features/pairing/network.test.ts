@@ -30,12 +30,13 @@ import {
   iceDisconnectedRedialDelayMs,
   iceTransportRecovered,
   isDataConnIceOfferer,
+  shouldAbandonDataConnOnSignalDrop,
   shouldActOnIceNetworkChange,
   shouldArmIceGraceTimer,
   shouldRedialAfterDisconnectedGrace,
   shouldRedialImmediatelyOnIceFailed,
 } from './iceRecovery.ts'
-import { candidatePairUsesRelay } from './relayStats.ts'
+import { candidatePairUsesRelay, selectedCandidatePairTypes } from './relayStats.ts'
 import { allIceUrls, iceServersFromTurnApi } from './iceServerMap.ts'
 
 describe('host signal reconnect', () => {
@@ -141,6 +142,15 @@ describe('relay stats', () => {
       ['rem', { id: 'rem', timestamp: 1, type: 'remote-candidate', candidateType: 'relay' } as RTCStats],
     ]) as RTCStatsReport
     assert.equal(candidatePairUsesRelay(stats), true)
+    assert.deepEqual(selectedCandidatePairTypes(stats), { local: 'host', remote: 'relay' })
+  })
+})
+
+describe('ice abandon on signal drop', () => {
+  it('abandons an open data conn after a post-pairing signal drop', () => {
+    assert.equal(shouldAbandonDataConnOnSignalDrop(true, true), true)
+    assert.equal(shouldAbandonDataConnOnSignalDrop(true, false), false)
+    assert.equal(shouldAbandonDataConnOnSignalDrop(false, true), false)
   })
 })
 

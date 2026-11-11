@@ -1,5 +1,7 @@
 export type SelectedPairIds = { localId?: string; remoteId?: string }
 
+export type SelectedPairTypes = { local?: string; remote?: string }
+
 export function selectedCandidatePairIds(stats: RTCStatsReport): SelectedPairIds | null {
   let remoteId = ''
   let localId = ''
@@ -29,6 +31,22 @@ export function selectedCandidatePairIds(stats: RTCStatsReport): SelectedPairIds
 }
 
 type CandidateStat = RTCStats & { candidateType?: string }
+
+function candidateType(stats: RTCStatsReport, id?: string): string | undefined {
+  if (!id) return undefined
+  const c = stats.get(id) as CandidateStat | undefined
+  if (c && (c.type === 'remote-candidate' || c.type === 'local-candidate')) return c.candidateType
+  return undefined
+}
+
+export function selectedCandidatePairTypes(stats: RTCStatsReport): SelectedPairTypes | null {
+  const pair = selectedCandidatePairIds(stats)
+  if (!pair) return null
+  return {
+    local: candidateType(stats, pair.localId),
+    remote: candidateType(stats, pair.remoteId),
+  }
+}
 
 export function candidatePairUsesRelay(stats: RTCStatsReport): boolean | null {
   const pair = selectedCandidatePairIds(stats)

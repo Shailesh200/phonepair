@@ -45,6 +45,11 @@ export function canGuestIceRedial(hasInFlightDial: boolean, dialWait: boolean, d
   return true
 }
 
+/** After a real signal outage, an open DataConnection often keeps a dead RTCPeerConnection — replace it. */
+export function shouldAbandonDataConnOnSignalDrop(everConnected: boolean, dataConnOpen: boolean): boolean {
+  return everConnected && dataConnOpen
+}
+
 export function shouldArmIceGraceTimer(graceTimerActive: boolean, disconnectedSince: number | null): boolean {
   if (graceTimerActive || disconnectedSince == null) return false
   return true
