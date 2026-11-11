@@ -1,9 +1,8 @@
 // Phone as a remote for this tab. Messages: remote:move, remote:click, remote:scroll,
 // remote:nav, remote:type, remote:key, remote:pointer.
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { CoreCtx, onMessage, registerFeature } from '../../core/bus'
 import { Icon } from '../../core/icons'
-import { deviceName } from '../../core/link'
 import { CopyBtn } from '../../core/ui'
 import './remote.css'
 
@@ -290,14 +289,7 @@ function PhonePage({ ctx }: { ctx: CoreCtx }) {
   ctxRef.current = ctx
   const stripAcc = useRef(0)
   const stripRaf = useRef(0)
-  const linked = ctx.link.remoteName || deviceName()
-
-  // The shell pill says "Laptop" until hello arrives. Keep the linked name, or this browser's OS name.
-  useLayoutEffect(() => {
-    if (ctx.link.status !== 'connected') return
-    const node = document.querySelector('.phone-page .top .pill')?.firstChild
-    if (node && node.nodeType === Node.TEXT_NODE && node.nodeValue !== linked) node.nodeValue = linked
-  })
+  const linked = ctx.link.remoteName || 'Connecting…'
 
   useEffect(() => {
     if (ctx.link.status === 'connected') ctx.send({ t: 'remote:pointer', on: tab === 'pointer' })
