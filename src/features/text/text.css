@@ -211,30 +211,8 @@
   cursor: pointer;
   pointer-events: auto;
 }
-.text-tile-dot {
-  position: fixed;
-  z-index: 40;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  display: none;
-  place-items: center;
-}
-.text-tile-dot.is-on { display: grid; }
-.text-tile-dot::before {
-  content: "";
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #4F46E5;
-  box-shadow: 0 0 0 2px #fff;
-}
 .text-clear:focus-visible,
 .text-toast:focus-visible,
-.text-tile-dot:focus-visible,
 .text-open:focus-visible,
 .text-open-link:focus-visible,
 .text-icon:focus-visible,

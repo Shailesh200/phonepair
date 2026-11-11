@@ -96,15 +96,8 @@ function CopyTick({ text, ctx, done, onDone }: { text: string; ctx: CoreCtx; don
 
 function DomainLine({ href }: { href: string }) {
   const domain = linkDomain(href)
-  const [ok, setOk] = useState(false)
   if (!domain) return null
-  return <span className="text-domain">
-    {ok
-      ? <img alt="" width={14} height={14} src={`https://${domain}/favicon.ico`} />
-      : <Icon n="link" />}
-    <img alt="" hidden src={`https://${domain}/favicon.ico`} onLoad={() => setOk(true)} onError={() => setOk(false)} />
-    {domain}
-  </span>
+  return <span className="text-domain"><Icon n="link" />{domain}</span>
 }
 
 function useHold(onHold: () => void, onTap: () => void) {
@@ -342,11 +335,7 @@ function createIncomingUi(ctx: CoreCtx): IncomingUi {
   document.body.appendChild(live)
 
   let toast: HTMLButtonElement | null = null
-  let dot: HTMLButtonElement | null = null
   let timer = 0
-  let poll = 0
-  let frame = 0
-  let observer: MutationObserver | null = null
 
   const open = () => {
     unread = 0
@@ -354,54 +343,14 @@ function createIncomingUi(ctx: CoreCtx): IncomingUi {
     ctx.openPage('text')
   }
 
-  const placeDot = () => {
-    if (!dot) return
-    const tile = document.querySelector('[data-testid="tile-text"]')
-    if (!(tile instanceof HTMLElement)) { dot.classList.remove('is-on'); return }
-    const r = tile.getBoundingClientRect()
-    if (r.width < 2 || r.height < 2) { dot.classList.remove('is-on'); return }
-    dot.classList.add('is-on')
-    dot.style.top = `${Math.round(r.top + 10)}px`
-    dot.style.left = `${Math.round(r.right - 22)}px`
-  }
-  const schedule = () => {
-    cancelAnimationFrame(frame)
-    frame = requestAnimationFrame(placeDot)
-  }
-
   const hide = () => {
     window.clearTimeout(timer)
-    window.clearInterval(poll)
-    cancelAnimationFrame(frame)
     toast?.remove()
     toast = null
-    dot?.remove()
-    dot = null
-    observer?.disconnect()
-    observer = null
-    window.removeEventListener('resize', schedule)
-    window.removeEventListener('scroll', schedule, true)
   }
 
-  const show = (_preview: string, count: number) => {
+  const show = (_preview: string, _count: number) => {
     if (viewing) return
-    if (!dot) {
-      dot = document.createElement('button')
-      dot.type = 'button'
-      dot.className = 'text-tile-dot'
-      dot.dataset.testid = 'text-dot'
-      dot.addEventListener('click', open)
-      document.body.appendChild(dot)
-      window.addEventListener('resize', schedule)
-      window.addEventListener('scroll', schedule, true)
-      observer = new MutationObserver(schedule)
-      observer.observe(document.body, { childList: true, subtree: true })
-      window.clearInterval(poll)
-      poll = window.setInterval(schedule, 400)
-    }
-    dot.setAttribute('aria-label', count > 1 ? `${count} new messages` : 'New message')
-    schedule()
-
     toast?.remove()
     toast = document.createElement('button')
     toast.type = 'button'
