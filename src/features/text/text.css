@@ -1,0 +1,228 @@
+.text-card > h3 { font-size: 16px; margin-bottom: 14px; }
+.text-card, .text-phone { position: relative; }
+
+.text-compose { display: flex; align-items: flex-end; gap: 10px; min-width: 0; }
+.text-compose textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  max-height: 110px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #F7F8FC;
+  padding: 10px 12px;
+  margin: 0;
+  resize: none;
+  outline: none;
+  overflow: auto;
+  font: inherit;
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--ink);
+}
+.text-compose textarea::placeholder { color: var(--mut); }
+.text-compose textarea:focus { border-color: var(--a); box-shadow: 0 0 0 3px var(--a2); }
+.text-compose .text-send { flex: none; min-height: 44px; }
+.text-send:disabled,
+.text-send:disabled:hover,
+.text-round:disabled,
+.text-round:disabled:hover {
+  background: #EEF2FF;
+  color: #4F46E5;
+  opacity: 1;
+  transform: none;
+  cursor: default;
+}
+
+.text-note { margin-top: 8px; color: #B45309; font-size: 12px; font-weight: 600; }
+.text-extra { margin-top: 10px; }
+.text-list-hd { margin: 14px 0 2px; gap: 8px; }
+.text-list-hd h3 { margin: 0; font-size: 15px; }
+.text-clear { color: var(--a); font-weight: 700; font-size: 13px; padding: 4px; border-radius: 8px; }
+.text-clear:hover { text-decoration: underline; }
+.text-empty { padding: 8px 0 2px; line-height: 1.45; }
+
+.text-row { align-items: flex-start; min-width: 0; }
+.text-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.text-actions { display: flex; align-items: center; gap: 4px; flex: none; margin-top: 2px; }
+.text-open {
+  color: var(--a);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 6px 8px;
+  text-decoration: none;
+  border-radius: 8px;
+}
+.text-sent {
+  display: inline-flex;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--mut);
+  background: var(--bg);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.text-domain {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--mut);
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 0;
+}
+.text-domain img, .text-domain svg { width: 14px; height: 14px; flex: none; border-radius: 3px; }
+.text-copied { color: var(--ok); }
+
+.text-phone-tools { display: flex; justify-content: flex-end; padding: 4px 16px 0; }
+.text-chat {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 10px;
+  min-height: calc(100vh - 72px);
+  padding: 12px 16px calc(96px + var(--text-kb, 0px) + var(--text-safe, env(safe-area-inset-bottom)));
+}
+.text-phone.kb-open { --text-safe: 0px; }
+.text-bubble {
+  max-width: min(85%, 340px);
+  padding: 10px 12px;
+  border-radius: 18px;
+  min-width: 0;
+}
+.text-bubble.theirs {
+  align-self: flex-start;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-bottom-left-radius: 6px;
+}
+.text-bubble.mine {
+  align-self: flex-end;
+  background: #EEF2FF;
+  border-bottom-right-radius: 6px;
+}
+.text-bubble .txt { overflow-wrap: anywhere; }
+.text-bubble .txt a { font-weight: 700; }
+.text-bubble-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
+.text-bubble-meta small { color: var(--mut); font-size: 12px; }
+.text-open-link {
+  width: 100%;
+  margin-top: 8px;
+  min-height: 48px;
+  border-radius: 14px;
+  text-decoration: none;
+}
+.text-end { height: 1px; scroll-margin-bottom: calc(108px + var(--text-kb, 0px)); }
+
+.text-dock {
+  position: fixed;
+  z-index: 30;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(480px, 100%);
+  bottom: var(--text-kb, 0px);
+  padding: 8px 12px calc(10px + var(--text-safe, env(safe-area-inset-bottom)));
+  background: rgba(247, 248, 252, .96);
+  border-top: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+}
+.text-dock .text-note { margin: 0 4px 6px; }
+.text-dock-row { display: flex; align-items: flex-end; gap: 8px; }
+.text-dock-row textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  max-height: 120px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: #fff;
+  padding: 10px 14px;
+  margin: 0;
+  resize: none;
+  outline: none;
+  overflow: auto;
+  font: inherit;
+  font-size: 16px;
+  line-height: 22px;
+  color: var(--ink);
+}
+.text-dock-row textarea::placeholder { color: var(--mut); }
+.text-dock-row textarea:focus { border-color: var(--a); box-shadow: 0 0 0 3px var(--a2); }
+.text-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--a);
+}
+.text-icon svg { width: 20px; height: 20px; }
+.text-round {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  flex: none;
+}
+.text-round svg { width: 18px; height: 18px; }
+
+.text-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.text-incoming { position: absolute; width: 0; height: 0; overflow: visible; }
+.text-toast {
+  position: fixed;
+  z-index: 130;
+  left: 50%;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  max-width: min(420px, calc(100vw - 24px));
+  background: var(--ink);
+  color: #fff;
+  border: 0;
+  border-radius: 14px;
+  padding: 12px 18px;
+  font-weight: 600;
+  font-size: 14px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, .25);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.text-clear:focus-visible,
+.text-toast:focus-visible,
+.text-open:focus-visible,
+.text-open-link:focus-visible,
+.text-icon:focus-visible,
+.text-compose textarea:focus-visible,
+.text-dock-row textarea:focus-visible {
+  outline: 2px solid var(--a);
+  outline-offset: 2px;
+}
+@media (max-width: 360px) {
+  .text-compose { gap: 8px; }
+  .text-send { padding: 10px 12px; }
+  .text-bubble { max-width: 88%; }
+}
