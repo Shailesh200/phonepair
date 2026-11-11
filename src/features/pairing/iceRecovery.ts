@@ -12,15 +12,28 @@ export function iceTransportRecovered(state: RTCIceConnectionState): boolean {
   return state === 'connected' || state === 'completed'
 }
 
+/** PeerJS 1.5.4 does not renegotiate on restartIce; redial is the real recovery path. */
+export function shouldRedialImmediatelyOnIceFailed(state: RTCIceConnectionState): boolean {
+  return state === 'failed'
+}
+
+export function shouldActOnIceNetworkChange(state: RTCIceConnectionState): boolean {
+  return !iceTransportRecovered(state)
+}
+
 export function shouldRestartIce(
   state: RTCIceConnectionState,
   disconnectedSince: number | null,
   now: number,
   disconnectMs = ICE_DISCONNECTED_RESTART_MS,
 ): boolean {
-  if (state === 'failed') return true
   if (state === 'disconnected' && disconnectedSince != null && now - disconnectedSince >= disconnectMs) return true
   return false
+}
+
+export function canGuestIceRedial(hasInFlightDial: boolean, dialWait: boolean, destroyed: boolean): boolean {
+  if (destroyed || hasInFlightDial || dialWait) return false
+  return true
 }
 
 export function shouldRedialAfterIceRestart(

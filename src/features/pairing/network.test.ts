@@ -1,25 +1,40 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  FORCED_HOST_SIGNAL_RECONNECT_MIN_MS,
   HOST_HIDDEN_RECONNECT_MS,
   isHalfOpenSignalConn,
+  planHostSignalReconnect,
   shouldHostReconnectAfterVisibility,
   shouldHostReconnectHalfOpen,
   shouldHostReconnectOnOnline,
+  shouldSkipHostDisconnectedHandler,
 } from './hostSignalReconnect.ts'
 import {
   canAttemptIceRestart,
+  canGuestIceRedial,
   iceTransportRecovered,
   ICE_DISCONNECTED_RESTART_MS,
   ICE_RESTART_RECOVERY_MS,
   isDataConnIceOfferer,
+  shouldActOnIceNetworkChange,
   shouldRedialAfterIceRestart,
+  shouldRedialImmediatelyOnIceFailed,
   shouldRestartIce,
 } from './iceRecovery.ts'
 import { candidatePairUsesRelay } from './relayStats.ts'
 import { allIceUrls, iceServersFromTurnApi } from './iceServerMap.ts'
 
 describe('host signal reconnect', () => {
+  const base = {
+    role: 'host' as const,
+    linkDestroyed: false,
+    peerDestroyed: false,
+    forceInFlight: false,
+    lastForcedAt: 0,
+    now: 20_000,
+  }
+
   it('reconnects host on online and after long hide', () => {
     assert.equal(shouldHostReconnectOnOnline('host', false), true)
     assert.equal(shouldHostReconnectOnOnline('guest', false), false)
@@ -29,22 +44,54 @@ describe('host signal reconnect', () => {
     assert.equal(shouldHostReconnectHalfOpen('host', false, true, false), true)
     assert.equal(shouldHostReconnectHalfOpen('guest', false, true, false), false)
   })
+
+  it('plans forced signalling reconnect with throttle and PeerJS paths', () => {
+    assert.equal(
+      planHostSignalReconnect({ ...base, peerDisconnected: true }),
+      'reconnect',
+    )
+    assert.equal(
+      planHostSignalReconnect({ ...base, peerDisconnected: false }),
+      'disconnect-then-reconnect',
+    )
+    assert.equal(
+      planHostSignalReconnect({
+        ...base,
+        peerDisconnected: false,
+        lastForcedAt: base.now - FORCED_HOST_SIGNAL_RECONNECT_MIN_MS + 1,
+      }),
+      'skip',
+    )
+    assert.equal(
+      planHostSignalReconnect({ ...base, peerDisconnected: true, forceInFlight: true }),
+      'skip',
+    )
+    assert.equal(
+      planHostSignalReconnect({ ...base, peerDestroyed: true, peerDisconnected: true }),
+      'skip',
+    )
+    assert.equal(shouldSkipHostDisconnectedHandler(true), true)
+    assert.equal(shouldSkipHostDisconnectedHandler(false), false)
+  })
 })
 
 describe('ice recovery', () => {
   const t0 = 10_000
-  it('restarts ice for guest offerer when disconnected long enough or failed', () => {
+  it('redials on failed ice; restartIce path only for long disconnect', () => {
     assert.equal(isDataConnIceOfferer('guest'), true)
-    assert.equal(isDataConnIceOfferer('host'), false)
-    assert.equal(shouldRestartIce('failed', null, t0), true)
+    assert.equal(shouldRedialImmediatelyOnIceFailed('failed'), true)
+    assert.equal(shouldRedialImmediatelyOnIceFailed('disconnected'), false)
+    assert.equal(shouldRestartIce('failed', null, t0), false)
     assert.equal(
       shouldRestartIce('disconnected', t0 - ICE_DISCONNECTED_RESTART_MS, t0 + 1),
       true,
     )
-    assert.equal(shouldRestartIce('disconnected', t0, t0 + 100), false)
+    assert.equal(shouldActOnIceNetworkChange('connected'), false)
+    assert.equal(shouldActOnIceNetworkChange('disconnected'), true)
     assert.equal(iceTransportRecovered('connected'), true)
     assert.equal(canAttemptIceRestart(true, 0, t0), false)
-    assert.equal(canAttemptIceRestart(false, t0, t0 + 2500), true)
+    assert.equal(canGuestIceRedial(true, false, false), false)
+    assert.equal(canGuestIceRedial(false, false, false), true)
     const restartAt = t0
     assert.equal(
       shouldRedialAfterIceRestart(restartAt, 'disconnected', restartAt + ICE_RESTART_RECOVERY_MS),

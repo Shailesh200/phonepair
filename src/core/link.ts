@@ -21,16 +21,22 @@ import { guestUnavailableRetries, redialDelayMs } from '../features/pairing/reco
 import { linkTeardownSendsBye } from '../features/pairing/teardown'
 import { shouldCallPeerReconnect, shouldHostReconnect } from '../features/pairing/peerReconnect'
 import {
+  hostKeepsConnectedStatusOnSignalDrop,
+  planHostSignalReconnect,
   shouldHostReconnectAfterVisibility,
   shouldHostReconnectHalfOpen,
   shouldHostReconnectOnOnline,
+  shouldSkipHostDisconnectedHandler,
 } from '../features/pairing/hostSignalReconnect'
 import {
   canAttemptIceRestart,
+  canGuestIceRedial,
   isDataConnIceOfferer,
   iceTransportRecovered,
   ICE_RESTART_RECOVERY_MS,
+  shouldActOnIceNetworkChange,
   shouldRedialAfterIceRestart,
+  shouldRedialImmediatelyOnIceFailed,
   shouldRestartIce,
 } from '../features/pairing/iceRecovery'
 import { candidatePairUsesRelay } from '../features/pairing/relayStats'
@@ -94,6 +100,7 @@ export class Link {
   private iceRestartInFlight = false
   private iceRedialTimer: number | null = null
   private iceWatchCleanup: (() => void) | null = null
+  private hostForceSignalInFlight = false
   connViaRelay: boolean | null = null
 
   constructor(role: Role, code: string) {
@@ -145,9 +152,29 @@ export class Link {
 
   private forceHostPeerSignalReconnect() {
     const peer = this.peer
-    if (!peer || peer.destroyed || this.destroyed || this.role !== 'host') return
-    this.lastPeerReconnectAt = Date.now()
-    try { peer.reconnect() } catch {}
+    if (!peer) return
+    const now = Date.now()
+    const plan = planHostSignalReconnect({
+      role: this.role,
+      linkDestroyed: this.destroyed,
+      peerDestroyed: peer.destroyed,
+      peerDisconnected: peer.disconnected,
+      forceInFlight: this.hostForceSignalInFlight,
+      lastForcedAt: this.lastPeerReconnectAt,
+      now,
+    })
+    if (plan === 'skip') return
+    this.hostForceSignalInFlight = true
+    this.lastPeerReconnectAt = now
+    try {
+      if (plan === 'reconnect') peer.reconnect()
+      else {
+        peer.disconnect()
+        peer.reconnect()
+      }
+    } catch {
+      this.hostForceSignalInFlight = false
+    }
   }
 
   private clearIceRecovery() {
@@ -186,7 +213,18 @@ export class Link {
     if (!isDataConnIceOfferer(this.role) || this.destroyed) return
     const pc = this.conn ? this.peerConnectionOf(this.conn) : null
     if (!pc) return
+    if (!shouldActOnIceNetworkChange(pc.iceConnectionState)) return
     this.maybeRestartIce(pc)
+  }
+
+  private scheduleGuestIceRedial() {
+    if (!canGuestIceRedial(this.hasInFlightDial(), !!this.dialWait, this.destroyed)) return
+    if (this.conn?.open) {
+      try { this.conn.close() } catch {}
+      return
+    }
+    this.set({ status: this.everConnected ? 'reconnecting' : 'connecting', error: '' })
+    this.scheduleDial()
   }
 
   private maybeRestartIce(pc: RTCPeerConnection) {
@@ -198,12 +236,17 @@ export class Link {
     }
     if (state === 'disconnected' && this.iceDisconnectedAt == null) this.iceDisconnectedAt = now
     if (!isDataConnIceOfferer(this.role)) return
+    if (shouldRedialImmediatelyOnIceFailed(state)) {
+      this.scheduleGuestIceRedial()
+      return
+    }
     if (!shouldRestartIce(state, this.iceDisconnectedAt, now)) return
     if (!canAttemptIceRestart(this.iceRestartInFlight, this.iceRestartAt, now)) return
     void this.attemptIceRestart(pc)
   }
 
   private async attemptIceRestart(pc: RTCPeerConnection) {
+    // PeerJS 1.5.4 ignores new offers on an existing connection id; restartIce alone does not recover.
     this.iceRestartInFlight = true
     this.iceRestartAt = Date.now()
     try {
@@ -220,7 +263,7 @@ export class Link {
       this.iceRedialTimer = null
       if (this.destroyed) return
       if (shouldRedialAfterIceRestart(restartAt, pc.iceConnectionState, Date.now())) {
-        if (this.role === 'guest') this.redialGuestNow()
+        this.scheduleGuestIceRedial()
       }
     }, ICE_RESTART_RECOVERY_MS)
   }
@@ -248,10 +291,12 @@ export class Link {
     const peer = id ? new Peer(id, { ...SIGNAL, config }) : new Peer({ ...SIGNAL, config })
     this.peer = peer
     peer.on('open', () => {
+      this.hostForceSignalInFlight = false
       this.retry = 0
       if (this.role === 'host') {
         this.hostFails = 0
-        this.set({ status: this.conn?.open ? 'connected' : 'waiting', error: '' })
+        const st = this.conn?.open ? 'connected' : 'waiting'
+        this.set({ status: st, error: '' })
       } else if (guestShouldRedialOnPeerOpen(this.role, this.status, !!this.conn?.open)) this.dial()
     })
     peer.on('connection', (c) => {
@@ -263,8 +308,13 @@ export class Link {
     peer.on('call', (call) => this.callHandlers.forEach((h) => h(call)))
     peer.on('disconnected', () => {
       if (this.destroyed) return
-      this.set({ status: this.everConnected ? 'reconnecting' : this.status })
+      const keepHostUi =
+        this.role === 'host' && hostKeepsConnectedStatusOnSignalDrop(!!this.conn?.open)
+      if (!keepHostUi) {
+        this.set({ status: this.everConnected ? 'reconnecting' : this.status })
+      }
       window.setTimeout(() => {
+        if (shouldSkipHostDisconnectedHandler(this.hostForceSignalInFlight)) return
         if (this.role === 'host') {
           if (shouldHostReconnect({
             role: 'host',
