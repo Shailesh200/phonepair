@@ -9,7 +9,7 @@ const NAMED: Record<string, string> = {
   ArrowDown: 'Down',
   ArrowLeft: 'Left',
   ArrowRight: 'Right',
-  Enter: 'Enter',
+  Enter: 'Return',
   Escape: 'Escape',
   Tab: 'Tab',
   Backspace: 'Backspace',

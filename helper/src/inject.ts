@@ -118,7 +118,28 @@ export function nutScrollName(dir: ScrollDir, platform: NodeJS.Platform = proces
   return horizontalInverted ? 'scrollRight' : 'scrollLeft'
 }
 
-async function tap(names: string[]) {
+/** One keystroke. `keyboard.type(Key…)` is a single keyTap, not press plus release. */
+export type KeyPort = {
+  tap(names: string[]): Promise<void>
+  typeChar(ch: string): Promise<void>
+}
+
+/** One `remote:type` character becomes one keystroke. Newline is one Return. */
+export function strokesForText(text: string): Array<{ op: 'char'; ch: string } | { op: 'tap'; names: string[] }> {
+  return [...text].map((ch) => {
+    if (ch === '\n' || ch === '\r') return { op: 'tap', names: ['Return'] }
+    return { op: 'char', ch }
+  })
+}
+
+export async function playStrokes(port: KeyPort, text: string): Promise<void> {
+  for (const stroke of strokesForText(text)) {
+    if (stroke.op === 'tap') await port.tap(stroke.names)
+    else await port.typeChar(stroke.ch)
+  }
+}
+
+async function nutTap(names: string[]) {
   const keys: Key[] = []
   for (const name of names) {
     const key = nutKey(name)
@@ -126,13 +147,18 @@ async function tap(names: string[]) {
     keys.push(key)
   }
   if (!keys.length) return
-  await keyboard.pressKey(...keys)
-  await keyboard.releaseKey(...keys)
+  await keyboard.type(...keys)
 }
 
-async function typeText(text: string, mods: Mod[]) {
+async function nutTypeChar(ch: string) {
+  await keyboard.type(ch)
+}
+
+const nutKeys: KeyPort = { tap: nutTap, typeChar: nutTypeChar }
+
+async function typeText(port: KeyPort, text: string, mods: Mod[]) {
   if (!mods.length) {
-    await keyboard.type(text)
+    await playStrokes(port, text)
     return
   }
   const held: Key[] = []
@@ -143,7 +169,7 @@ async function typeText(text: string, mods: Mod[]) {
   }
   if (held.length) await keyboard.pressKey(...held)
   try {
-    await keyboard.type(text)
+    await playStrokes(port, text)
   } finally {
     if (held.length) await keyboard.releaseKey(...held)
   }
@@ -163,7 +189,7 @@ export async function releaseModifiers(): Promise<void> {
   }
 }
 
-export function createNutInjector(): Injector {
+export function createNutInjector(port: KeyPort = nutKeys): Injector {
   mouse.config.autoDelayMs = 0
   keyboard.config.autoDelayMs = 0
   mouse.config.mouseSpeed = 4000
@@ -233,14 +259,14 @@ export function createNutInjector(): Injector {
         await pointer.release()
         const plan = planKey(key, mods)
         if (!plan) return
-        if (plan.kind === 'tap') await tap(plan.keys)
-        else await typeText(plan.text, plan.mods)
+        if (plan.kind === 'tap') await port.tap(plan.keys)
+        else await typeText(port, plan.text, plan.mods)
       })
     },
     type(text) {
       return run(async () => {
         await pointer.release()
-        await keyboard.type(text)
+        await playStrokes(port, text)
       })
     },
     abs(x, y) {

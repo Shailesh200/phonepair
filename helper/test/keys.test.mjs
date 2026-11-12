@@ -4,7 +4,7 @@ import { planKey } from '../dist/keys.js'
 
 test('named keys and modifiers become taps', () => {
   assert.deepEqual(planKey('ArrowLeft', []), { kind: 'tap', keys: ['Left'] })
-  assert.deepEqual(planKey('Enter', ['cmd']), { kind: 'tap', keys: ['LeftCmd', 'Enter'] })
+  assert.deepEqual(planKey('Enter', ['cmd']), { kind: 'tap', keys: ['LeftCmd', 'Return'] })
   assert.deepEqual(planKey('Escape', []), { kind: 'tap', keys: ['Escape'] })
   assert.deepEqual(planKey('Tab', ['ctrl', 'shift']), { kind: 'tap', keys: ['LeftControl', 'LeftShift', 'Tab'] })
   assert.deepEqual(planKey('Backspace', []), { kind: 'tap', keys: ['Backspace'] })
