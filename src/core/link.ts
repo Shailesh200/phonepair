@@ -39,7 +39,13 @@ import {
 import { notifyHostPhoneConnected } from '../features/pairing/hostDualForceRunner'
 import { hostListenStaggerUntil, shouldDeferListenForce } from '../features/pairing/hostSignalStagger'
 import { HOST_FORCE_HOOK_MIN_MS, mayHostForceHook } from '../features/pairing/hostForceHookThrottle'
-import { peerAsForceSignal, trackListenPeerSocketOpen } from '../features/pairing/peerForceAdapter'
+import { peerAsForceSignal, trackCodePeerSocketOpen, trackListenPeerSocketOpen } from '../features/pairing/peerForceAdapter'
+import { takePeerForceDisconnect } from '../features/pairing/forceSignalSelf'
+import {
+  ppDebugIncSignalDropExternal,
+  ppDebugIncSignalDropIgnoredSelf,
+} from '../features/pairing/ppDebugForceDrops'
+import { FORCE_LISTEN_SETTLE_MS, listenForceRecycleDeferred } from '../remember/listenForceSettle'
 import {
   ppDebugIncForceRun,
   ppDebugIncGuestForce,
@@ -202,6 +208,7 @@ export class Link {
   private hostListenStaggerUntil: number | null = null
   private lastCodeForceHookAt = 0
   private lastListenForceHookAt = 0
+  private listenForceSettleUntil: number | null = null
   private listenReclaimStartedAt: number | null = null
   private visibilityListener: (() => void) | null = null
   private networkListener: (() => void) | null = null
@@ -296,7 +303,7 @@ export class Link {
                   this.hostHasRememberPhones(),
                 )
               ) {
-                this.ensureListenForceRunner().hook(peerAsForceSignal(lp), false)
+                this.ensureListenForceRunner().hook(peerAsForceSignal(lp, 'listen'), false)
               }
             }
           }
@@ -311,7 +318,7 @@ export class Link {
         if (!lp || lp.destroyed || !this.listenPeerEverOpen) return
         const run = () => {
           if (lp !== this.listenPeer || lp.destroyed) return
-          this.ensureListenForceRunner().hookOnline(peerAsForceSignal(lp), false)
+          this.ensureListenForceRunner().hookOnline(peerAsForceSignal(lp, 'listen'), false)
         }
         const deferMs = shouldDeferListenForce(
           !!this.peer?.open,
@@ -346,11 +353,12 @@ export class Link {
   private nudgeListenForceAfterDrop() {
     const lp = this.listenPeer
     if (!lp || lp.destroyed || !this.hostHasRememberPhones()) return
-    const runner = this.ensureListenForceRunner()
     const now = Date.now()
+    if (listenForceRecycleDeferred(!!lp.open, !!lp.disconnected, this.listenForceSettleUntil, now)) return
+    const runner = this.ensureListenForceRunner()
     if (!mayHostForceHook(now, this.lastListenForceHookAt, runner.runnerBusy())) return
     this.lastListenForceHookAt = now
-    runner.hook(peerAsForceSignal(lp), false)
+    runner.hook(peerAsForceSignal(lp, 'listen'), false)
   }
 
   private tryCodeForceHook(peer: Peer) {
@@ -358,15 +366,32 @@ export class Link {
     const now = Date.now()
     if (!mayHostForceHook(now, this.lastCodeForceHookAt, runner.runnerBusy())) return
     this.lastCodeForceHookAt = now
-    runner.hook(peerAsForceSignal(peer), false)
+    runner.hook(peerAsForceSignal(peer, 'code'), false)
   }
 
-  private markHostDualSignalingDrop() {
+  private handleHostPeerSignalDisconnected(peer: Peer, side: 'code' | 'listen') {
+    if (takePeerForceDisconnect(peer)) {
+      ppDebugIncSignalDropIgnoredSelf(side)
+      return
+    }
+    ppDebugIncSignalDropExternal(side)
+    this.abandonOpenDataConnForFreshPc()
     const now = Date.now()
-    this.ensureListenForceRunner().onSignalingDrop()
-    this.ensureHostSignalRunner().onSignalingDrop()
-    this.hostListenStaggerUntil = hostListenStaggerUntil(now)
-    this.nudgeListenForceAfterDrop()
+    if (side === 'listen' || (side === 'code' && hostHasPhones(loadHostStore()))) {
+      this.ensureListenForceRunner().onSignalingDrop()
+      this.ensureHostSignalRunner().onSignalingDrop()
+      this.hostListenStaggerUntil = hostListenStaggerUntil(now)
+    } else if (side === 'code') {
+      this.ensureHostSignalRunner().onSignalingDrop()
+      this.hostListenStaggerUntil = hostListenStaggerUntil(now)
+    }
+  }
+
+  /** @deprecated use handleHostPeerSignalDisconnected */
+  private markHostDualSignalingDrop() {
+    const lp = this.listenPeer
+    if (lp && !lp.destroyed) this.handleHostPeerSignalDisconnected(lp, 'listen')
+    else if (this.peer && !this.peer.destroyed) this.handleHostPeerSignalDisconnected(this.peer, 'code')
   }
 
   private rememberAcceptOpts() {
@@ -396,7 +421,8 @@ export class Link {
       status: this.status,
       listenMissingOrDead: !lp.open,
     })
-    const wrapped = peerAsForceSignal(lp)
+    if (listenForceRecycleDeferred(!!lp.open, !!lp.disconnected, this.listenForceSettleUntil, now)) return
+    const wrapped = peerAsForceSignal(lp, 'listen')
     const started = wrapped.signalConnectStartedAt?.() ?? null
     ppDebugSetListenSocketReadyStateAgeMs(started != null ? Math.max(0, now - started) : null)
     this.ensureListenForceRunner().tick(
@@ -431,7 +457,7 @@ export class Link {
         && this.listenSignalUnverified()
         && !this.ensureListenForceRunner().runnerBusy()
       ) {
-        this.ensureListenForceRunner().hook(peerAsForceSignal(lp), false)
+        this.ensureListenForceRunner().hook(peerAsForceSignal(lp, 'listen'), false)
       }
       return
     }
@@ -469,13 +495,13 @@ export class Link {
       if (shouldHostReconnectOnOnline(this.role, this.destroyed)) {
         const peer = this.peer
         if (peer && !peer.destroyed) {
-          this.ensureHostSignalRunner().hookOnline(peerAsForceSignal(peer), false)
+          this.ensureHostSignalRunner().hookOnline(peerAsForceSignal(peer, 'code'), false)
         }
       }
       if (this.role === 'host' && this.listenSignalUnverified()) {
         const lp = this.listenPeer
         if (lp && !lp.destroyed) {
-          this.ensureListenForceRunner().hookOnline(peerAsForceSignal(lp), false)
+          this.ensureListenForceRunner().hookOnline(peerAsForceSignal(lp, 'listen'), false)
         }
       }
       this.onIceNetworkChange()
@@ -491,7 +517,7 @@ export class Link {
         if (this.role === 'host' && shouldForceSignalOnVisibility(hiddenMs, this.hostCodeSignalUnverified())) {
           const peer = this.peer
           if (peer && !peer.destroyed) {
-            this.ensureHostSignalRunner().hook(peerAsForceSignal(peer), false)
+            this.ensureHostSignalRunner().hook(peerAsForceSignal(peer, 'code'), false)
           }
         }
       }
@@ -543,7 +569,7 @@ export class Link {
   private tickHostCodeSignalForce(peer: Peer) {
     const unverified = this.hostCodeSignalUnverified()
     const peerLooksHealthy = peer.open && !peer.disconnected && !unverified
-    const wrapped = peerAsForceSignal(peer)
+    const wrapped = peerAsForceSignal(peer, 'code')
     this.ensureHostSignalRunner().tick(
       wrapped,
       this.hostCodeSignalForceActive(peer),
@@ -732,9 +758,9 @@ export class Link {
       this.attach(c)
     })
     peer.on('call', (call) => this.routeIncomingCall(call))
+    if (this.role === 'host') trackCodePeerSocketOpen(peer)
     peer.on('disconnected', () => {
       if (this.destroyed) return
-      this.abandonOpenDataConnForFreshPc()
       if (this.role === 'host' && this.everConnected) {
         const now = Date.now()
         const started = ensureHostReclaimStarted(true, this.hostIdReclaimSince, now)
@@ -742,12 +768,9 @@ export class Link {
           this.hostIdReclaimSince = started
           this.hostUnavailableRetry = 0
         }
-        const store = loadHostStore()
-        if (hostHasPhones(store)) this.markHostDualSignalingDrop()
-        else {
-          this.ensureHostSignalRunner().onSignalingDrop()
-          this.hostListenStaggerUntil = hostListenStaggerUntil(now)
-        }
+        this.handleHostPeerSignalDisconnected(peer, 'code')
+      } else {
+        this.abandonOpenDataConnForFreshPc()
       }
       const keepHostUi =
         this.role === 'host' && hostKeepsConnectedStatusOnSignalDrop(!!this.conn?.open)
@@ -927,6 +950,9 @@ export class Link {
       this.listenReclaimStartedAt = null
       this.listenUnavailableFailures = 0
       ppDebugIncListenSocketOpen()
+      if (this.listenForceRunner?.isUnverifiedAfterDrop()) {
+        this.listenForceSettleUntil = Date.now() + FORCE_LISTEN_SETTLE_MS
+      }
       this.ensureListenForceRunner().onOpen()
     })
     peer.on('connection', (c) => {
@@ -942,10 +968,9 @@ export class Link {
     peer.on('call', (call) => this.routeIncomingCall(call))
     peer.on('disconnected', () => {
       if (this.destroyed) return
-      this.abandonOpenDataConnForFreshPc()
       const lp = this.listenPeer
       if (!lp || lp !== peer) return
-      this.markHostDualSignalingDrop()
+      this.handleHostPeerSignalDisconnected(peer, 'listen')
     })
     peer.on('error', (e: any) => {
       if (e?.type !== 'unavailable-id' || this.destroyed) return
@@ -1421,7 +1446,6 @@ export class Link {
       pending: this.pending,
       liveConn: this.conn,
     })) return
-    if (fromListenPeer && fromAuth && this.role === 'host') ppDebugIncListenAuthCompleted()
     this.lastSeen = Date.now()
     this.everConnected = true
     this.retry = 0
@@ -1537,7 +1561,11 @@ export class Link {
 
   private hostAuthCallbacks(): import('../remember/hostAuth').HostAuthCallbacks {
     return {
-      onPromote: (conn, remoteName, phoneId) => this.promoteConnected(conn as DataConnection, remoteName, true, phoneId),
+      onPromote: (conn, remoteName, phoneId) => {
+        ppDebugIncListenAuthCompleted()
+        this.listenForceSettleUntil = null
+        this.promoteConnected(conn as DataConnection, remoteName, true, phoneId)
+      },
       onFail: (conn, reason) => this.failRememberAuth(conn as DataConnection, reason),
       onDispatch: (conn, m) => this.dispatchPayload(m as any, conn as DataConnection),
       onTimeout: (conn) => this.failRememberAuth(conn as DataConnection, 'fail'),

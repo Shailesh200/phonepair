@@ -28,6 +28,8 @@ const child = spawn(process.execPath, [
   'src/remember/guestDialStaleConn.test.ts',
   'src/remember/hostRememberListenPriority.test.ts',
   'src/features/pairing/hostForceHookThrottle.test.ts',
+  'src/features/pairing/forceSignalSelf.test.ts',
+  'src/remember/listenForceSettle.test.ts',
 ], { stdio: 'inherit', cwd: new URL('..', import.meta.url).pathname })
 
 child.on('exit', (code) => process.exit(code ?? 1))

@@ -4,6 +4,9 @@ import {
   forceSignalConnectingGraceMs,
 } from './forceSignalReconnect.ts'
 
+/** Do not recycle an open signaling socket younger than this unless cadence (silent open). */
+export const FORCE_SOCKET_MIN_OPEN_MS = 8000
+
 export const WS_CONNECTING = 0
 export const WS_OPEN = 1
 export const WS_CLOSING = 2
@@ -12,6 +15,7 @@ export const WS_CLOSED = 3
 export type ForceSignalPeerStateExt = ForceSignalPeerLike & {
   signalReadyState?: () => number | null
   signalConnectStartedAt?: () => number | null
+  signalPeerOpenAt?: () => number | null
 }
 
 export type ForceSocketReplaceOpts = {
@@ -50,6 +54,21 @@ export function mayForceReplaceSignalSocket(
   if (age == null) return true
   const grace = forceSignalConnectingGraceMs(!!opts?.unverifiedAfterDrop)
   return age >= grace
+}
+
+export function mayForceRecycleOpenSignalSocket(
+  peer: ForceSignalPeerStateExt,
+  now: number,
+  opts?: ForceSocketReplaceOpts,
+): boolean {
+  if (!mayForceReplaceSignalSocket(peer, now, opts)) return false
+  if (!peer.open) return true
+  const openedAt = peer.signalPeerOpenAt?.() ?? null
+  if (openedAt == null) return true
+  if (now - openedAt < FORCE_SOCKET_MIN_OPEN_MS) {
+    return opts?.mode === 'cadence'
+  }
+  return true
 }
 
 export function forceSignalWatchdogDelayMs(

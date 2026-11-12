@@ -37,9 +37,12 @@ export type RunForceKind = keyof PpDebugForceRuns
 
 export type PpDebugListenHost = import('./ppDebugListenHost.ts').PpDebugListenHost
 
+export type PpDebugForceDrops = import('./ppDebugForceDrops.ts').PpDebugForceDrops
+
 export type PpDebugState = {
   listenRejects: PpDebugListenRejects
   listenHost?: PpDebugListenHost
+  forceDrops?: { listen: PpDebugForceDrops; code: PpDebugForceDrops }
   listenSocketOpens: number
   listenSocketClosedConnecting: number
   listenUnavailableId: number

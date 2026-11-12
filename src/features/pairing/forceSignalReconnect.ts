@@ -1,6 +1,6 @@
 import {
   forceSignalWatchdogDelayMs,
-  mayForceReplaceSignalSocket,
+  mayForceRecycleOpenSignalSocket,
   type ForceSignalPeerStateExt,
 } from './forceSignalPeerState.ts'
 
@@ -238,7 +238,7 @@ export class ForceSignalRunner {
         forceSignalCadenceDue(this.dropStartedAt, this.lastCadenceAt, now)
         && this.watchdogId == null
         && this.retryId == null
-        && mayForceReplaceSignalSocket(peer, now, this.socketReplaceOpts('cadence'))
+        && mayForceRecycleOpenSignalSocket(peer, now, this.socketReplaceOpts('cadence'))
       ) {
         this.lastCadenceAt = now
         this.runForce(peer, idReclaimCap, 'cadence')
@@ -249,7 +249,7 @@ export class ForceSignalRunner {
     if (unverified) {
       if (this.watchdogId != null || this.retryId != null) return
       if (!signalPeerNeedsForce(peer, false)) return
-      if (!mayForceReplaceSignalSocket(peer, now, this.socketReplaceOpts('tick'))) return
+      if (!mayForceRecycleOpenSignalSocket(peer, now, this.socketReplaceOpts('tick'))) return
       this.runForce(peer, idReclaimCap, 'tick')
       return
     }
@@ -260,7 +260,7 @@ export class ForceSignalRunner {
     }
     if (!signalPeerNeedsForce(peer, peerHealthy)) return
     if (this.watchdogId != null || this.retryId != null) return
-    if (!mayForceReplaceSignalSocket(peer, now, this.socketReplaceOpts('tick'))) return
+    if (!mayForceRecycleOpenSignalSocket(peer, now, this.socketReplaceOpts('tick'))) return
     this.runForce(peer, idReclaimCap, 'tick')
   }
 
@@ -289,7 +289,7 @@ export class ForceSignalRunner {
     if (peer.destroyed || this.stopped) return
     const now = this.timers.now()
     const opts = this.socketReplaceOpts(mode, onlineAt)
-    if (!mayForceReplaceSignalSocket(peer, now, opts)) {
+    if (!mayForceRecycleOpenSignalSocket(peer, now, opts)) {
       this.armWatchdog(peer, idReclaimCap, mode, onlineAt)
       return
     }
@@ -325,7 +325,7 @@ export class ForceSignalRunner {
         return
       }
       const t = this.timers.now()
-      if (!mayForceReplaceSignalSocket(peer, t, this.socketReplaceOpts(mode, onlineAt))) {
+      if (!mayForceRecycleOpenSignalSocket(peer, t, this.socketReplaceOpts(mode, onlineAt))) {
         this.armWatchdog(peer, idReclaimCap, mode, onlineAt)
         return
       }
@@ -343,7 +343,7 @@ export class ForceSignalRunner {
           return
         }
         const retryNow = this.timers.now()
-        if (!mayForceReplaceSignalSocket(peer, retryNow, this.socketReplaceOpts(mode, onlineAt))) {
+        if (!mayForceRecycleOpenSignalSocket(peer, retryNow, this.socketReplaceOpts(mode, onlineAt))) {
           this.armWatchdog(peer, idReclaimCap, mode, onlineAt)
           return
         }

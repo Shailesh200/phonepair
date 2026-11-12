@@ -2,8 +2,11 @@ import type Peer from 'peerjs'
 import type { ForceSignalPeerStateExt } from './forceSignalPeerState.ts'
 import { WS_CONNECTING } from './forceSignalPeerState.ts'
 import { ppDebugIncListenSocketClosedConnecting } from './ppDebug.ts'
+import { markPeerForceDisconnect } from './forceSignalSelf.ts'
+import { ppDebugIncForceSelfDisconnect, type PpDebugForceDropSide } from './ppDebugForceDrops.ts'
 
 const connectStarted = new WeakMap<Peer, number>()
+const peerOpenAt = new WeakMap<Peer, number>()
 
 function socketReadyState(peer: Peer): number | null {
   const s = (peer as { socket?: { _socket?: WebSocket } }).socket?._socket
@@ -13,12 +16,20 @@ function socketReadyState(peer: Peer): number | null {
 export function trackListenPeerSocketOpen(peer: Peer, onOpen?: () => void): void {
   peer.on('open', () => {
     connectStarted.delete(peer)
+    peerOpenAt.set(peer, Date.now())
     onOpen?.()
+  })
+}
+
+export function trackCodePeerSocketOpen(peer: Peer): void {
+  peer.on('open', () => {
+    peerOpenAt.set(peer, Date.now())
   })
 }
 
 export function peerAsForceSignal(
   peer: Peer,
+  forceSide: PpDebugForceDropSide | null = null,
   onForce?: () => void,
 ): ForceSignalPeerStateExt {
   const bound: ForceSignalPeerStateExt = {
@@ -34,6 +45,8 @@ export function peerAsForceSignal(
     disconnect: () => {
       const rs = socketReadyState(peer)
       if (rs === WS_CONNECTING) ppDebugIncListenSocketClosedConnecting()
+      markPeerForceDisconnect(peer)
+      if (forceSide) ppDebugIncForceSelfDisconnect(forceSide)
       peer.disconnect()
     },
     reconnect: () => {
@@ -54,6 +67,7 @@ export function peerAsForceSignal(
       }
       return connectStarted.get(peer) ?? null
     },
+    signalPeerOpenAt: () => peerOpenAt.get(peer) ?? null,
   }
   return bound
 }

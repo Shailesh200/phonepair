@@ -11,6 +11,7 @@ import {
 } from './forceSignalReconnect.ts'
 import {
   forceSignalWatchdogDelayMs,
+  mayForceRecycleOpenSignalSocket,
   mayForceReplaceSignalSocket,
   WS_CONNECTING,
 } from './forceSignalPeerState.ts'
@@ -59,6 +60,26 @@ describe('forceSignalConnectingGraceMs', () => {
     assert.equal(mayForceReplaceSignalSocket(peer, now, { unverifiedAfterDrop: false }), false)
     const aged = makeConnectingPeer(now - FORCE_SIGNAL_CONNECTING_GRACE_MS)
     assert.equal(mayForceReplaceSignalSocket(aged, now, { unverifiedAfterDrop: false }), true)
+  })
+})
+
+describe('force socket min open hold', () => {
+  it('blocks hook/tick recycle on a fresh open unless cadence', () => {
+    const now = 100_000
+    const peer = {
+      destroyed: false,
+      disconnected: false,
+      open: true,
+      disconnect: () => {},
+      reconnect: () => {},
+      signalReadyState: () => 1,
+      signalConnectStartedAt: () => null,
+      signalPeerOpenAt: () => now - 2000,
+    }
+    assert.equal(mayForceRecycleOpenSignalSocket(peer, now, { mode: 'hook' }), false)
+    assert.equal(mayForceRecycleOpenSignalSocket(peer, now, { mode: 'cadence', unverifiedAfterDrop: true }), true)
+    const aged = { ...peer, signalPeerOpenAt: () => now - 9000 }
+    assert.equal(mayForceRecycleOpenSignalSocket(aged, now, { mode: 'hook' }), true)
   })
 })
 
