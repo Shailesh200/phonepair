@@ -4,7 +4,9 @@ import React, { useEffect, useRef, useState } from 'react'
 import { CoreCtx, onMessage, registerFeature, useMessage } from '../../core/bus'
 import { Icon } from '../../core/icons'
 import { CopyBtn } from '../../core/ui'
+import { ConnectGuide } from './ConnectGuide'
 import { helperProbeTimeout, settleHelperProbe, type HelperProbeSocket } from './helperProbe'
+import type { HelperAttempt } from './connectGuide'
 import './remote.css'
 
 const MOVE_GAIN = 1.6
@@ -15,7 +17,6 @@ type Btn = 'left' | 'right'
 type Tab = 'trackpad' | 'clicker' | 'pointer'
 
 const HELPER_PORTS = [47811, 47812, 47813, 47814]
-const HELPER_DOWN_NOTE = "Couldn't reach the helper. Make sure it's running, and click Allow if Chrome asks about local network access, then try again."
 type HelperStatus = 'off' | 'connecting' | 'connected'
 type HelperResult = 'connected' | 'rejected' | 'down' | 'cancelled'
 
@@ -403,59 +404,33 @@ function LaptopOverlay() {
 function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
   const [text, setText] = useState('')
   const link = useHelper()
-  const [code, setCode] = useState('')
-  const [note, setNote] = useState('')
-  const armed = link.status === 'connected' || link.status === 'connecting'
+  const [attempt, setAttempt] = useState<HelperAttempt>(null)
 
   useEffect(() => {
     if (ctx.link.status !== 'connected') return
     ctx.send({ t: 'remote:helper', on: link.status === 'connected' })
   }, [ctx, ctx.link.status, link.status])
 
-  const toggle = () => {
-    if (armed) {
-      setNote('')
-      disconnectHelper()
-      return
-    }
-    if (!/^\d{6}$/.test(code)) {
-      setNote('Enter the 6-digit code printed by the helper.')
-      return
-    }
-    setNote('')
-    void connectHelper(code).then((result) => {
-      if (result === 'cancelled' || result === 'connected') return
-      if (result === 'rejected') setNote('That code was rejected. Check the helper window and try again.')
-      else setNote(HELPER_DOWN_NOTE)
-    })
-  }
-
-  const statusText = link.status === 'connected' ? 'Connected' : link.status === 'connecting' ? 'Connecting…' : 'Not connected'
   return <div className="card pad" data-testid="remote-panel">
     <h3 className="h-row"><span><Icon n="keyboard" /> Phone keyboard</span>{text ? <CopyBtn text={text} ctx={ctx} label="Copy" /> : null}</h3>
     <textarea data-testid="remote-text" className="clip" rows={2} onChange={(e) => setText(e.target.value)} placeholder="Open Remote on your phone and type. Text lands here, or in the field the pointer focuses." />
     <div className="full-laptop" data-testid="full-laptop">
-      <div className="full-laptop-row">
-        <div>
-          <b>Full laptop</b>
-          <p className={'mut small helper-status' + (link.status === 'connected' ? ' on' : '')} data-testid="helper-status" aria-live="polite">{statusText}</p>
-        </div>
-        <button type="button" className={'switch' + (armed ? ' on' : '')} role="switch" aria-checked={armed} aria-label="Full laptop" data-testid="full-laptop-toggle" onClick={toggle}><span /></button>
-      </div>
-      {link.status !== 'connected' && <>
-        <p className="mut small" data-testid="helper-hint">Download the PhonePair Helper, open it, and type the 6-digit code it shows.</p>
-        <p className="helper-downloads">
-          <a className="linkbtn sm" href="https://github.com/Shailesh200/phonepair/releases/latest" target="_blank" rel="noreferrer" data-testid="download-mac">Download for Mac</a>
-          <a className="linkbtn sm" href="https://github.com/Shailesh200/phonepair/releases/latest" target="_blank" rel="noreferrer" data-testid="download-win">Download for Windows</a>
-        </p>
-        <p className="mut small" data-testid="mac-open-steps">{'Open the DMG, drag PhonePair Helper to Applications, and open it. Allow Accessibility when asked so Control works.'}</p>
-        <p className="mut small" data-testid="win-open-steps">{'If SmartScreen appears, click More info, then Run anyway.'}</p>
-        <input className="helper-code" data-testid="helper-code" inputMode="numeric" autoComplete="off" spellCheck={false} maxLength={6} placeholder="6-digit code" aria-label="Helper code" value={code} onChange={(e) => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setNote('') }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); toggle() } }} />
-      </>}
-      {note ? <p className="err">{note}</p> : null}
+      <ConnectGuide
+        status={link.status}
+        attempt={attempt}
+        onSubmitCode={(code) => {
+          setAttempt(null)
+          void connectHelper(code).then((result) => {
+            if (result === 'cancelled') return
+            setAttempt(result)
+          })
+        }}
+        onDisconnect={() => {
+          setAttempt(null)
+          disconnectHelper()
+        }}
+      />
     </div>
-    <p className="mut small helper-dev-note" data-testid="helper-dev-note">or run from source: <code>cd helper && npm start</code></p>
-    {link.status === 'connected' ? <p className="mut small">Your phone controls the whole laptop. Turn Full laptop off to keep control inside this tab.</p> : null}
   </div>
 }
 
