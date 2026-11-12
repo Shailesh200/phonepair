@@ -34,6 +34,39 @@ export function forceSignalConnectingGapOverride(
   return now - anchor >= FORCE_SIGNAL_DROP_HOOK_CAP_MS
 }
 
+export function forceSignalLastForceOrRestoreAt(
+  lastForceAt: number | null,
+  restoreSignalAt: number | null,
+): number | null {
+  if (lastForceAt == null && restoreSignalAt == null) return null
+  if (lastForceAt == null) return restoreSignalAt
+  if (restoreSignalAt == null) return lastForceAt
+  return Math.max(lastForceAt, restoreSignalAt)
+}
+
+/** 5s gap override: CONNECTING/CLOSED only, or OPEN that predates the last force/restore. */
+export function forceSignalGapOverrideAllowed(
+  peer: ForceSignalPeerStateExt,
+  now: number,
+  opts: {
+    lastForceAt: number | null
+    scheduleAnchor: number | null
+    restoreSignalAt: number | null
+    mode: ForceMode
+  },
+): boolean {
+  if (opts.mode === 'cadence' && peer.open && !peer.disconnected) return false
+  if (!forceSignalConnectingGapOverride(opts.lastForceAt, opts.scheduleAnchor, now)) return false
+
+  const rs = peer.signalReadyState?.() ?? null
+  if (rs !== WS_OPEN) return true
+
+  const openAt = peer.signalPeerOpenAt?.() ?? null
+  const freshBound = forceSignalLastForceOrRestoreAt(opts.lastForceAt, opts.restoreSignalAt)
+  if (openAt == null || freshBound == null) return false
+  return openAt < freshBound
+}
+
 export function isVerifiedHealthyOpenSignalSocket(
   peer: ForceSignalPeerStateExt,
   unverifiedAfterDrop: boolean,
@@ -395,13 +428,12 @@ export class ForceSignalRunner {
     now: number,
     mode: ForceMode,
   ): boolean {
-    if (isVerifiedHealthyOpenSignalSocket(peer, this.unverifiedAfterDrop)) return false
-    if (mode === 'cadence' && peer.open && !peer.disconnected) return false
-    return forceSignalConnectingGapOverride(
-      this.lastForceAt,
-      this.dropHookAnchorAt ?? this.dropStartedAt,
-      now,
-    )
+    return forceSignalGapOverrideAllowed(peer, now, {
+      lastForceAt: this.lastForceAt,
+      scheduleAnchor: this.dropHookAnchorAt ?? this.dropStartedAt,
+      restoreSignalAt: this.restoreSignalAt,
+      mode,
+    })
   }
 
   private hookRetryBackoff(attempt: number, mode: ForceMode, now: number): number {

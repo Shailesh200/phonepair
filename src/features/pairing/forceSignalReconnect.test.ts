@@ -121,6 +121,44 @@ describe('forceSignalRunner stuck socket', () => {
     runner.stop()
   })
 
+  it('does not gap-force a fresh OPEN socket within 10s while unverified after drop', () => {
+    mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    const dropAt = 1000
+    const openAt = dropAt + 1000
+    const peer = makeMockPeer()
+    const peerExt = {
+      ...peer,
+      signalReadyState: () => (peer.open ? WS_OPEN : WS_CONNECTING),
+      signalPeerOpenAt: () => (peer.open ? openAt : null),
+      signalConnectStartedAt: () => dropAt,
+    }
+    const t = { value: dropAt }
+    const runner = makeRunner(t)
+    runner.onSignalingDrop()
+    runner.hook(peerExt, false)
+    const afterForce = peer.sockets.length
+    t.value = openAt
+    peerExt.open = true
+    peerExt.disconnected = false
+    const s = peerExt._getSocket()
+    if (s) s.readyState = WS_OPEN
+  let prev = openAt
+  const end = dropAt + 10_000
+  while (prev < end) {
+    const step = Math.min(FORCE_SIGNAL_DROP_HOOK_CAP_MS, end - prev)
+    prev += step
+    t.value = prev
+    mock.timers.tick(step)
+    assert.equal(
+      peer.sockets.length,
+      afterForce,
+      `unexpected force between +1s open and +10s after drop at t=${prev}`,
+    )
+  }
+    assert.equal(runner.isUnverifiedAfterDrop(), true)
+    runner.stop()
+  })
+
   it('kills a mid-cut CONNECTING socket within 5s of restore', () => {
     mock.timers.enable({ apis: ['setTimeout', 'Date'] })
     const cutAt = 10_000
