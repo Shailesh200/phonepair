@@ -59,10 +59,10 @@ describe('forceSignalDropHookBackoffMs', () => {
     assert.equal(forceSignalDropHookBackoffMs(9, drop, drop + 90_000), FORCE_SIGNAL_DROP_HOOK_CAP_MS)
   })
 
-  it('uses 10s after 2 minutes from drop', () => {
+  it('stays at 5s cap after 2 minutes from drop (not 10s)', () => {
     assert.equal(
       forceSignalDropHookBackoffMs(5, drop, drop + FORCE_SIGNAL_DROP_HOOK_FAST_PHASE_MS),
-      10_000,
+      FORCE_SIGNAL_DROP_HOOK_CAP_MS,
     )
   })
 })

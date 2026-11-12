@@ -68,9 +68,9 @@ describe('navigator offline gate', () => {
     assert.equal(hostNavigatorOfflineTooLong(false, t0, t0 + HOST_NAVIGATOR_OFFLINE_GATE_MS), true)
   })
 
-  it('stuck-offline bootstrap runs at most every 10s', () => {
+  it('stuck-offline bootstrap runs at most every 5s (capped pace)', () => {
     assert.equal(hostStuckOfflineBootstrapDue(null, t0), true)
-    assert.equal(hostStuckOfflineBootstrapDue(t0, t0 + 9999), false)
+    assert.equal(hostStuckOfflineBootstrapDue(t0, t0 + HOST_STUCK_OFFLINE_BOOTSTRAP_PACE_MS - 1), false)
     assert.equal(hostStuckOfflineBootstrapDue(t0, t0 + HOST_STUCK_OFFLINE_BOOTSTRAP_PACE_MS), true)
   })
 })

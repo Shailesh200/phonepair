@@ -10,8 +10,10 @@ export function shouldHostArmListenIdRecovery(opts: {
 /** After this long with navigator.onLine false, ignore the offline gate (stuck onLine). */
 export const HOST_NAVIGATOR_OFFLINE_GATE_MS = 18_000
 
+import { capSignalSocketRetryMs } from '../features/pairing/forceSignalReconnect.ts'
+
 /** Min spacing for listen bootstrap while bypassing a stuck offline gate. */
-export const HOST_STUCK_OFFLINE_BOOTSTRAP_PACE_MS = 10_000
+export const HOST_STUCK_OFFLINE_BOOTSTRAP_PACE_MS = capSignalSocketRetryMs(10_000)
 
 export function hostNavigatorOfflineTooLong(
   navigatorOnLine: boolean,

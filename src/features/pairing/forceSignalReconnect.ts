@@ -16,6 +16,24 @@ export function forceSignalConnectingGraceMs(unverifiedAfterDrop: boolean): numb
 }
 export const FORCE_SIGNAL_DROP_HOOK_FAST_PHASE_MS = 2 * 60_000
 export const FORCE_SIGNAL_DROP_HOOK_CAP_MS = 5000
+
+/** Every signalling-socket retry timer (hook, watchdog, cadence, reclaim) stays at or below this. */
+export function capSignalSocketRetryMs(ms: number): number {
+  return Math.min(Math.max(0, ms), FORCE_SIGNAL_DROP_HOOK_CAP_MS)
+}
+
+/** Watchdog then backoff must not exceed one capped gap (avoids 3s+12s stacks under throttling). */
+export function capSignalRetryChainMs(
+  watchdogMs: number,
+  backoffMs: number,
+): { watchdogMs: number; backoffMs: number } {
+  const w = capSignalSocketRetryMs(watchdogMs)
+  let b = capSignalSocketRetryMs(backoffMs)
+  if (w + b > FORCE_SIGNAL_DROP_HOOK_CAP_MS) {
+    b = Math.max(0, FORCE_SIGNAL_DROP_HOOK_CAP_MS - w)
+  }
+  return { watchdogMs: w, backoffMs: b }
+}
 export const FORCE_SIGNAL_RECLAIM_MIN_MS = 75_000
 export const FORCE_SIGNAL_VERIFY_CADENCE_MS = 12_000
 export const FORCE_SIGNAL_VERIFY_SLOW_CADENCE_MS = 60_000
@@ -44,21 +62,23 @@ export function forceSignalReconnect(peer: ForceSignalPeerLike): boolean {
 }
 
 export function forceSignalReconnectBackoffMs(attempt: number): number {
-  if (attempt <= 1) return 1000
-  if (attempt === 2) return 2000
-  if (attempt === 3) return 4000
-  if (attempt === 4) return 8000
-  return 10_000
+  let ms = 1000
+  if (attempt <= 1) ms = 1000
+  else if (attempt === 2) ms = 2000
+  else if (attempt === 3) ms = 4000
+  else if (attempt === 4) ms = 8000
+  else ms = 10_000
+  return capSignalSocketRetryMs(ms)
 }
 
-/** Drop-hook / post-outage retries: 1s, 2s, 4s, 5s, 5s, … for 2m, then 10s. */
+/** Drop-hook / post-outage retries: 1s, 2s, 4s, 5s, 5s, … (capped forever). */
 export function forceSignalDropHookBackoffMs(
   attempt: number,
   dropStartedAt: number | null,
   now: number,
 ): number {
   if (dropStartedAt != null && now - dropStartedAt >= FORCE_SIGNAL_DROP_HOOK_FAST_PHASE_MS) {
-    return 10_000
+    return FORCE_SIGNAL_DROP_HOOK_CAP_MS
   }
   if (attempt <= 1) return 1000
   if (attempt === 2) return 2000
@@ -67,8 +87,10 @@ export function forceSignalDropHookBackoffMs(
 }
 
 export function forceSignalUnverifiedIntervalMs(elapsedSinceDropMs: number): number {
-  if (elapsedSinceDropMs < FORCE_SIGNAL_VERIFY_FAST_PHASE_MS) return FORCE_SIGNAL_VERIFY_CADENCE_MS
-  return FORCE_SIGNAL_VERIFY_SLOW_CADENCE_MS
+  const raw = elapsedSinceDropMs < FORCE_SIGNAL_VERIFY_FAST_PHASE_MS
+    ? FORCE_SIGNAL_VERIFY_CADENCE_MS
+    : FORCE_SIGNAL_VERIFY_SLOW_CADENCE_MS
+  return capSignalSocketRetryMs(raw)
 }
 
 export function forceSignalCadenceDue(
@@ -373,12 +395,14 @@ export class ForceSignalRunner {
       this.watchdogId = null
     }
     const now = this.timers.now()
-    const watchdogMs = forceSignalWatchdogDelayMs(
+    const rawWatchdogMs = forceSignalWatchdogDelayMs(
       peer,
       now,
       FORCE_SIGNAL_OPEN_WATCHDOG_MS,
       this.unverifiedAfterDrop,
     )
+    const rawBackoffMs = this.hookRetryBackoff(this.attempt, mode, now)
+    const { watchdogMs } = capSignalRetryChainMs(rawWatchdogMs, rawBackoffMs)
     this.watchdogId = this.timers.setTimeout(() => {
       this.watchdogId = null
       if (peer.destroyed || this.stopped) return
@@ -392,7 +416,10 @@ export class ForceSignalRunner {
         return
       }
       if (idReclaimCap && forceReclaimExpired(this.reclaimStartedAt, t, this.reclaimMinMs)) return
-      const delay = this.hookRetryBackoff(this.attempt, mode, t)
+      let delay = capSignalSocketRetryMs(this.hookRetryBackoff(this.attempt, mode, t))
+      if (watchdogMs + delay > FORCE_SIGNAL_DROP_HOOK_CAP_MS) {
+        delay = Math.max(0, FORCE_SIGNAL_DROP_HOOK_CAP_MS - watchdogMs)
+      }
       if (this.retryId != null) {
         this.timers.clearTimeout(this.retryId)
         this.retryId = null

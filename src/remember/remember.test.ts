@@ -184,7 +184,7 @@ describe('remember listen reclaim', () => {
       listenClaimShouldGiveUp(2, 1, true, t0, t0 + LISTEN_ID_RECLAIM_MIN_MS),
       true,
     )
-    assert.equal(listenReclaimIdBackoffMs(5), 10_000)
+    assert.equal(listenReclaimIdBackoffMs(5), 5000)
   })
 
   it('still gives up at two failures on a first-ever listen claim', () => {

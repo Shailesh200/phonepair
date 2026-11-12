@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   FORCE_SIGNAL_OPEN_WATCHDOG_MS,
   FORCE_SIGNAL_RECLAIM_MIN_MS,
+  FORCE_SIGNAL_DROP_HOOK_CAP_MS,
   FORCE_SIGNAL_VERIFY_CADENCE_MS,
   FORCE_SIGNAL_VERIFY_FAST_PHASE_MS,
   FORCE_SIGNAL_VERIFY_SLOW_CADENCE_MS,
@@ -263,14 +264,15 @@ describe('forceSignalRunner stuck socket', () => {
     runner.stop()
   })
 
-  it('uses 60s cadence after the first 5 minutes of unverified forcing', () => {
-    assert.equal(forceSignalUnverifiedIntervalMs(FORCE_SIGNAL_VERIFY_FAST_PHASE_MS - 1), FORCE_SIGNAL_VERIFY_CADENCE_MS)
-    assert.equal(forceSignalUnverifiedIntervalMs(FORCE_SIGNAL_VERIFY_FAST_PHASE_MS), FORCE_SIGNAL_VERIFY_SLOW_CADENCE_MS)
+  it('cadence interval is capped at 5s (fast and slow phases)', () => {
+    assert.equal(forceSignalUnverifiedIntervalMs(FORCE_SIGNAL_VERIFY_FAST_PHASE_MS - 1), FORCE_SIGNAL_DROP_HOOK_CAP_MS)
+    assert.equal(forceSignalUnverifiedIntervalMs(FORCE_SIGNAL_VERIFY_FAST_PHASE_MS), FORCE_SIGNAL_DROP_HOOK_CAP_MS)
     const drop = 0
-    assert.equal(forceSignalCadenceDue(drop, drop, drop + FORCE_SIGNAL_VERIFY_CADENCE_MS - 1), false)
-    assert.equal(forceSignalCadenceDue(drop, drop, drop + FORCE_SIGNAL_VERIFY_CADENCE_MS), true)
+    const cap = FORCE_SIGNAL_DROP_HOOK_CAP_MS
+    assert.equal(forceSignalCadenceDue(drop, drop, drop + cap - 1), false)
+    assert.equal(forceSignalCadenceDue(drop, drop, drop + cap), true)
     const lateDrop = 0
-    const lateNow = FORCE_SIGNAL_VERIFY_FAST_PHASE_MS + FORCE_SIGNAL_VERIFY_SLOW_CADENCE_MS
+    const lateNow = FORCE_SIGNAL_VERIFY_FAST_PHASE_MS + cap
     assert.equal(forceSignalCadenceDue(lateDrop, lateDrop, lateNow), true)
   })
 
@@ -363,11 +365,11 @@ describe('forceSignalRunner stuck socket', () => {
     runner.stop()
   })
 
-  it('post-settle cadence anchors to server OPEN: no recycle within 12s after a 30s outage', () => {
+  it('post-settle cadence anchors to server OPEN: no recycle within 5s after a 30s outage', () => {
     const dropAt = 0
     const openAt = 30_000
     const settleEnd = openAt + 8_000
-    const checkAt = openAt + FORCE_SIGNAL_VERIFY_CADENCE_MS - 1
+    const checkAt = openAt + FORCE_SIGNAL_DROP_HOOK_CAP_MS - 1
     assert.equal(forceSignalCadenceDue(dropAt, null, settleEnd), true, 'drop-anchored cadence fires as soon as ticks resume')
     assert.equal(forceSignalCadenceDue(openAt, null, checkAt), false, 'open-anchored cadence must wait')
     const t = { value: openAt }
