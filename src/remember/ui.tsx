@@ -32,33 +32,36 @@ function DeviceNameEditor({ id, fallback, onEditing }: { id: string; fallback: s
 
   if (!editing) {
     return (
-      <button
-        type="button"
-        className="device-name grow"
-        data-testid="device-name"
-        aria-label={`Rename ${shown}`}
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => {
-          skipSave.current = false
-          setDraft(shown)
-          setMode(true)
-        }}
-      >
-        <b>{shown}</b>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-          <path d="M4 20h4l10-10-4-4L4 16v4z" />
-          <path d="m13 7 4 4" />
-        </svg>
-      </button>
+      <>
+        <div className="grow" data-testid="device-name"><b>{shown}</b></div>
+        <button
+          type="button"
+          className="pp-icon-toggle"
+          data-testid="device-rename"
+          aria-label={`Rename ${shown}`}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            skipSave.current = false
+            setDraft(shown)
+            setMode(true)
+          }}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <path d="M4 20h4l10-10-4-4L4 16v4z" />
+            <path d="m13 7 4 4" />
+          </svg>
+        </button>
+      </>
     )
   }
 
   return (
     <input
       className="pp-rename-input"
-      data-testid="device-name-input"
+      data-testid="device-rename-input"
       aria-label="Device name"
       value={draft}
+      maxLength={DEVICE_NAME_MAX}
       autoFocus
       spellCheck={false}
       autoComplete="off"

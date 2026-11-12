@@ -57,6 +57,7 @@ describe('device meta store', { concurrency: false }, () => {
   })
 
   it('renames, trims, caps, and resets an empty name to the default', () => {
+    assert.equal(DEVICE_NAME_MAX, 32)
     renameDevice('phone-1', '  Kitchen iPad  ')
     assert.deepEqual(getDeviceMeta('phone-1'), { name: 'Kitchen iPad' })
     assert.equal(deviceLabel('phone-1', 'Chrome on Mac'), 'Kitchen iPad')
@@ -141,6 +142,18 @@ describe('device meta store', { concurrency: false }, () => {
     assert.deepEqual(getDeviceMeta('d'), {})
     renameDevice('d', 'Recovered')
     assert.deepEqual(readStored(), { v: 1, devices: { d: { name: 'Recovered' } } })
+  })
+
+  it('trims stored names longer than 32 when they are loaded', () => {
+    const stored = 'n'.repeat(40)
+    globalThis.localStorage.setItem(DEVICE_META_KEY, JSON.stringify({
+      v: 1,
+      devices: { a: { name: `  ${stored}  `, fav: true } },
+    }))
+    const loaded = getDeviceMeta('a')
+    assert.equal(loaded.name, 'n'.repeat(32))
+    assert.equal(loaded.fav, true)
+    assert.equal(Array.from(loaded.name ?? '').length, 32)
   })
 
   it('reads a future version as empty and does not downgrade it', () => {
@@ -229,5 +242,27 @@ describe('sortFavouritesFirst', () => {
     assert.deepEqual(sortFavouritesFirst(items, () => false).map((item) => item.id), before)
     assert.deepEqual(sortFavouritesFirst(items, () => true).map((item) => item.id), before)
     assert.deepEqual(sortFavouritesFirst([], () => true), [])
+  })
+
+  it('orders each group by last connected, and keeps items that have no timestamp', () => {
+    const items = [
+      { id: 'a', lastConnected: 10 },
+      { id: 'b', lastConnected: 30 },
+      { id: 'c' },
+      { id: 'd', lastSeen: 20 },
+      { id: 'e' },
+    ]
+    const fav = new Set(['b', 'd', 'e'])
+    const sorted = sortFavouritesFirst(items, (item) => fav.has(item.id))
+    assert.deepEqual(sorted.map((item) => item.id), ['b', 'd', 'e', 'a', 'c'])
+    const tied = [
+      { id: 'old', connectedAt: 5 },
+      { id: 'new', connectedAt: 9 },
+      { id: 'same', connectedAt: 9 },
+    ]
+    assert.deepEqual(
+      sortFavouritesFirst(tied, () => false).map((item) => item.id),
+      ['new', 'same', 'old'],
+    )
   })
 })

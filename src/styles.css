@@ -488,8 +488,6 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
 .remember-panel h4{margin:0 0 10px;font-size:var(--fs-14)}
 .remember-list{list-style:none;margin:0;padding:0}
 .remember-list .linkbtn{margin-top:0}
-.device-name{display:flex;align-items:center;gap:8px;flex:1;min-width:0;background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
-.device-name svg{width:20px;height:20px;color:var(--muted)}
 .remember-saved{margin-bottom:16px}
 .remember-saved .saved-h{margin:0 0 8px}
 /* Remote shell fits one viewport, padding included (border-box). */

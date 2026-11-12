@@ -1,7 +1,7 @@
 /** Local display names and favourites for connected devices. localStorage only. */
 
 export const DEVICE_META_KEY = 'pp.deviceMeta.v1'
-export const DEVICE_NAME_MAX = 64
+export const DEVICE_NAME_MAX = 32
 
 export type DeviceMeta = { name?: string; fav?: boolean }
 export type DeviceMetaStore = { v: 1; devices: Record<string, DeviceMeta> }
@@ -194,13 +194,36 @@ export function clearDeviceMeta(id?: string): void {
   notify()
 }
 
-/** Favourites first. Relative order is unchanged within each group. */
-export function sortFavouritesFirst<T>(items: readonly T[], isFavourite: (item: T) => boolean): T[] {
+const LAST_CONNECTED_FIELDS = ['lastConnected', 'lastSeen', 'connectedAt'] as const
+
+/** Numeric last-connected time already stored on a remembered device, if any. */
+export function lastConnectedMs(item: unknown): number | null {
+  if (!item || typeof item !== 'object') return null
+  const rec = item as Record<string, unknown>
+  for (const key of LAST_CONNECTED_FIELDS) {
+    const value = rec[key]
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+  }
+  return null
+}
+
+/** Favourites first, then most recently connected. Missing timestamps keep their original order. */
+export function sortFavouritesFirst<T>(
+  items: readonly T[],
+  isFavourite: (item: T) => boolean,
+  lastConnected: (item: T) => number | null = lastConnectedMs,
+): T[] {
   return items
-    .map((item, index) => ({ item, index, fav: isFavourite(item) === true }))
+    .map((item, index) => ({
+      item,
+      index,
+      fav: isFavourite(item) === true,
+      last: lastConnected(item),
+    }))
     .sort((a, b) => {
-      if (a.fav === b.fav) return a.index - b.index
-      return a.fav ? -1 : 1
+      if (a.fav !== b.fav) return a.fav ? -1 : 1
+      if (a.last != null && b.last != null && a.last !== b.last) return b.last - a.last
+      return a.index - b.index
     })
     .map(({ item }) => item)
 }
