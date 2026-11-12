@@ -472,6 +472,19 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
   .btn:active,.iconbtn:active,.send-hero:active,.home-card:active{transform:none}
 }
 
+.remember-overlay{position:fixed;inset:0;background:rgba(8,12,20,.45);display:grid;place-items:center;z-index:50;padding:20px}
+.remember-modal{max-width:380px;padding:24px;display:flex;flex-direction:column;gap:14px}
+.remember-actions{display:flex;gap:10px;justify-content:flex-end}
+.remember-panel{margin:0 24px 16px;padding:16px 18px}
+.remember-panel h4{margin:0 0 10px;font-size:var(--fs-14)}
+.remember-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.remember-list li{display:flex;align-items:center;justify-content:flex-start;gap:8px}
+.remember-list .linkbtn{margin-top:0}
+.device-name{flex:1;min-width:0;background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.device-name-input{flex:1;min-width:0;font:inherit;padding:2px 6px}
+.device-fav{background:none;border:0;padding:0 2px;cursor:pointer;font:inherit;line-height:1}
+.remember-saved{margin-bottom:16px}
+.remember-saved .saved-h{margin:0 0 8px}
 /* Remote shell fits one viewport, padding included (border-box). */
 html:has(.pg.remote),
 body:has(.pg.remote){
