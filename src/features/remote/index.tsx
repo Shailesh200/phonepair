@@ -14,7 +14,7 @@ import {
   moverToggleCommand,
   readMoverState,
 } from '../screen/mover'
-import { KEEP_AWAKE_IDLE, browserSearch, keepAwakeLinkEffect, pictureInPictureEnabled, qaHooksEnabled, readRelayCommand, relayReport, type KeepAwakeViewState } from './keepAwake'
+import { KEEP_AWAKE_IDLE, browserSearch, createKeepAwakeLinkWatch, pictureInPictureEnabled, qaHooksEnabled, readRelayCommand, relayReport, type KeepAwakeViewState } from './keepAwake'
 import { createBrowserKeepAwake } from './keepAwakeRun'
 import { navKey, showPointerLaser } from './send'
 import type { HelperAttempt } from './connectGuide.ts'
@@ -607,14 +607,19 @@ registerFeature({
       connected: () => ctx.link.connected,
     }
     moverRelay = relay
-    const offLink = ctx.link.subscribe(() => {
-      const effect = keepAwakeLinkEffect(ctx.link.status)
-      if (effect === 'stop' && moverStopsOn('disconnect')) stopMouseMover()
-      if (effect === 'resync') ctx.send(relayReport(awake.view()))
+    const linkWatch = createKeepAwakeLinkWatch({
+      setTimer: (fn, ms) => window.setTimeout(fn, ms),
+      clearTimer: (id) => { window.clearTimeout(id) },
+      stop: () => { if (moverStopsOn('disconnect')) stopMouseMover() },
+      resync: () => { ctx.send(relayReport(awake.view())) },
     })
+    const offLink = ctx.link.subscribe(() => { linkWatch.onStatus(ctx.link.status) })
+    const offBye = onMessage('bye', () => { linkWatch.userStop() })
     return () => {
       offs.forEach((off) => off())
+      offBye()
       offLink()
+      linkWatch.clear()
       offStatus()
       if (moverRelay === relay) moverRelay = null
       window.removeEventListener('resize', onResize)

@@ -2109,6 +2109,7 @@ export class Link {
       }
       this.set({ status: this.role === 'host' ? 'waiting' : 'closed' })
       try { c.close() } catch {}
+      this.msgHandlers.forEach((h) => h(m))
       return
     }
     if (m.t === 'remember:forget') {

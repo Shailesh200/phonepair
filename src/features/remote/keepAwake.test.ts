@@ -5,6 +5,8 @@ import {
   autoStopDelayMs,
   createAutoStopClock,
   deriveStatus,
+  createKeepAwakeLinkWatch,
+  KEEPAWAKE_LINK_GRACE_MS,
   keepAwakeLinkEffect,
   qaDebugText,
   qaHooksEnabled,
@@ -79,6 +81,65 @@ describe('keep-awake link drops', () => {
     assert.equal(keepAwakeLinkEffect('closed'), 'stop')
     assert.equal(keepAwakeLinkEffect('error'), 'stop')
     assert.equal(keepAwakeLinkEffect('connected'), 'resync')
+  })
+
+  it('stops at once on user disconnect, after 30s on peer leave, and survives a 14s drop', () => {
+    mock.timers.enable({ apis: ['setTimeout'] })
+    try {
+      let stopped = 0
+      let resent = 0
+      let lock = true
+      let video = true
+      const watch = createKeepAwakeLinkWatch({
+        setTimer: (fn, ms) => setTimeout(fn, ms) as unknown as number,
+        clearTimer: (id) => { clearTimeout(id as unknown as ReturnType<typeof setTimeout>) },
+        graceMs: KEEPAWAKE_LINK_GRACE_MS,
+        stop() {
+          stopped += 1
+          lock = false
+          video = false
+        },
+        resync() { resent += 1 },
+      })
+      watch.userStop()
+      assert.equal(stopped, 1)
+      assert.equal(lock, false)
+      assert.equal(video, false)
+      mock.timers.tick(KEEPAWAKE_LINK_GRACE_MS)
+      assert.equal(stopped, 1)
+
+      stopped = 0
+      lock = true
+      video = true
+      watch.onStatus('waiting')
+      watch.onStatus('reconnecting')
+      mock.timers.tick(KEEPAWAKE_LINK_GRACE_MS - 1)
+      assert.equal(stopped, 0)
+      assert.equal(lock, true)
+      assert.equal(video, true)
+      mock.timers.tick(1)
+      assert.equal(stopped, 1)
+      assert.equal(lock, false)
+      assert.equal(video, false)
+
+      stopped = 0
+      resent = 0
+      lock = true
+      video = true
+      watch.onStatus('reconnecting')
+      mock.timers.tick(14_000)
+      assert.equal(stopped, 0)
+      watch.onStatus('connected')
+      assert.equal(resent, 1)
+      assert.equal(lock, true)
+      assert.equal(video, true)
+      mock.timers.tick(KEEPAWAKE_LINK_GRACE_MS)
+      assert.equal(stopped, 0)
+      assert.equal(lock, true)
+      assert.equal(video, true)
+    } finally {
+      mock.timers.reset()
+    }
   })
 })
 

@@ -3,7 +3,7 @@ import { CoreCtx, getFeatures } from './core/bus'
 import { ConnRelayNote, Logo, StatusPill } from './core/ui'
 import { QrCard } from './features/pairing/QrCard'
 import { useHostPairFlow } from './features/pairing/useHostPairFlow'
-import { MoverHeaderBadge } from './features/remote'
+import { MoverHeaderBadge, stopMouseMover } from './features/remote'
 import { RememberPrompt, SavedPhonesPanel } from './remember/ui'
 
 export function Laptop({ ctx }: { ctx: CoreCtx }) {
@@ -142,7 +142,7 @@ function Dashboard({ ctx, waitingPhone }: { ctx: CoreCtx; waitingPhone: boolean 
   const Files = files?.LaptopPanel as React.ComponentType<{ ctx: CoreCtx; children?: React.ReactNode }> | undefined
   const Screen = screen?.LaptopPanel
   return <div className="dash">
-    <header className="nav"><Logo /><div className="row-g"><MoverHeaderBadge /><StatusPill link={ctx.link} /><ConnRelayNote link={ctx.link} /><button className="btn ghost" data-testid="disconnect" onClick={() => ctx.link.disconnect()}>Disconnect</button></div></header>
+    <header className="nav"><Logo /><div className="row-g"><MoverHeaderBadge /><StatusPill link={ctx.link} /><ConnRelayNote link={ctx.link} /><button className="btn ghost" data-testid="disconnect" onClick={() => { stopMouseMover(); ctx.link.disconnect() }}>Disconnect</button></div></header>
     {waitingPhone && <div className="banner warn dash-wait">Phone disconnected, waiting to reconnect</div>}
     {ctx.link.rememberListenOtherTab && (
       <p className="mut small remember-other-tab" data-testid="remember-other-tab">

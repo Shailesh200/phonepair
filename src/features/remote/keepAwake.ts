@@ -120,6 +120,54 @@ export function keepAwakeLinkEffect(status: string): 'stop' | 'resync' | 'keep' 
   return 'keep'
 }
 
+/** How long a waiting, connecting, or reconnecting link may stay down before keep-awake stops. */
+export const KEEPAWAKE_LINK_GRACE_MS = 30_000
+
+const LINK_GRACE_STATUSES = new Set(['waiting', 'connecting', 'reconnecting'])
+
+/** One grace timer for a dropped link. User disconnect and bye stop immediately. */
+export function createKeepAwakeLinkWatch(opts: {
+  setTimer: (fn: () => void, ms: number) => number
+  clearTimer: (id: number) => void
+  stop: () => void
+  resync: () => void
+  graceMs?: number
+}) {
+  let id: number | null = null
+  const graceMs = opts.graceMs ?? KEEPAWAKE_LINK_GRACE_MS
+  const clear = () => {
+    if (id == null) return
+    opts.clearTimer(id)
+    id = null
+  }
+  return {
+    /** Laptop Disconnect, unpair, or a peer bye. Cancels grace and stops now. */
+    userStop() {
+      clear()
+      opts.stop()
+    },
+    onStatus(status: string) {
+      const effect = keepAwakeLinkEffect(status)
+      if (effect === 'stop') {
+        clear()
+        opts.stop()
+        return
+      }
+      if (effect === 'resync') {
+        clear()
+        opts.resync()
+        return
+      }
+      if (!LINK_GRACE_STATUSES.has(status) || id != null) return
+      id = opts.setTimer(() => {
+        id = null
+        opts.stop()
+      }, graceMs)
+    },
+    clear,
+  }
+}
+
 export function dataState(status: KeepAwakeStatus | null): 'on' | 'off' | 'paused' | 'unsupported' {
   if (status === 'On (real mouse)' || status === 'On (screen awake)') return 'on'
   if (status === 'Paused, tab hidden') return 'paused'
