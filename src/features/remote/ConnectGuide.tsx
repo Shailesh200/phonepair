@@ -9,8 +9,6 @@ import {
   type HelperStatus,
 } from './connectGuide'
 
-const HELPER_RELEASE = 'https://github.com/Shailesh200/phonepair/releases/latest'
-
 const COPY: Record<ConnectStep, { title: string; body: string }> = {
   download: {
     title: 'Download the helper',
@@ -95,10 +93,13 @@ export function ConnectGuide({
               <h4>{index + 1}. {COPY[step.id].title}</h4>
               {show ? <div>
                 <p className="mut small">{COPY[step.id].body}</p>
-                {step.id === 'download' ? <p className="helper-downloads">
-                  <a className="linkbtn sm" href={HELPER_RELEASE} target="_blank" rel="noreferrer" data-testid="download-mac">Download for Mac</a>
-                  <a className="linkbtn sm" href={HELPER_RELEASE} target="_blank" rel="noreferrer" data-testid="download-win">Download for Windows</a>
-                </p> : null}
+                {step.id === 'download' ? <>
+                  <p className="helper-downloads">
+                    <a className="linkbtn sm" href="https://github.com/Shailesh200/phonepair/releases/latest/download/PhonePair-Helper-mac.dmg" target="_blank" rel="noreferrer" data-testid="download-mac">Download for Mac</a>
+                    <a className="linkbtn sm" href="https://github.com/Shailesh200/phonepair/releases/latest/download/PhonePair-Helper-win.exe" target="_blank" rel="noreferrer" data-testid="download-win">Download for Windows</a>
+                  </p>
+                  <p className="mut small"><a className="mut" href="https://github.com/Shailesh200/phonepair/releases/latest" target="_blank" rel="noopener noreferrer" data-testid="other-downloads">Other downloads</a></p>
+                </> : null}
                 {step.id === 'open' ? <>
                   <p className="mut small" data-testid="mac-open-steps">Open the DMG, drag PhonePair Helper to Applications, and open it. Allow Accessibility when asked so Control works.</p>
                   <p className="mut small" data-testid="win-open-steps">If SmartScreen appears, click More info, then Run anyway.</p>
