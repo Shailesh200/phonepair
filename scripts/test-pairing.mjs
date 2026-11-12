@@ -34,6 +34,7 @@ const child = spawn(process.execPath, [
   'src/remember/listenRecoveryModePolicy.test.ts',
   'src/remember/rememberRecoveryConn.test.ts',
   'src/features/pairing/pairCodeDisplay.test.ts',
+  'src/remember/listenForceRecycleDefer.test.ts',
 ], { stdio: 'inherit', cwd: new URL('..', import.meta.url).pathname })
 
 child.on('exit', (code) => process.exit(code ?? 1))

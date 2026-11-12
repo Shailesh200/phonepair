@@ -327,4 +327,48 @@ describe('forceSignalRunner stuck socket', () => {
     assert.equal(peer.sockets.length, before)
     runner.stop()
   })
+
+  it('post-settle silent open listen peer is cadence-forced when watch is preserved', () => {
+    const dropAt = 0
+    const t = { value: dropAt }
+    const peer = makeMockPeer()
+    peer.open = true
+    peer.disconnected = false
+    const peerExt = {
+      ...peer,
+      signalReadyState: () => WS_OPEN,
+      signalPeerOpenAt: () => dropAt,
+    }
+    const runner = makeRunner(t)
+    runner.onSignalingDrop()
+    runner.endUnverifiedForcing(true)
+    t.value = dropAt + FORCE_SIGNAL_VERIFY_CADENCE_MS
+    assert.equal(runner.isUnverifiedAfterDrop(), false)
+    const before = peer.sockets.length
+    runner.tick(peerExt, true, false, false, false)
+    assert.ok(peer.sockets.length > before)
+    runner.stop()
+  })
+
+  it('defers post-settle cadence while incoming remember auth is pending', () => {
+    const t = { value: 0 }
+    const peer = makeMockPeer()
+    peer.open = true
+    peer.disconnected = false
+    const peerExt = {
+      ...peer,
+      signalReadyState: () => WS_OPEN,
+      signalPeerOpenAt: () => 0,
+    }
+    const runner = makeRunner(t)
+    runner.onSignalingDrop()
+    runner.endUnverifiedForcing(true)
+    t.value = FORCE_SIGNAL_VERIFY_CADENCE_MS
+    const before = peer.sockets.length
+    runner.tick(peerExt, true, false, false, false, () => true)
+    assert.equal(peer.sockets.length, before)
+    runner.tick(peerExt, true, false, false, false, () => false)
+    assert.ok(peer.sockets.length > before)
+    runner.stop()
+  })
 })

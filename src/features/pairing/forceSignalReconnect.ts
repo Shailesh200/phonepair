@@ -176,10 +176,12 @@ export class ForceSignalRunner {
     this.reclaimStartedAt = null
   }
 
-  endUnverifiedForcing() {
+  endUnverifiedForcing(preserveSilentOpenWatch = false) {
     this.unverifiedAfterDrop = false
-    this.dropStartedAt = null
-    this.lastCadenceAt = null
+    if (!preserveSilentOpenWatch) {
+      this.dropStartedAt = null
+      this.lastCadenceAt = null
+    }
     this.clearTimers()
   }
 
@@ -220,18 +222,35 @@ export class ForceSignalRunner {
     idReclaimCap: boolean,
     peerLooksHealthy: boolean,
     unverifiedMode: boolean,
+    deferForce?: () => boolean,
   ) {
     if (this.stopped || !active || peer.destroyed) return
     const unverified = unverifiedMode || this.unverifiedAfterDrop
     const peerHealthy = unverified ? false : peerLooksHealthy
+
+    const now = this.timers.now()
+    if (!unverified && peer.open && !peer.disconnected && this.dropStartedAt != null) {
+      if (deferForce?.()) return
+      if (this.watchdogId != null || this.retryId != null) this.clearTimers()
+      if (
+        forceSignalCadenceDue(this.dropStartedAt, this.lastCadenceAt, now)
+        && this.watchdogId == null
+        && this.retryId == null
+        && mayForceRecycleOpenSignalSocket(peer, now, this.socketReplaceOpts('cadence'))
+      ) {
+        this.lastCadenceAt = now
+        this.runForce(peer, idReclaimCap, 'cadence')
+      }
+      return
+    }
 
     if (!unverified && peer.open && peerHealthy) {
       this.onOpen()
       return
     }
 
-    const now = this.timers.now()
     if (unverified && peer.open && !peer.disconnected) {
+      if (deferForce?.()) return
       if (this.watchdogId != null || this.retryId != null) this.clearTimers()
       if (this.dropStartedAt == null) return
       if (

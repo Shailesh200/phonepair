@@ -128,6 +128,7 @@ import {
   listenReclaimRecycleSkipsOpenSocket,
   shouldClearStaleRememberMainConnForRecovery,
 } from '../remember/rememberRecoveryConn'
+import { shouldDeferListenForceRecycle } from '../remember/listenForceRecycleDefer'
 import {
   LISTEN_RECOVERY_ID_BACKOFF_MS,
   listenBackoffForClaim,
@@ -577,7 +578,16 @@ export class Link {
       false,
       peerLooksHealthy,
       unverified,
+      () => this.shouldDeferListenForceRecycle(),
     )
+  }
+
+  private shouldDeferListenForceRecycle(): boolean {
+    return shouldDeferListenForceRecycle({
+      hostRememberAuthPending: !!this.rememberHostAuth.authPending,
+      guestDialInFlight: this.inFlightDial != null,
+      pendingDataConn: this.pending != null,
+    })
   }
 
   private rearmRememberListenPeer() {
@@ -1114,7 +1124,7 @@ export class Link {
           this.listenRecoveryReclaimUntil,
         )
         if (plan.endUnverifiedForcing) {
-          this.ensureListenForceRunner().endUnverifiedForcing()
+          this.ensureListenForceRunner().endUnverifiedForcing(true)
         }
         if (plan.settleUntil != null) {
           this.listenForceSettleUntil = plan.settleUntil
@@ -1192,6 +1202,7 @@ export class Link {
 
   async restartHost() {
     if (this.role !== 'host' || this.destroyed) return
+    this.clearListenRecoveryState()
     this.timers.forEach(clearInterval)
     this.timers = []
     if (this.dialWait) clearTimeout(this.dialWait)
@@ -1234,6 +1245,7 @@ export class Link {
 
   async rollHostCode() {
     if (this.role !== 'host' || this.destroyed) return
+    this.clearListenRecoveryState()
     this.timers.forEach(clearInterval)
     this.timers = []
     if (this.dialWait) clearTimeout(this.dialWait)
@@ -1950,6 +1962,7 @@ export class Link {
     if (linkTeardownSendsBye('disconnect')) {
       try { this.conn?.send({ t: 'bye' }) } catch {}
     }
+    this.clearListenRecoveryState()
     if (this.role === 'host') {
       this.ensureListenForceRunner().endUnverifiedForcing()
       this.ensureHostSignalRunner().endUnverifiedForcing()
