@@ -1,6 +1,7 @@
 import { onMessage, registerFeature, createStore } from '../core/bus'
 import type { CoreCtx } from '../core/bus'
 import { friendlyDeviceName } from './deviceName'
+import { clearDeviceMeta } from './deviceMeta'
 import {
   createRememberGrant,
   loadGuestStore,
@@ -87,6 +88,7 @@ export function denyRemember() {
 }
 
 export function forgetHostPhone(ctx: CoreCtx, phoneId: string) {
+  clearDeviceMeta(phoneId)
   const store = loadHostStore()
   if (!store) return
   if (ctx.link.connected) {
@@ -101,6 +103,7 @@ export function forgetHostPhone(ctx: CoreCtx, phoneId: string) {
 
 export function forgetGuestLaptopLocal(listenId: string) {
   saveGuestStore(forgetGuestLaptopRecord(loadGuestStore(), listenId))
+  clearDeviceMeta(listenId)
 }
 
 export function forgetGuestLaptop(ctx: CoreCtx, listenId: string) {
