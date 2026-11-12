@@ -148,13 +148,10 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     drawTimer = null
   }
 
-  function releaseMedia() {
+  function stopVideo() {
     quiet = true
     videoGen += 1
-    releaseWakeLock()
-    stopAudio()
     stopDraw()
-    session.wakeLockHeld = false
     session.videoPlaying = false
     session.pipActive = false
     const el = video
@@ -170,6 +167,13 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
       el.remove()
     }
     quiet = false
+  }
+
+  function releaseMedia() {
+    releaseWakeLock()
+    stopAudio()
+    session.wakeLockHeld = false
+    stopVideo()
   }
 
   function startDraw() {
@@ -292,11 +296,22 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
       }
       sentinel = next
       session.wakeLockHeld = true
+      stopVideo()
       next.addEventListener('release', () => {
         if (sentinel !== next) return
         sentinel = null
         session.wakeLockHeld = false
         publish()
+        if (!session.requested || session.helperOn || host.helperConnected() || tabHidden()) return
+        const held = epoch
+        void ensureVideo(held).then((playing) => {
+          if (held !== epoch || session.wakeLockHeld || tabHidden()) {
+            if (session.wakeLockHeld) stopVideo()
+            return
+          }
+          session.videoPlaying = playing
+          publish()
+        })
       })
       return true
     } catch {
@@ -318,18 +333,25 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     session.pending = true
     session.settled = false
     session.tabHidden = tabHidden()
+    clock.clear()
     publish()
     if (host.helperConnected()) {
       session.pending = false
       session.localEngaged = false
       host.sendHelper({ t: 'mover', on: true, interval })
+      if (mine === epoch) clock.arm()
       publish()
       return
     }
     startAudio()
-    const [, playing] = await Promise.all([acquireWakeLock(mine), ensureVideo(mine)])
+    const locked = await acquireWakeLock(mine)
     if (mine !== epoch) return
-    session.videoPlaying = playing
+    session.wakeLockHeld = locked
+    if (!locked) {
+      const playing = await ensureVideo(mine)
+      if (mine !== epoch) return
+      session.videoPlaying = playing
+    }
     session.pending = false
     session.settled = true
     session.localEngaged = true
@@ -418,26 +440,29 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     publish()
   }
 
-  async function onVisibility() {
+  function onVisibility() {
     session.tabHidden = tabHidden()
-    if (!session.requested || session.helperOn || host.helperConnected()) {
-      publish()
-      return
-    }
-    if (!session.tabHidden) {
-      const mine = epoch
-      session.pending = true
-      const locked = await acquireWakeLock(mine)
-      if (video && video.paused && mine === epoch) {
-        try { await video.play() } catch { /* keep the paused status */ }
-      }
-      if (mine !== epoch) return
-      session.wakeLockHeld = locked || session.wakeLockHeld
-      session.videoPlaying = !!video && !video.paused
-      session.pending = false
-      session.settled = true
-    }
     publish()
+    if (!session.requested || session.helperOn || host.helperConnected() || session.tabHidden) return
+    const mine = epoch
+    void acquireWakeLock(mine).then((locked) => {
+      if (mine !== epoch || tabHidden()) return
+      session.wakeLockHeld = locked
+      if (locked) {
+        stopVideo()
+        publish()
+        return
+      }
+      publish()
+      void ensureVideo(mine).then((playing) => {
+        if (mine !== epoch || tabHidden() || session.wakeLockHeld) {
+          if (session.wakeLockHeld) stopVideo()
+          return
+        }
+        session.videoPlaying = playing
+        publish()
+      })
+    })
   }
 
   function attach() {

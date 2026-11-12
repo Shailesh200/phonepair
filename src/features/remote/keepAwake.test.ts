@@ -110,6 +110,31 @@ describe('keep-awake auto-stop', () => {
     }
   })
 
+  it('switching to 2h drops the earlier preset and fires at 120s scaled', () => {
+    mock.timers.enable({ apis: ['setTimeout'] })
+    try {
+      let fired = 0
+      const clock = createAutoStopClock({
+        setTimer: (fn, ms) => setTimeout(fn, ms) as unknown as number,
+        clearTimer: (id) => { clearTimeout(id as unknown as ReturnType<typeof setTimeout>) },
+        scale: 60,
+        onFire: () => { fired += 1 },
+      })
+      clock.select('1h')
+      assert.equal(clock.arm(), 60_000)
+      mock.timers.tick(59_000)
+      assert.equal(fired, 0)
+      clock.select('2h')
+      assert.equal(clock.arm(), 120_000)
+      mock.timers.tick(119_999)
+      assert.equal(fired, 0)
+      mock.timers.tick(1)
+      assert.equal(fired, 1)
+    } finally {
+      mock.timers.reset()
+    }
+  })
+
   it('sends helper off when the scaled preset expires', () => {
     let scheduled: { fn: () => void; ms: number } | null = null
     const sent: { t: 'mover'; on: false }[] = []

@@ -137,7 +137,9 @@ export function createAutoStopClock(opts: {
 }) {
   let preset: AutoStop = 'never'
   let id: number | null = null
+  let generation = 0
   const clear = () => {
+    generation += 1
     if (id == null) return
     opts.clearTimer(id)
     id = null
@@ -149,12 +151,14 @@ export function createAutoStopClock(opts: {
       preset = next
       clear()
     },
-    /** Arm from now. `never` arms nothing and returns null. */
+    /** Arm from now. `never` arms nothing and returns null. One timer at a time. */
     arm(): number | null {
       clear()
       const ms = autoStopDelayMs(preset, opts.scale)
       if (ms == null) return null
+      const gen = generation
       id = opts.setTimer(() => {
+        if (gen !== generation) return
         id = null
         opts.onFire()
       }, ms)
