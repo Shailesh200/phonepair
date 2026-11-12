@@ -55,7 +55,7 @@ function useRtt(link: Link) {
     }
     void read()
     const id = window.setInterval(() => { void read() }, 2000)
-    return () => { live = false; window.clearTimeout(id) }
+    return () => { live = false; window.clearInterval(id) }
   }, [link, link.status, link.conn])
   return ms
 }

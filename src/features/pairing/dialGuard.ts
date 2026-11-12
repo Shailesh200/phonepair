@@ -30,6 +30,9 @@ export const DIAL_OPEN_TIMEOUT_RELAY_MS = 25_000
 import { REMEMBER_GUEST_DIAL_OPEN_MS } from '../../remember/listenIdRecovery.ts'
 
 export function dialOpenTimeoutMs(relayOnly: boolean, rememberGuest = false): number {
+  if (rememberGuest && relayOnly) {
+    return Math.max(REMEMBER_GUEST_DIAL_OPEN_MS, DIAL_OPEN_TIMEOUT_RELAY_MS)
+  }
   if (rememberGuest) return REMEMBER_GUEST_DIAL_OPEN_MS
   return relayOnly ? DIAL_OPEN_TIMEOUT_RELAY_MS : DIAL_OPEN_TIMEOUT_MS
 }

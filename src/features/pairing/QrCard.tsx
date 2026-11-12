@@ -52,6 +52,7 @@ export function QrCard({
       <div
         className="code code-click"
         data-testid="pair-code"
+        data-pair-code-raw={code}
         role="button"
         tabIndex={0}
         aria-label={`Pairing code ${code}. Click to copy.`}
