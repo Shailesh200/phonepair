@@ -3,6 +3,20 @@ export const GUEST_REDIAL_MAX_MS_FIRST_PAIR = 14_000
 export const GUEST_UNAVAILABLE_RETRY_MIN_MS = 5 * 60_000
 export const GUEST_FIRST_PAIR_UNAVAILABLE_MAX = 6
 
+/** After host is back but listen is not registered yet, space peer-unavailable redials (3s cap when paired). */
+export function redialDelayAfterPeerUnavailable(
+  consecutivePeerUnavailable: number,
+  everConnected: boolean,
+): number {
+  if (consecutivePeerUnavailable <= 1) {
+    return redialDelayMs(0, everConnected)
+  }
+  return Math.min(
+    redialDelayMs(consecutivePeerUnavailable - 1, everConnected),
+    everConnected ? GUEST_REDIAL_MAX_MS_EVER_CONNECTED : GUEST_REDIAL_MAX_MS_FIRST_PAIR,
+  )
+}
+
 export function redialDelayMs(attempt: number, everConnected: boolean): number {
   if (attempt === 0) return 0
   if (!everConnected && attempt <= 1) return 0

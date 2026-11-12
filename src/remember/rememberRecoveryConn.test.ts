@@ -4,6 +4,7 @@ import {
   listenForceResumesAfterRecoverySettle,
   listenForceTickBlockedByRecoveryMode,
   listenRecoveryReclaimIntervalMs,
+  listenRecoveryAwaitingServerOpenSinceDrop,
   listenRecoveryReclaimSchedulingActive,
   listenRecoveryStaleOpenNeedsImmediateRecycle,
   listenReclaimRecycleSkipsConnectingPeer,
@@ -50,6 +51,13 @@ describe('remember recovery conn hygiene', () => {
       }),
       false,
     )
+  })
+
+  it('recovery tick keeps going until server OPEN after the drop', () => {
+    assert.equal(listenRecoveryAwaitingServerOpenSinceDrop(1000, null), true)
+    assert.equal(listenRecoveryAwaitingServerOpenSinceDrop(1000, 999), true)
+    assert.equal(listenRecoveryAwaitingServerOpenSinceDrop(1000, 1001), false)
+    assert.equal(listenRecoveryAwaitingServerOpenSinceDrop(null, 500), false)
   })
 
   it('stops reclaim polling after the 120s cap when OPEN never arrives', () => {

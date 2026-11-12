@@ -28,6 +28,7 @@ import {
 import {
   guestRedialPlanAfterSignalRecovery,
   guestUnavailableShouldGiveUp,
+  redialDelayAfterPeerUnavailable,
   redialDelayMs,
 } from '../features/pairing/reconnect'
 import { linkTeardownSendsBye } from '../features/pairing/teardown'
@@ -125,6 +126,7 @@ import {
   listenRecoveryReclaimUntilFromDrop,
 } from '../remember/listenRecoveryModePolicy'
 import {
+  listenRecoveryAwaitingServerOpenSinceDrop,
   listenReclaimRecycleSkipsOpenSocket,
   shouldClearStaleRememberMainConnForRecovery,
   shouldListenReclaimRecyclePeer,
@@ -232,6 +234,7 @@ export class Link {
   private lastCodeForceHookAt = 0
   private lastListenForceHookAt = 0
   private listenForceSettleUntil: number | null = null
+  private guestPeerUnavailableStreak = 0
   private listenRecoveryMode = false
   private listenRecoveryDropAt: number | null = null
   private listenRecoveryReclaimUntil: number | null = null
@@ -597,10 +600,40 @@ export class Link {
     void this.bootstrapRememberListen()
   }
 
+  private tickListenDuringRecovery(lp: Peer | null) {
+    if (!this.hostRememberListenRecoveryArmed()) return
+    if (!shouldHostRememberSignalWork(typeof navigator !== 'undefined' && navigator.onLine, this.listenGaveUp)) return
+    const dropAt = this.listenRecoveryDropAt
+    const wrapped = lp && !lp.destroyed ? peerAsForceSignal(lp, 'listen') : null
+    const serverOpenAt = wrapped?.signalPeerOpenAt?.() ?? null
+    if (!listenRecoveryAwaitingServerOpenSinceDrop(dropAt, serverOpenAt)) return
+    const missingPeer = !lp || lp.destroyed
+    if (missingPeer) {
+      if (!this.listenBootstrapInFlight && Date.now() >= this.listenBackoffUntil) {
+        void this.bootstrapRememberListen()
+      }
+      return
+    }
+    if (this.shouldDeferListenForceRecycle()) return
+    if (shouldDeferListenForce(!!this.peer?.open, this.hostListenStaggerUntil, Date.now(), true)) return
+    const unverified = this.listenSignalUnverified() || this.listenRecoveryMode
+    this.ensureListenForceRunner().tick(
+      wrapped!,
+      true,
+      false,
+      false,
+      unverified,
+      () => this.shouldDeferListenForceRecycle(),
+    )
+  }
+
   private tickListenSignalForce(lp: Peer) {
     if (!this.hostHasRememberPhones() || lp.destroyed || this.listenGaveUp) return
     if (!shouldHostRememberSignalWork(typeof navigator !== 'undefined' && navigator.onLine, this.listenGaveUp)) return
-    if (this.listenRecoveryMode) return
+    if (this.listenRecoveryMode) {
+      this.tickListenDuringRecovery(lp)
+      return
+    }
     if (!listenForceTickAllowed(this.listenPeerEverOpen, this.listenSignalUnverified())) return
     const now = Date.now()
     const codePeer = this.peer
@@ -1046,6 +1079,7 @@ export class Link {
           this.guestUnavailableSince = Date.now()
         }
         this.retry++
+        this.guestPeerUnavailableStreak++
         if (
           guestUnavailableShouldGiveUp(
             this.everConnected,
@@ -1058,7 +1092,7 @@ export class Link {
           return
         }
         this.set({ status: 'reconnecting' })
-        this.scheduleDial()
+        this.scheduleDialAfterPeerUnavailable()
         return
       }
       if (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed') {
@@ -1364,6 +1398,7 @@ export class Link {
     const plan = guestRedialPlanAfterSignalRecovery(this.everConnected)
     this.retry = plan.retry
     this.guestUnavailableSince = null
+    this.guestPeerUnavailableStreak = 0
     if (this.dialWait) {
       clearTimeout(this.dialWait)
       this.dialWait = null
@@ -1376,6 +1411,20 @@ export class Link {
         this.dial()
       }, plan.delayMs)
     }
+  }
+
+  private scheduleDialAfterPeerUnavailable() {
+    if (this.status === 'error' || this.dialWait || this.hasInFlightDial()) return
+    const delay = redialDelayAfterPeerUnavailable(this.guestPeerUnavailableStreak, this.everConnected)
+    ppDebugRecordGuestRedial(delay)
+    if (delay <= 0) {
+      this.dial()
+      return
+    }
+    this.dialWait = window.setTimeout(() => {
+      this.dialWait = null
+      this.dial()
+    }, delay)
   }
 
   private scheduleDial() {
@@ -1532,6 +1581,7 @@ export class Link {
       this.sessionPaired = true
       this.retry = 0
       this.guestUnavailableSince = null
+      this.guestPeerUnavailableStreak = 0
       this.hostFails = 0
       if (this.dialHangTimer) { clearTimeout(this.dialHangTimer); this.dialHangTimer = null }
       this.inFlightDial = null
@@ -1976,8 +2026,12 @@ export class Link {
       })
     ) {
       void this.bootstrapRememberListen()
-    } else if (this.role === 'host' && lp && !lp.destroyed) {
-      this.tickListenSignalForce(lp)
+    } else if (this.role === 'host') {
+      if (this.listenRecoveryMode && this.hostHasRememberPhones() && !this.listenGaveUp) {
+        this.tickListenDuringRecovery(lp && !lp.destroyed ? lp : null)
+      } else if (lp && !lp.destroyed) {
+        this.tickListenSignalForce(lp)
+      }
     }
     const c = this.conn
     if (c?.open) {

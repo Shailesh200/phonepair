@@ -42,6 +42,15 @@ function makeConnectingPeer(connectStarted: number) {
 describe('forceSignalDropHookBackoffMs', () => {
   const drop = 1000
 
+  it('never schedules more than 5s between hook retries during a cut', () => {
+    let prev = 1000
+    for (let attempt = 1; attempt <= 6; attempt += 1) {
+      const gap = forceSignalDropHookBackoffMs(attempt, drop, prev)
+      assert.ok(gap <= FORCE_SIGNAL_DROP_HOOK_CAP_MS)
+      prev += gap
+    }
+  })
+
   it('schedules 1s, 2s, 4s, 5s, 5s within the first 2 minutes after drop', () => {
     assert.equal(forceSignalDropHookBackoffMs(1, drop, drop), 1000)
     assert.equal(forceSignalDropHookBackoffMs(2, drop, drop + 1000), 2000)

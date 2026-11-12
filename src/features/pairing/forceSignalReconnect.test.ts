@@ -313,6 +313,19 @@ describe('forceSignalRunner stuck socket', () => {
     runner.stop()
   })
 
+  it('keeps drop hook anchor after post-settle cadence moves dropStartedAt', () => {
+    const t = { value: 1000 }
+    const runner = makeRunner(t)
+    runner.onSignalingDrop()
+    runner.endUnverifiedForcing(true, 200_000, 5000)
+    assert.equal(runner.dropHookBackoffAnchor(), null)
+    runner.onSignalingDrop()
+    assert.equal(runner.dropHookBackoffAnchor(), 1000)
+    runner.endUnverifiedForcing()
+    assert.equal(runner.dropHookBackoffAnchor(), 1000)
+    runner.stop()
+  })
+
   it('endUnverifiedForcing ends unverified cadence after a deliberate disconnect', () => {
     const peer = makeMockPeer()
     const runner = makeRunner({ value: 0 })

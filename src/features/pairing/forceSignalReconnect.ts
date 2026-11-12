@@ -120,6 +120,8 @@ export class ForceSignalRunner {
   private retryId: number | null = null
   private reclaimStartedAt: number | null = null
   private dropStartedAt: number | null = null
+  /** Hook retry anchor survives post-settle cadence moves on dropStartedAt. */
+  private dropHookAnchorAt: number | null = null
   private lastCadenceAt: number | null = null
   private silentOpenWatchUntil: number | null = null
   private unverifiedAfterDrop = false
@@ -143,6 +145,7 @@ export class ForceSignalRunner {
 
   stop() {
     this.stopped = true
+    this.dropHookAnchorAt = null
     this.clearTimers()
   }
 
@@ -169,10 +172,12 @@ export class ForceSignalRunner {
     const now = this.timers.now()
     this.unverifiedAfterDrop = true
     this.dropStartedAt = now
+    this.dropHookAnchorAt = now
     this.lastCadenceAt = null
   }
 
   onPhoneConnected() {
+    this.dropHookAnchorAt = null
     this.endUnverifiedForcing()
     this.attempt = 0
     this.reclaimStartedAt = null
@@ -192,10 +197,15 @@ export class ForceSignalRunner {
       this.silentOpenWatchUntil = silentWatchUntil
       if (cadenceAnchorAt != null) {
         this.dropStartedAt = cadenceAnchorAt
+        this.dropHookAnchorAt = null
         this.lastCadenceAt = null
       }
     }
     this.clearTimers()
+  }
+
+  dropHookBackoffAnchor(): number | null {
+    return this.dropHookAnchorAt
   }
 
   hasPostSettleSilentOpenWatch(): boolean {
@@ -322,8 +332,9 @@ export class ForceSignalRunner {
   }
 
   private hookRetryBackoff(attempt: number, mode: ForceMode, now: number): number {
-    if (this.dropStartedAt != null && mode !== 'cadence') {
-      return forceSignalDropHookBackoffMs(attempt, this.dropStartedAt, now)
+    const hookAnchor = this.dropHookAnchorAt ?? this.dropStartedAt
+    if (hookAnchor != null && mode !== 'cadence') {
+      return forceSignalDropHookBackoffMs(attempt, hookAnchor, now)
     }
     return forceSignalReconnectBackoffMs(attempt)
   }

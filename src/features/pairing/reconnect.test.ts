@@ -5,6 +5,7 @@ import {
   GUEST_UNAVAILABLE_RETRY_MIN_MS,
   guestRedialPlanAfterSignalRecovery,
   guestUnavailableShouldGiveUp,
+  redialDelayAfterPeerUnavailable,
   redialDelayMs,
 } from './reconnect.ts'
 
@@ -34,6 +35,14 @@ describe('guestUnavailableShouldGiveUp', () => {
   it('uses attempt cap only on first pairing', () => {
     assert.equal(guestUnavailableShouldGiveUp(false, 6, null, t0), false)
     assert.equal(guestUnavailableShouldGiveUp(false, 7, null, t0), true)
+  })
+})
+
+describe('redialDelayAfterPeerUnavailable', () => {
+  it('spaces repeat peer-unavailable redials while keeping the 3s cap', () => {
+    assert.equal(redialDelayAfterPeerUnavailable(1, true), 0)
+    assert.ok(redialDelayAfterPeerUnavailable(2, true) > 0)
+    assert.equal(redialDelayAfterPeerUnavailable(20, true), GUEST_REDIAL_MAX_MS_EVER_CONNECTED)
   })
 })
 

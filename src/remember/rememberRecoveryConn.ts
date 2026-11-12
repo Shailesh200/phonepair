@@ -99,6 +99,16 @@ export function listenForceTickBlockedByRecoveryMode(listenRecoveryMode: boolean
   return listenRecoveryMode
 }
 
+/** Recovery tick/bootstrap until the listen socket has server OPEN after the drop. */
+export function listenRecoveryAwaitingServerOpenSinceDrop(
+  recoveryDropAt: number | null,
+  serverOpenAt: number | null,
+): boolean {
+  if (recoveryDropAt == null) return false
+  if (serverOpenAt == null) return true
+  return serverOpenAt <= recoveryDropAt
+}
+
 /** After recovery settle, listen forcing may run again (silent open sockets, cadence/tick). */
 /** `lost()` on the host must not arm listen-id recovery — only signal-peer drops do. */
 export function shouldBeginListenIdRecoveryOnDataConnClose(): boolean {
