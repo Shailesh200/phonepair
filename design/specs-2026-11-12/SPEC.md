@@ -35,10 +35,10 @@ One card, `data-testid="remote-panel"`, `data-os="mac"|"windows"`, `data-state` 
 
 `.pp-os-toggle` sits at the top of the guide (Mac / Windows) and auto-selects the detected OS (`data-os`). Steps stay open together, not a wizard.
 
-1. **Download the helper.** `data-testid="download-mac"` and `download-win`. Highlight the selected OS (`.on`).
+1. **Download the helper.** `data-testid="download-mac"` and `download-win` sit on one line in `.helper-downloads` (side by side, `flex-wrap: nowrap`). They wrap only below 340px. Highlight the selected OS (`.on`).
 2. **Open it.** Mac `mac-open-steps`: Open the DMG, drag PhonePair Helper to Applications, then open it. Windows `win-open-steps`: Run the installer. If SmartScreen appears, click More info, then Run anyway.
 3. **Allow access.** Mac: Allow Accessibility: System Settings > Privacy & Security > Accessibility > turn on PhonePair Helper. This lets it move the pointer and type. Windows: Allow access: if Windows asks to allow PhonePair Helper through the firewall or to make changes, click Allow / Yes.
-4. **Enter the 6-digit code.** Six `.pp-code-input` boxes inside `[data-testid="helper-code"]`. `.pp-code-go` sits on the right, same height as the boxes: `--accent` background, `--accent-ink` arrow, `aria-label="Connect"`. Disabled and muted until 6 digits are entered.
+4. **Enter the 6-digit code.** Six `.pp-code-input` boxes (34×44px, gap 8px) inside `[data-testid="helper-code"]`. `.pp-code-go` is 44×44 on the right, same height as the boxes: `--accent` background, `--accent-ink` arrow, `aria-label="Connect"`. Disabled and muted until 6 digits are entered. The row stays inside the card at 1280 and 390.
 
 No “run from source” line. `.pp-dev-link` (**Developer**) reveals `data-testid="helper-dev-note"`: `cd helper && npm start`.
 

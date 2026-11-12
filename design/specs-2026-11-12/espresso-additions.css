@@ -29,6 +29,7 @@
 }
 .pp-step {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: flex-start;
   padding: 12px;
@@ -48,6 +49,7 @@
   font-size: 15px;
   flex: none;
 }
+.pp-step > div { flex: 1; min-width: 0; }
 .pp-step b { display: block; font-size: 15px; letter-spacing: -.02em; }
 .pp-step p { margin-top: 4px; }
 .pp-step--active { border-color: var(--accent); background: var(--tile); }
@@ -86,6 +88,27 @@
   background: var(--surface);
   color: var(--text);
 }
+.helper-downloads {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: nowrap;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+}
+.helper-downloads .pp-os-btn {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 4px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+@media (max-width: 340px) {
+  .helper-downloads { flex-wrap: wrap; }
+  .helper-downloads .pp-os-btn { flex: 1 1 100%; }
+}
 .pp-os-btn { min-height: 44px; }
 .pp-os-btn.on,
 [data-os="mac"] [data-testid="download-mac"],
@@ -95,10 +118,10 @@
   border-color: transparent;
 }
 
-.pp-code { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.pp-code { display: flex; align-items: center; gap: 8px; margin-top: 8px; width: 100%; }
 .pp-code-go {
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   flex: none;
   border-radius: var(--r-md);
   background: var(--accent);
@@ -107,7 +130,7 @@
   place-items: center;
   padding: 0;
 }
-.pp-code-go svg { width: 22px; height: 22px; }
+.pp-code-go svg { width: 18px; height: 18px; }
 .pp-code-go:disabled {
   background: var(--surface-2);
   color: var(--muted);
@@ -115,13 +138,12 @@
   cursor: default;
 }
 .pp-code-input {
-  width: 42px;
-  height: 52px;
-  flex: 1 1 0;
-  max-width: 48px;
+  width: 34px;
+  height: 44px;
+  flex: 0 0 34px;
   text-align: center;
   font-family: var(--mono);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 600;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
