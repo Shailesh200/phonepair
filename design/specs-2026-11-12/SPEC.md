@@ -91,4 +91,19 @@ Saved in the browser only (`localStorage` key `pp.deviceMeta.v1`, shape `{v:1, d
 
 **Decision.** The wide cap `min(80vw, 1440px)` applies from 1200px up on `.laptop` and `.phone-wrap` (equivalent to `.pp-shell`). Between 1200px and 1500px the landing hero art (`.art`) is scaled to 0.75. `padding-inline: clamp(16px, 4vw, 48px)` stays as side padding in addition to that scale; it does not replace it. Under 1200px the page stays full width: at 390px the padding clamp resolves to 16px and there is no max-width.
 
-Mocks: `b-connect.html`, `c-remote.html`, `e-devices.html`, `d-wide.html`.
+Mocks: `b-connect.html`, `c-remote.html`, `e-devices.html`, `d-wide.html`, `f-mouse-mover.html`.
+
+## F — Mouse mover
+
+Nudges the pointer so the laptop stays awake. Compact row `.pp-mover` on the phone remote (under Pointer, above the keyboard) and in the laptop Remote card.
+
+- Label **Keep awake**.
+- `.pp-switch` `role="switch"` `aria-checked` `data-testid="mover-toggle"`.
+- `.pp-mover-interval` pills **30s** / **1m** / **5m**, `data-testid="mover-interval-30s"`, `mover-interval-1m`, `mover-interval-5m`. Disabled and muted when the switch is off.
+- When on, `.pp-mover-badge` reads **Mouse mover on · every 30s** (or **1m** / **5m**). Dot is connected green `var(--ok)` `#2E6B3E` and pulses. `prefers-reduced-motion` turns the pulse off. Same badge sits in the laptop header beside the connection pill. `data-testid="mover-badge"`.
+
+| State | What shows |
+| --- | --- |
+| off | Switch unchecked. Interval pills muted and disabled. No badge. |
+| on | Switch checked. One interval pressed. Badge on the control and in the laptop header. |
+| helper not connected | Switch and intervals disabled. Hint: **Connect laptop control first.** No badge. |

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mouse mover</title>
+<link rel="stylesheet" href="mock-base.css">
+<link rel="stylesheet" href="espresso-additions.css">
+<style>
+.caps { list-style: none; display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.caps li { display: flex; gap: 10px; align-items: baseline; font-size: 15px; }
+.caps b { width: 72px; flex: none; }
+.caps span { color: var(--muted); }
+.nav .row-g { display: flex; gap: 8px; align-items: center; }
+.only-phone .pp-remote { min-height: 0; }
+.only-phone .pp-remote-pad { flex: 1 1 auto; min-height: 0; height: auto; }
+.only-phone .pp-remote-clicker .btn { min-height: 48px; }
+.only-phone .pp-remote-laser { min-height: 44px; }
+.only-phone .kb { min-height: 44px; padding: 8px 12px; }
+.btn.soft { background: var(--accent-soft); color: var(--accent); }
+.only-phone .two .btn { min-height: 44px; width: 100%; }
+body[data-mover="off"] .nav .pp-mover-badge,
+body[data-mover="disconnected"] .nav .pp-mover-badge { display: none; }
+</style>
+</head>
+<body data-mover="on">
+  <div class="only-laptop">
+    <div class="pp-shell" style="padding-top:8px">
+      <header class="nav">
+        <a class="logo" href="/">PhonePair<i>.</i></a>
+        <div class="row-g">
+          <span class="pp-mover-badge" data-testid="mover-badge">Mouse mover on · every 1m</span>
+          <span class="pill" data-testid="status">Connected to Shailesh's iPhone</span>
+        </div>
+      </header>
+      <div class="grid">
+        <div class="col">
+          <div class="card pad">
+            <h3>Send files</h3>
+            <div class="drop"><b>Drop files</b><small>or click to browse</small></div>
+          </div>
+        </div>
+        <div class="col">
+          <section class="card pad" data-testid="remote-panel">
+            <h3 style="display:flex;justify-content:space-between;align-items:center">
+              <span>Remote</span>
+              <span class="tag ok" data-testid="full-laptop-badge">Full laptop</span>
+            </h3>
+            <p class="mut small" data-testid="helper-status">Connected</p>
+            <ul class="caps">
+              <li><b>Trackpad</b><span>Swipe, click, and scroll</span></li>
+              <li><b>Clicker</b><span>Prev and Next for slides</span></li>
+              <li><b>Pointer</b><span>Hold to show the laser</span></li>
+            </ul>
+            <div class="pp-mover" data-state="on">
+              <span class="pp-mover-label">Keep awake</span>
+              <button type="button" class="pp-switch" role="switch" aria-checked="true" aria-label="Keep awake" data-testid="mover-toggle"><span></span></button>
+              <div class="pp-mover-interval" role="group" aria-label="Nudge interval">
+                <button type="button" aria-pressed="false" data-testid="mover-interval-30s">30s</button>
+                <button type="button" aria-pressed="true" data-testid="mover-interval-1m">1m</button>
+                <button type="button" aria-pressed="false" data-testid="mover-interval-5m">5m</button>
+              </div>
+              <span class="pp-mover-badge" data-testid="mover-badge">Mouse mover on · every 1m</span>
+              <p class="pp-mover-hint">Connect laptop control first</p>
+            </div>
+            <label class="mut small" for="remote-text">Keyboard</label>
+            <textarea id="remote-text" class="clip" data-testid="remote-text" rows="2" placeholder="Open Remote on your phone and type. Text lands here, or in the field the pointer focuses."></textarea>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="only-phone phone">
+    <header class="top">
+      <a class="logo" href="/">PhonePair<i>.</i></a>
+      <span class="ttl">Remote</span>
+    </header>
+    <div class="pp-remote">
+      <div class="pp-remote-pad" id="pp-trackpad" data-testid="trackpad">
+        <p>Swipe to move · tap to click<br>two fingers to scroll</p>
+        <div class="pad-scroll" data-testid="scroll-strip" role="scrollbar" aria-orientation="vertical" aria-label="Scroll">↕</div>
+      </div>
+      <div class="two">
+        <button type="button" class="btn ghost" data-testid="lclick">Left click</button>
+        <button type="button" class="btn ghost" data-testid="rclick">Right click</button>
+      </div>
+      <div class="pp-remote-clicker">
+        <button type="button" class="btn soft" data-testid="prev">Prev</button>
+        <button type="button" class="btn" data-testid="next">Next</button>
+      </div>
+      <button type="button" class="pp-remote-laser" data-testid="pointer">Pointer · hold to point</button>
+      <div class="pp-mover" data-state="on">
+        <span class="pp-mover-label">Keep awake</span>
+        <button type="button" class="pp-switch" role="switch" aria-checked="true" aria-label="Keep awake" data-testid="mover-toggle"><span></span></button>
+        <div class="pp-mover-interval" role="group" aria-label="Nudge interval">
+          <button type="button" aria-pressed="false" data-testid="mover-interval-30s">30s</button>
+          <button type="button" aria-pressed="true" data-testid="mover-interval-1m">1m</button>
+          <button type="button" aria-pressed="false" data-testid="mover-interval-5m">5m</button>
+        </div>
+        <span class="pp-mover-badge" data-testid="mover-badge">Mouse mover on · every 1m</span>
+        <p class="pp-mover-hint">Connect laptop control first</p>
+      </div>
+      <input class="kb" data-testid="kb-input" placeholder="Type here, it appears on the laptop">
+    </div>
+  </div>
+  <script>
+    var mode = (location.hash || "#on").slice(1);
+    if (mode === "off" || mode === "disconnected") {
+      document.body.dataset.mover = mode;
+      document.querySelectorAll(".pp-mover").forEach(function (row) {
+        row.dataset.state = mode;
+        var sw = row.querySelector(".pp-switch");
+        sw.setAttribute("aria-checked", "false");
+        sw.disabled = mode === "disconnected";
+        row.querySelectorAll(".pp-mover-interval button").forEach(function (b) {
+          b.disabled = true;
+          b.setAttribute("aria-pressed", "false");
+        });
+      });
+    } else if (mode === "30s" || mode === "5m" || mode === "1m") {
+      var label = mode === "30s" ? "30s" : mode;
+      document.querySelectorAll(".pp-mover-badge").forEach(function (b) {
+        b.textContent = "Mouse mover on · every " + label;
+      });
+      document.querySelectorAll(".pp-mover-interval button").forEach(function (b) {
+        b.setAttribute("aria-pressed", b.textContent.trim() === label ? "true" : "false");
+      });
+    }
+  </script>
+</body>
+</html>
