@@ -143,6 +143,25 @@ describe('device meta store', { concurrency: false }, () => {
     assert.deepEqual(readStored(), { v: 1, devices: { d: { name: 'Recovered' } } })
   })
 
+  it('reads a future version as empty and does not downgrade it', () => {
+    const future = JSON.stringify({
+      v: 2,
+      devices: { a: { name: 'Z', fav: true }, b: { name: 'Kept' } },
+      extra: { newer: true },
+    })
+    globalThis.localStorage.setItem(DEVICE_META_KEY, future)
+    assert.deepEqual(getDeviceMeta('a'), {})
+    assert.deepEqual(getDeviceMeta('b'), {})
+    assert.equal(deviceLabel('a', 'Default'), 'Default')
+    renameDevice('a', 'New')
+    assert.equal(toggleFavourite('a'), false)
+    assert.equal(toggleFavourite('b'), false)
+    clearDeviceMeta('a')
+    clearDeviceMeta()
+    assert.equal(globalThis.localStorage.getItem(DEVICE_META_KEY), future)
+    assert.deepEqual(getDeviceMeta('a'), {})
+  })
+
   it('does not throw when localStorage is missing or throws', () => {
     delete (globalThis as { localStorage?: unknown }).localStorage
     assert.doesNotThrow(() => {

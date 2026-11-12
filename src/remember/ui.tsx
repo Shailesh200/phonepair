@@ -32,6 +32,7 @@ function DeviceNameEditor({ id, fallback }: { id: string; fallback: string }) {
         type="button"
         className="device-name"
         data-testid="device-name"
+        aria-label={`Rename ${shown}`}
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => {
           skipSave.current = false
@@ -90,7 +91,7 @@ function FavouriteToggle({ id }: { id: string }) {
       type="button"
       className="device-fav"
       data-testid="device-fav"
-      aria-label="Favourite"
+      aria-label={fav ? 'Remove from favourites' : 'Add to favourites'}
       aria-pressed={fav}
       onClick={() => toggleFavourite(id)}
     >

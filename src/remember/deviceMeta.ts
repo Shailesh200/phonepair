@@ -73,23 +73,34 @@ function notify(): void {
   for (const listener of [...listeners]) listener()
 }
 
-export function getDeviceMetaStore(): DeviceMetaStore {
+function readRaw(): string | null {
   const ls = browserStorage()
-  if (!ls) return blank()
-  let raw: string | null
+  if (!ls) return null
   try {
-    raw = ls.getItem(DEVICE_META_KEY)
+    return ls.getItem(DEVICE_META_KEY)
   } catch {
-    return blank()
+    return null
   }
-  if (raw == null || raw === '') return blank()
-  let parsed: unknown
+}
+
+function parsedRecord(raw: string | null): Record<string, unknown> | null {
+  if (raw == null || raw === '') return null
   try {
-    parsed = JSON.parse(raw)
+    const parsed: unknown = JSON.parse(raw)
+    return isRecord(parsed) ? parsed : null
   } catch {
-    return blank()
+    return null
   }
-  if (!isRecord(parsed) || parsed.v !== 1 || !isRecord(parsed.devices)) return blank()
+}
+
+/** A newer store (v > 1) is left untouched so this client never downgrades it. */
+function isFutureStore(parsed: Record<string, unknown> | null): boolean {
+  return !!parsed && typeof parsed.v === 'number' && parsed.v > 1
+}
+
+export function getDeviceMetaStore(): DeviceMetaStore {
+  const parsed = parsedRecord(readRaw())
+  if (!parsed || isFutureStore(parsed) || parsed.v !== 1 || !isRecord(parsed.devices)) return blank()
   const devices = blankDevices()
   for (const [id, value] of Object.entries(parsed.devices)) {
     if (!safeId(id)) continue
@@ -116,6 +127,7 @@ export function deviceLabel(id: string, fallback: string): string {
 }
 
 function persist(store: DeviceMetaStore): void {
+  if (isFutureStore(parsedRecord(readRaw()))) return
   const ls = browserStorage()
   if (!ls) return
   try {
@@ -133,6 +145,7 @@ function persist(store: DeviceMetaStore): void {
 }
 
 function mutate(update: (store: DeviceMetaStore) => void): void {
+  if (isFutureStore(parsedRecord(readRaw()))) return
   const store = getDeviceMetaStore()
   update(store)
   persist(store)
@@ -167,6 +180,7 @@ export function toggleFavourite(id: string): boolean {
 
 /** Clear one device, or every device when called with no id. */
 export function clearDeviceMeta(id?: string): void {
+  if (isFutureStore(parsedRecord(readRaw()))) return
   if (id !== undefined) {
     if (!safeId(id)) return
     const store = getDeviceMetaStore()
