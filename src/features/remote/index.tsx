@@ -508,6 +508,7 @@ registerFeature({
   LaptopOverlay,
   init: (ctx) => {
     if (ctx.role !== 'host') return
+    awake.attach()
     pos.x = window.innerWidth / 2
     pos.y = window.innerHeight / 2
     pos.visible = false
@@ -616,8 +617,7 @@ registerFeature({
       if (moverRelay === relay) moverRelay = null
       window.removeEventListener('resize', onResize)
       window.clearTimeout(hideTimer)
-      awake.stop({ tellHelper: true })
-      awake.dispose()
+      awake.detach()
     }
   },
 })

@@ -80,7 +80,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   let canvas: HTMLCanvasElement | null = null
   let drawTimer: number | null = null
   let audio: { ctx: AudioContext; osc: OscillatorNode } | null = null
-  let unlisten = () => {}
+  let onVisible: (() => void) | null = null
 
   function view(): KeepAwakeViewState {
     const helperConnected = host.helperConnected()
@@ -440,11 +440,17 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     publish()
   }
 
-  function listen() {
-    if (typeof document === 'undefined') return () => {}
-    const fn = () => { void onVisibility() }
-    document.addEventListener('visibilitychange', fn)
-    return () => { document.removeEventListener('visibilitychange', fn) }
+  function attach() {
+    if (onVisible || typeof document === 'undefined') return
+    onVisible = () => { void onVisibility() }
+    document.addEventListener('visibilitychange', onVisible)
+  }
+
+  function detach() {
+    if (!onVisible) return
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible)
+    onVisible = null
+    stop({ tellHelper: true })
   }
 
   async function pip() {
@@ -457,7 +463,6 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     } catch { /* needs a laptop gesture, or the browser refused */ }
   }
 
-  unlisten = listen()
   publish()
 
   return {
@@ -471,6 +476,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     onHelperDisconnected,
     onHelperConnected,
     pip,
-    dispose() { unlisten() },
+    attach,
+    detach,
   }
 }
