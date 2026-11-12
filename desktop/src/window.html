@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+  <title>PhonePair Helper</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, "Segoe UI", sans-serif;
+      background: #f6f7fb;
+      color: #0f172a;
+    }
+    main { padding: 28px 24px 24px; }
+    h1 { margin: 0; font-size: 15px; letter-spacing: .01em; }
+    .code {
+      margin: 22px 0 8px;
+      text-align: center;
+      font-size: 40px;
+      font-weight: 800;
+      letter-spacing: .28em;
+      font-variant-numeric: tabular-nums;
+      user-select: text;
+    }
+    .status {
+      margin: 0;
+      text-align: center;
+      color: #64748b;
+      font-size: 14px;
+    }
+    .status[data-status="connected"] { color: #047857; font-weight: 700; }
+    .row { display: flex; gap: 10px; margin-top: 28px; }
+    button {
+      flex: 1;
+      height: 42px;
+      border-radius: 12px;
+      border: 1px solid #d5d8e4;
+      background: #fff;
+      color: #0f172a;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.quit { background: #4f46e5; color: #fff; border-color: transparent; }
+    button:focus-visible { outline: 3px solid #c7d2fe; outline-offset: 2px; }
+    .access {
+      margin-top: 22px;
+      padding: 12px;
+      border-radius: 12px;
+      background: #fff7ed;
+      border: 1px solid #fdba74;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .access p { margin: 0 0 10px; }
+    .access button { width: 100%; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>PhonePair Helper</h1>
+    <p class="code" id="code" data-testid="pair-code">------</p>
+    <p class="status" id="status" data-status="waiting" data-testid="pair-status">waiting</p>
+    <div class="row">
+      <button type="button" id="stop">Stop</button>
+      <button type="button" id="quit" class="quit">Quit</button>
+    </div>
+    <section class="access" id="access" hidden>
+      <p id="access-text"></p>
+      <button type="button" id="open-access">Open System Settings</button>
+    </section>
+  </main>
+  <script>
+    const codeEl = document.getElementById('code')
+    const statusEl = document.getElementById('status')
+    const accessEl = document.getElementById('access')
+    const accessText = document.getElementById('access-text')
+
+    function render(state) {
+      codeEl.textContent = state.code || '------'
+      statusEl.textContent = state.status
+      statusEl.dataset.status = state.status
+      accessEl.hidden = !state.needsAccessibility
+      accessText.textContent = state.accessibilityMessage
+    }
+
+    window.helper.onState(render)
+    window.helper.state().then(render)
+    window.addEventListener('focus', () => { window.helper.state().then(render) })
+    document.getElementById('stop').addEventListener('click', () => {
+      window.helper.stop().then(render)
+    })
+    document.getElementById('quit').addEventListener('click', () => {
+      window.helper.quit()
+    })
+    document.getElementById('open-access').addEventListener('click', () => {
+      window.helper.openAccessibility()
+    })
+  </script>
+</body>
+</html>

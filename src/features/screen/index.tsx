@@ -590,7 +590,7 @@ registerFeature({
   title: 'Screen view',
   icon: 'screen',
   order: 70,
-  laptopColumn: 'right',
+  laptopColumn: 'left',
   PhonePage,
   LaptopPanel,
   LaptopOverlay: ControlBanner,
