@@ -1,19 +1,40 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { CoreCtx, getFeatures } from './core/bus'
 import { ConnRelayNote, Logo, StatusPill } from './core/ui'
 import { QrCard } from './features/pairing/QrCard'
 import { useHostPairFlow } from './features/pairing/useHostPairFlow'
 import { hostShowsPairedView } from './features/pairing/hostSignalReconnect'
+import { createReconnectEscape, endLaptopPair } from './features/pairing/reconnectEscape'
 import { MoverHeaderBadge, stopMouseMover } from './features/remote'
 import { RememberPrompt, SavedPhonesPanel } from './remember/ui'
+
+function endPair(ctx: CoreCtx) {
+  endLaptopPair(stopMouseMover, () => ctx.link.disconnect())
+}
+
+function useReconnectEscape(link: CoreCtx['link']) {
+  const [shown, setShown] = useState(false)
+  useEffect(() => {
+    const watch = createReconnectEscape({
+      setTimer: (fn, ms) => window.setTimeout(fn, ms),
+      clearTimer: (id) => { window.clearTimeout(id) },
+      onChange: setShown,
+    })
+    const off = link.subscribe(() => watch.onStatus(link.status))
+    watch.onStatus(link.status)
+    return () => { off(); watch.dispose() }
+  }, [link])
+  return shown
+}
 
 export function Laptop({ ctx }: { ctx: CoreCtx }) {
   const flow = useHostPairFlow(ctx.link)
   const feats = getFeatures()
   const waitingPhone = hostShowsPairedView(ctx.link.status, ctx.link.hadGuest) && ctx.link.status !== 'connected'
+  const pairDifferent = useReconnectEscape(ctx.link)
 
   return <div className="laptop">
-    {flow.showDashboard ? <Dashboard ctx={ctx} waitingPhone={waitingPhone} /> : <Landing ctx={ctx} cardPhase={flow.cardPhase} />}
+    {flow.showDashboard ? <Dashboard ctx={ctx} waitingPhone={waitingPhone} pairDifferent={pairDifferent} /> : <Landing ctx={ctx} cardPhase={flow.cardPhase} />}
     <RememberPrompt ctx={ctx} />
     {flow.showDashboard && feats.map((f) => f.LaptopOverlay && <f.LaptopOverlay key={f.id} ctx={ctx} />)}
   </div>
@@ -134,7 +155,7 @@ function StudioStage() {
   </div>
 }
 
-function Dashboard({ ctx, waitingPhone }: { ctx: CoreCtx; waitingPhone: boolean }) {
+function Dashboard({ ctx, waitingPhone, pairDifferent }: { ctx: CoreCtx; waitingPhone: boolean; pairDifferent: boolean }) {
   const feats = getFeatures().filter((f) => f.LaptopPanel)
   const files = feats.find((f) => f.id === 'files')
   const screen = feats.find((f) => f.id === 'screen')
@@ -143,8 +164,8 @@ function Dashboard({ ctx, waitingPhone }: { ctx: CoreCtx; waitingPhone: boolean 
   const Files = files?.LaptopPanel as React.ComponentType<{ ctx: CoreCtx; children?: React.ReactNode }> | undefined
   const Screen = screen?.LaptopPanel
   return <div className="dash">
-    <header className="nav"><Logo /><div className="row-g"><MoverHeaderBadge /><StatusPill link={ctx.link} /><ConnRelayNote link={ctx.link} /><button className="btn ghost" data-testid="disconnect" onClick={() => { stopMouseMover(); ctx.link.disconnect() }}>Disconnect</button></div></header>
-    {waitingPhone && <div className="banner warn dash-wait" data-testid="reconnecting-banner">Reconnecting…</div>}
+    <header className="nav"><Logo /><div className="row-g"><MoverHeaderBadge /><StatusPill link={ctx.link} /><ConnRelayNote link={ctx.link} /><button className="btn ghost" data-testid="disconnect" onClick={() => endPair(ctx)}>Disconnect</button></div></header>
+    {waitingPhone && <div className="banner warn dash-wait" data-testid="reconnecting-banner">Reconnecting…{pairDifferent ? <button type="button" data-testid="reconnect-pair-different" onClick={() => endPair(ctx)}>Pair a different phone</button> : null}</div>}
     {ctx.link.rememberListenOtherTab && (
       <p className="mut small remember-other-tab" data-testid="remember-other-tab">
         Saved phones are connected in another tab.
