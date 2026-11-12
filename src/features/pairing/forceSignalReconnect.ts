@@ -1,6 +1,7 @@
 import {
   forceSignalWatchdogDelayMs,
   mayForceRecycleOpenSignalSocket,
+  WS_CONNECTING,
   WS_OPEN,
   type ForceSignalPeerStateExt,
 } from './forceSignalPeerState.ts'
@@ -16,6 +17,8 @@ export function forceSignalConnectingGraceMs(unverifiedAfterDrop: boolean): numb
 }
 export const FORCE_SIGNAL_DROP_HOOK_FAST_PHASE_MS = 2 * 60_000
 export const FORCE_SIGNAL_DROP_HOOK_CAP_MS = 5000
+/** Min CONNECTING age after the last force/restore before 5s gap override may recycle. */
+export const SIGNAL_FRESH_CONNECTING_GRACE_MS = 8000
 
 /** Every signalling-socket retry timer (hook, watchdog, cadence, reclaim) stays at or below this. */
 export function capSignalSocketRetryMs(ms: number): number {
@@ -59,12 +62,23 @@ export function forceSignalGapOverrideAllowed(
   if (!forceSignalConnectingGapOverride(opts.lastForceAt, opts.scheduleAnchor, now)) return false
 
   const rs = peer.signalReadyState?.() ?? null
-  if (rs !== WS_OPEN) return true
-
-  const openAt = peer.signalPeerOpenAt?.() ?? null
   const freshBound = forceSignalLastForceOrRestoreAt(opts.lastForceAt, opts.restoreSignalAt)
-  if (openAt == null || freshBound == null) return false
-  return openAt < freshBound
+
+  if (rs === WS_CONNECTING) {
+    const started = peer.signalConnectStartedAt?.() ?? null
+    if (started != null && freshBound != null && started >= freshBound) {
+      if (now - started < SIGNAL_FRESH_CONNECTING_GRACE_MS) return false
+    }
+    return true
+  }
+
+  if (rs === WS_OPEN) {
+    const openAt = peer.signalPeerOpenAt?.() ?? null
+    if (openAt == null || freshBound == null) return false
+    return openAt < freshBound
+  }
+
+  return true
 }
 
 export function isVerifiedHealthyOpenSignalSocket(
