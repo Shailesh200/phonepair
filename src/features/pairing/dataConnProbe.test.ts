@@ -18,11 +18,10 @@ import {
   shouldDispatchConnKeepalive,
   shouldMarkConnProbeEligible,
   shouldRunDataConnProbe,
-  CLIP_PATH_CHECK,
   connEstablishedBeforeRestore,
   connProbeBlockedByRecentTraffic,
-  shouldArmPostRestoreClipPath,
-  clipPathCheckInitiatorRole,
+  shouldArmPostRestoreStaleDataRebuild,
+  shouldGuestInitiatePostRestoreStaleDataRebuild,
 } from './dataConnProbe.ts'
 
 describe('buildLinkHelloMessage', () => {
@@ -473,20 +472,20 @@ describe('probe deadline', () => {
   })
 })
 
-describe('post-restore clip path', () => {
+describe('post-restore stale data rebuild', () => {
   it('arms only when data conn predates restore', () => {
     const restore = 20_000
-  const established = 10_000
+    const established = 10_000
     assert.equal(connEstablishedBeforeRestore(established, restore), true)
     assert.equal(connEstablishedBeforeRestore(restore + 1, restore), false)
-    assert.equal(shouldArmPostRestoreClipPath({
+    assert.equal(shouldArmPostRestoreStaleDataRebuild({
       connOpen: true,
       restoreSignalAt: restore,
       connEstablishedAt: established,
       armedForRestore: null,
       now: restore + 100,
     }), true)
-    assert.equal(shouldArmPostRestoreClipPath({
+    assert.equal(shouldArmPostRestoreStaleDataRebuild({
       connOpen: true,
       restoreSignalAt: restore,
       connEstablishedAt: established,
@@ -496,9 +495,9 @@ describe('post-restore clip path', () => {
   })
 
   it('guest initiates on remember session', () => {
-    assert.equal(clipPathCheckInitiatorRole('guest', { sessionPaired: false, rememberGuestAuth: true }), true)
-    assert.equal(clipPathCheckInitiatorRole('host', { sessionPaired: true, rememberGuestAuth: false }), true)
-    assert.equal(clipPathCheckInitiatorRole('host', { sessionPaired: false, rememberGuestAuth: false }), false)
+    assert.equal(shouldGuestInitiatePostRestoreStaleDataRebuild('guest', { sessionPaired: false, rememberGuestAuth: true }), true)
+    assert.equal(shouldGuestInitiatePostRestoreStaleDataRebuild('host', { sessionPaired: true, rememberGuestAuth: false }), false)
+    assert.equal(shouldGuestInitiatePostRestoreStaleDataRebuild('guest', { sessionPaired: false, rememberGuestAuth: false }), false)
   })
 
   it('probe retry only on recent-traffic deferral', () => {
@@ -531,18 +530,4 @@ describe('post-restore clip path', () => {
     }), false)
   })
 
-  it('clip path checks use the same dispatch gate as live clips on guest', () => {
-    assert.equal(shouldDispatchConnKeepalive({
-      connOpen: true,
-      rememberGuestAuth: true,
-      status: 'reconnecting',
-      t: CLIP_PATH_CHECK,
-    }), true)
-    assert.equal(shouldDispatchConnKeepalive({
-      connOpen: true,
-      rememberGuestAuth: true,
-      status: 'reconnecting',
-      t: 'clip:set',
-    }), false)
-  })
 })

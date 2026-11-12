@@ -57,17 +57,14 @@ import {
   recordRemoteHelloPongCap,
   remotePongCapSeenForPeer,
   shouldMarkConnProbeEligible,
-  CLIP_PATH_ACK,
-  CLIP_PATH_CHECK,
-  CLIP_PATH_CONFIRM_DELAY_MS,
-  CLIP_PATH_CONFIRM_TIMEOUT_MS,
-  clipPathCheckInitiatorRole,
+  POST_RESTORE_STALE_DATA_REBUILD_MS,
   connEstablishedBeforeRestore,
   connProbeBlockedByRecentTraffic,
   connProbeMayAbandonAfterFail,
   connProbeRetryDelayMs,
   planTickOpenConnTraffic,
-  shouldArmPostRestoreClipPath,
+  shouldArmPostRestoreStaleDataRebuild,
+  shouldGuestInitiatePostRestoreStaleDataRebuild,
   shouldRunDataConnProbe,
   shouldSendTickConnKeepalivePing,
   type RemotePongCapLedger,
@@ -77,9 +74,7 @@ import {
   ppDebugIncProbeTimeout,
   ppDebugIncStalledWsKilled,
   ppDebugRecordProbePong,
-  ppDebugIncClipPathSent,
-  ppDebugRecordClipPathAck,
-  ppDebugIncClipPathTimeout,
+  ppDebugIncStaleDataRebuild,
 } from '../features/pairing/ppDebugConnProbe'
 import {
   shouldKillFreshConnectingStalledAfterRestore,
@@ -306,11 +301,8 @@ export class Link {
   private connDataGen = 0
   private connEstablishedAt: number | null = null
   private lastRestoreSignalAt: number | null = null
-  private clipPathArmedForRestore: number | null = null
-  private clipPathDelayTimer: number | null = null
-  private clipPathCheckTimer: number | null = null
-  private clipPathCheckAt: number | null = null
-  private clipPathCheckNonce = 0
+  private staleDataRebuildArmedForRestore: number | null = null
+  private staleDataRebuildTimer: number | null = null
   private listenRecoveryMode = false
   private listenRecoveryDropAt: number | null = null
   private listenRecoveryReclaimUntil: number | null = null
@@ -475,16 +467,11 @@ export class Link {
     }
   }
 
-  private clearClipPathTimers() {
-    if (this.clipPathDelayTimer != null) {
-      clearTimeout(this.clipPathDelayTimer)
-      this.clipPathDelayTimer = null
+  private clearStaleDataRebuildTimer() {
+    if (this.staleDataRebuildTimer != null) {
+      clearTimeout(this.staleDataRebuildTimer)
+      this.staleDataRebuildTimer = null
     }
-    if (this.clipPathCheckTimer != null) {
-      clearTimeout(this.clipPathCheckTimer)
-      this.clipPathCheckTimer = null
-    }
-    this.clipPathCheckAt = null
   }
 
   private markConnProbeEligible() {
@@ -541,71 +528,47 @@ export class Link {
       this.syncRemotePongCapFromLedger()
       try { this.conn.send(this.helloMessage()) } catch {}
     }
-    this.armPostRestoreClipPathCheck(at)
+    this.armPostRestoreStaleDataRebuild(at)
     this.onDataConnBackSignal(at)
   }
 
-  private armPostRestoreClipPathCheck(restoreAt: number) {
+  private armPostRestoreStaleDataRebuild(restoreAt: number) {
     const now = Date.now()
     if (
-      !shouldArmPostRestoreClipPath({
+      !shouldArmPostRestoreStaleDataRebuild({
         connOpen: !!this.conn?.open,
         restoreSignalAt: restoreAt,
         connEstablishedAt: this.connEstablishedAt,
-        armedForRestore: this.clipPathArmedForRestore,
+        armedForRestore: this.staleDataRebuildArmedForRestore,
         now,
       })
     ) {
       return
     }
-    this.clipPathArmedForRestore = restoreAt
-    if (this.clipPathDelayTimer != null) return
-    this.clipPathDelayTimer = window.setTimeout(() => {
-      this.clipPathDelayTimer = null
-      this.beginPostRestoreClipPathCheck()
-    }, CLIP_PATH_CONFIRM_DELAY_MS)
+    this.staleDataRebuildArmedForRestore = restoreAt
+    if (this.staleDataRebuildTimer != null) return
+    this.staleDataRebuildTimer = window.setTimeout(() => {
+      this.staleDataRebuildTimer = null
+      this.runPostRestoreStaleDataRebuild()
+    }, POST_RESTORE_STALE_DATA_REBUILD_MS)
   }
 
-  private beginPostRestoreClipPathCheck() {
+  private runPostRestoreStaleDataRebuild() {
     if (this.destroyed || !this.conn?.open) return
     if (
-      !clipPathCheckInitiatorRole(this.role, {
+      !shouldGuestInitiatePostRestoreStaleDataRebuild(this.role, {
         sessionPaired: this.sessionPaired,
         rememberGuestAuth: !!this.rememberGuestAuth,
       })
     ) {
       return
     }
-    if (this.clipPathCheckAt != null) return
     if (
       !connEstablishedBeforeRestore(this.connEstablishedAt, this.lastRestoreSignalAt)
     ) {
       return
     }
-    const nonce = ++this.clipPathCheckNonce
-    const now = Date.now()
-    this.clipPathCheckAt = now
-    ppDebugIncClipPathSent()
-    try { this.send({ t: CLIP_PATH_CHECK, n: nonce }) } catch {}
-    this.clipPathCheckTimer = window.setTimeout(
-      () => this.onClipPathConfirmDeadline(),
-      CLIP_PATH_CONFIRM_TIMEOUT_MS,
-    )
-  }
-
-  private completePostRestoreClipPathCheck() {
-    this.clearClipPathTimers()
-    ppDebugRecordClipPathAck()
-    if (connEstablishedBeforeRestore(this.connEstablishedAt, this.lastRestoreSignalAt)) {
-      this.abandonConnAfterProbeFail()
-    }
-  }
-
-  private onClipPathConfirmDeadline() {
-    this.clipPathCheckTimer = null
-    if (this.clipPathCheckAt == null) return
-    this.clipPathCheckAt = null
-    ppDebugIncClipPathTimeout()
+    ppDebugIncStaleDataRebuild()
     this.abandonConnAfterProbeFail()
   }
 
@@ -667,9 +630,6 @@ export class Link {
     this.connProbeAt = null
     this.connProbeEligible = false
     ppDebugRecordProbePong(ms)
-    if (this.lastRestoreSignalAt != null) {
-      this.armPostRestoreClipPathCheck(this.lastRestoreSignalAt)
-    }
   }
 
   private onConnProbeDeadline() {
@@ -1949,7 +1909,7 @@ export class Link {
     }
     this.clearIceRecovery()
     this.clearConnProbeTimer()
-    this.clearClipPathTimers()
+    this.clearStaleDataRebuildTimer()
     this.connProbeAt = null
     this.connProbeEligible = false
     this.remotePongCap = freshRemotePongCap()
@@ -2244,16 +2204,6 @@ export class Link {
         return
       }
       if (m.t === 'pong') return
-    }
-    if (m.t === CLIP_PATH_CHECK && typeof m.n === 'number' && connOpen) {
-      try { this.send({ t: CLIP_PATH_ACK, n: m.n }) } catch {}
-      return
-    }
-    if (m.t === CLIP_PATH_ACK && typeof m.n === 'number' && connOpen) {
-      if (this.clipPathCheckAt != null && m.n === this.clipPathCheckNonce) {
-        this.completePostRestoreClipPathCheck()
-      }
-      return
     }
     if (!this.rememberGuestLive()) return
     if (m.t === 'hello') {

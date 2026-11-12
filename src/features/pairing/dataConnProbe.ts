@@ -141,14 +141,8 @@ export function isConnProbeControlType(t: unknown): boolean {
   return t === 'ping' || t === 'pong'
 }
 
-export const CLIP_PATH_CHECK = 'clip:path-check' as const
-export const CLIP_PATH_ACK = 'clip:path-ack' as const
-export const CLIP_PATH_CONFIRM_TIMEOUT_MS = 2500
-export const CLIP_PATH_CONFIRM_DELAY_MS = 400
-
-export function isClipPathControlType(t: unknown): boolean {
-  return t === CLIP_PATH_CHECK || t === CLIP_PATH_ACK
-}
+/** Brief grace after signalling restore before forcing a fresh data conn. */
+export const POST_RESTORE_STALE_DATA_REBUILD_MS = 800
 
 /** Open data conn survived from before signalling came back — probe ping/pong can lie. */
 export function connEstablishedBeforeRestore(
@@ -159,7 +153,7 @@ export function connEstablishedBeforeRestore(
   return connEstablishedAt < restoreSignalAt
 }
 
-export function shouldArmPostRestoreClipPath(opts: {
+export function shouldArmPostRestoreStaleDataRebuild(opts: {
   connOpen: boolean
   restoreSignalAt: number | null
   connEstablishedAt: number | null
@@ -193,12 +187,13 @@ export function connProbeBlockedByRecentTraffic(opts: {
   return opts.lastSeen > 0 && opts.now - opts.lastSeen < recent
 }
 
-export function clipPathCheckInitiatorRole(role: 'host' | 'guest', opts: {
+/** Remember / paired sessions: guest tears down a pre-cut data conn and redials. */
+export function shouldGuestInitiatePostRestoreStaleDataRebuild(role: 'host' | 'guest', opts: {
   sessionPaired: boolean
   rememberGuestAuth: boolean
 }): boolean {
-  if (role === 'guest') return opts.sessionPaired || opts.rememberGuestAuth
-  return opts.sessionPaired && !opts.rememberGuestAuth
+  if (role !== 'guest') return false
+  return opts.sessionPaired || opts.rememberGuestAuth
 }
 
 /** Conn keepalive (ping/pong, lastSeen) runs on an open data conn even while remember-guest is reconnecting. */
@@ -210,6 +205,5 @@ export function shouldDispatchConnKeepalive(opts: {
 }): boolean {
   if (!opts.connOpen) return false
   if (isConnProbeControlType(opts.t)) return true
-  if (isClipPathControlType(opts.t)) return true
   return !opts.rememberGuestAuth || opts.status === 'connected'
 }
