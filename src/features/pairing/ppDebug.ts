@@ -39,9 +39,12 @@ export type PpDebugListenHost = import('./ppDebugListenHost.ts').PpDebugListenHo
 
 export type PpDebugForceDrops = import('./ppDebugForceDrops.ts').PpDebugForceDrops
 
+export type PpDebugListenSocket = import('./ppDebugListenSocket.ts').PpDebugListenSocket
+
 export type PpDebugState = {
   listenRejects: PpDebugListenRejects
   listenHost?: PpDebugListenHost
+  listenSocket?: PpDebugListenSocket
   forceDrops?: { listen: PpDebugForceDrops; code: PpDebugForceDrops }
   listenSocketOpens: number
   listenSocketClosedConnecting: number

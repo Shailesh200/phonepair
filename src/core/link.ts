@@ -54,9 +54,14 @@ import {
   ppDebugIncListenBootstrap,
   ppDebugIncListenReject,
   ppDebugIncListenSocketClosedConnecting,
-  ppDebugIncListenSocketOpen,
-  ppDebugIncListenUnavailableId,
 } from '../features/pairing/ppDebug'
+import {
+  ppDebugIncListenServerOpen,
+  ppDebugIncListenSocketUnavailableId,
+  ppDebugIncListenWsCreated,
+  ppDebugMarkListenRecoveryDrop,
+  ppDebugRecordListenFirstServerOpenAfterDrop,
+} from '../features/pairing/ppDebugListenSocket'
 import {
   ppDebugIncListenAuthCompleted,
   ppDebugIncListenAuthStarted,
@@ -113,10 +118,13 @@ import {
 } from '../remember/rememberListenClaim'
 import {
   ensureListenReclaimStarted,
-  listenBackoffForClaim,
-  listenClaimShouldGiveUp,
   shouldRearmListenPeer,
 } from '../remember/listenIdReclaim'
+import {
+  LISTEN_RECOVERY_ID_BACKOFF_MS,
+  listenBackoffForClaim,
+  listenClaimShouldGiveUp,
+} from '../remember/listenIdRecovery'
 import { guestForgetMatchesSavedLaptop } from '../remember/guestForgetMatch'
 import { REMEMBER_PROOF_TIMEOUT_MS, type RememberGatePhase } from '../remember/gate'
 import { RememberHostAuth } from '../remember/hostAuth'
@@ -209,6 +217,8 @@ export class Link {
   private lastCodeForceHookAt = 0
   private lastListenForceHookAt = 0
   private listenForceSettleUntil: number | null = null
+  private listenRecoveryMode = false
+  private listenRecoveryReclaimTimer: number | null = null
   private listenReclaimStartedAt: number | null = null
   private visibilityListener: (() => void) | null = null
   private networkListener: (() => void) | null = null
@@ -318,6 +328,10 @@ export class Link {
         if (!lp || lp.destroyed || !this.listenPeerEverOpen) return
         const run = () => {
           if (lp !== this.listenPeer || lp.destroyed) return
+          if (this.listenRecoveryActive()) {
+            this.scheduleListenRecoveryReclaim(0)
+            return
+          }
           this.ensureListenForceRunner().hookOnline(peerAsForceSignal(lp, 'listen'), false)
         }
         const deferMs = shouldDeferListenForce(
@@ -378,6 +392,9 @@ export class Link {
     this.abandonOpenDataConnForFreshPc()
     const now = Date.now()
     if (side === 'listen' || (side === 'code' && hostHasPhones(loadHostStore()))) {
+      this.beginListenIdRecovery(now)
+    }
+    if (side === 'listen' || (side === 'code' && hostHasPhones(loadHostStore()))) {
       this.ensureListenForceRunner().onSignalingDrop()
       this.ensureHostSignalRunner().onSignalingDrop()
       this.hostListenStaggerUntil = hostListenStaggerUntil(now)
@@ -405,6 +422,66 @@ export class Link {
 
   private hostHasRememberPhones(): boolean {
     return hostHasPhones(loadHostStore())
+  }
+
+  private listenRecoveryActive(): boolean {
+    return this.listenRecoveryMode || !!this.listenForceRunner?.isUnverifiedAfterDrop()
+  }
+
+  private beginListenIdRecovery(at: number) {
+    this.listenRecoveryMode = true
+    ppDebugMarkListenRecoveryDrop(at)
+    this.clearStaleRememberMainConnForRecovery()
+    this.scheduleListenRecoveryReclaim(LISTEN_RECOVERY_ID_BACKOFF_MS)
+  }
+
+  /** After a hard drop, PeerJS may keep conn.open while the PC is dead — that blocks listen auth accepts. */
+  private clearStaleRememberMainConnForRecovery() {
+    if (this.role !== 'host' || !this.hostHasRememberPhones()) return
+    const c = this.conn
+    if (!c) return
+    const pc = this.peerConnectionOf(c)
+    const pcDead = !pc
+      || pc.connectionState === 'closed'
+      || pc.iceConnectionState === 'closed'
+      || pc.iceConnectionState === 'failed'
+    if (c.open && pcDead) {
+      ppDebugIncAbandonOnSignalDrop()
+      try { c.close() } catch {}
+    }
+    if (this.conn === c) this.dropConn()
+    if (this.everConnected && !this.destroyed) {
+      this.set({ status: 'reconnecting' })
+    }
+  }
+
+  private clearListenRecoveryReclaimTimer() {
+    if (this.listenRecoveryReclaimTimer != null) {
+      clearTimeout(this.listenRecoveryReclaimTimer)
+      this.listenRecoveryReclaimTimer = null
+    }
+  }
+
+  private scheduleListenRecoveryReclaim(delayMs: number) {
+    if (this.destroyed || !this.listenRecoveryActive()) return
+    if (this.isRememberConnOnListenPeer()) return
+    this.clearListenRecoveryReclaimTimer()
+    this.listenRecoveryReclaimTimer = window.setTimeout(() => {
+      this.listenRecoveryReclaimTimer = null
+      if (this.destroyed || !this.listenRecoveryActive()) return
+      if (this.isRememberConnOnListenPeer()) return
+      void this.recycleListenPeerForServerReclaim()
+    }, delayMs)
+  }
+
+  private recycleListenPeerForServerReclaim() {
+    const lp = this.listenPeer
+    if (lp && !lp.destroyed) {
+      this.ensureListenForceRunner().rebindPeer()
+      try { lp.destroy() } catch {}
+    }
+    this.listenPeer = null
+    void this.bootstrapRememberListen()
   }
 
   private tickListenSignalForce(lp: Peer) {
@@ -499,9 +576,13 @@ export class Link {
         }
       }
       if (this.role === 'host' && this.listenSignalUnverified()) {
-        const lp = this.listenPeer
-        if (lp && !lp.destroyed) {
-          this.ensureListenForceRunner().hookOnline(peerAsForceSignal(lp, 'listen'), false)
+        if (this.listenRecoveryActive()) {
+          this.scheduleListenRecoveryReclaim(0)
+        } else {
+          const lp = this.listenPeer
+          if (lp && !lp.destroyed) {
+            this.ensureListenForceRunner().hookOnline(peerAsForceSignal(lp, 'listen'), false)
+          }
         }
       }
       this.onIceNetworkChange()
@@ -902,7 +983,15 @@ export class Link {
     if (!hostHasPhones(store) || !store) return
     if (this.listenGaveUp || this.listenBootstrapInFlight) return
     if (Date.now() < this.listenBackoffUntil) return
-    if (this.listenPeer && !this.listenPeer.destroyed && this.listenPeer.open) return
+    if (this.listenPeer && !this.listenPeer.destroyed && this.listenPeer.open) {
+      if (!(this.listenRecoveryActive() && this.listenSignalUnverified())) {
+        this.listenBootstrapInFlight = false
+        return
+      }
+      this.ensureListenForceRunner().rebindPeer()
+      try { this.listenPeer.destroy() } catch {}
+      this.listenPeer = null
+    }
     this.listenBootstrapInFlight = true
     ppDebugIncListenBootstrap()
     const rtc = config ?? (await loadRtcConfiguration())
@@ -934,6 +1023,7 @@ export class Link {
       return
     }
     this.listenSocketsOpened++
+    ppDebugIncListenWsCreated()
     const id = listenPeerId(store.listenId)
     const peer = new Peer(id, { ...SIGNAL, config: rtc })
     const prev = this.listenPeer
@@ -949,7 +1039,8 @@ export class Link {
       this.listenOwnedBefore = true
       this.listenReclaimStartedAt = null
       this.listenUnavailableFailures = 0
-      ppDebugIncListenSocketOpen()
+      ppDebugIncListenServerOpen()
+      ppDebugRecordListenFirstServerOpenAfterDrop(Date.now())
       if (this.listenForceRunner?.isUnverifiedAfterDrop()) {
         this.listenForceSettleUntil = Date.now() + FORCE_LISTEN_SETTLE_MS
       }
@@ -974,7 +1065,7 @@ export class Link {
     })
     peer.on('error', (e: any) => {
       if (e?.type !== 'unavailable-id' || this.destroyed) return
-      ppDebugIncListenUnavailableId()
+      ppDebugIncListenSocketUnavailableId()
       const t = Date.now()
       this.listenReclaimStartedAt = ensureListenReclaimStarted(
         this.listenOwnedBefore,
@@ -984,11 +1075,13 @@ export class Link {
       this.listenRetry++
       this.listenUnavailableFailures++
       this.listenUnavailableFailureTimes.push(t)
+      const recovery = this.listenRecoveryActive()
       const delay = listenBackoffForClaim(
         this.listenRetry,
         this.listenOwnedBefore,
         this.listenReclaimStartedAt,
         hostUnavailableIdBackoffMs,
+        recovery,
       )
       this.listenBackoffUntil = t + delay
       this.ensureListenForceRunner().rebindPeer()
@@ -1000,10 +1093,12 @@ export class Link {
         this.listenOwnedBefore,
         this.listenReclaimStartedAt,
         t,
+        recovery,
       )) {
         this.markListenGaveUp()
         return
       }
+      if (recovery) this.scheduleListenRecoveryReclaim(delay)
       window.setTimeout(() => {
         if (!this.destroyed && !this.listenGaveUp) void this.bootstrapRememberListen(rtc)
       }, delay)
@@ -1229,7 +1324,7 @@ export class Link {
     const target = this.dialTarget ?? peerIdForCode(this.code)
     if (this.dialTarget) ppDebugRememberDial(this.dialTarget)
     const c = peer.connect(target, { reliable: true, serialization: 'binary' })
-    const ms = dialOpenTimeoutMs(isRelayOnly())
+    const ms = dialOpenTimeoutMs(isRelayOnly(), !!this.rememberGuestAuth)
     this.inFlightDial = c
     this.pending = c
     this.inFlightDialUntil = Date.now() + ms
@@ -1461,7 +1556,11 @@ export class Link {
     if (fromListenPeer && rememberPhoneId) this.authenticatedRememberPhoneId = rememberPhoneId
     if (this.role === 'host') {
       notifyHostPhoneConnected(this.listenForceRunner, this.hostSignalRunner)
-      if (fromListenPeer) this.listenForceSettleUntil = null
+      if (fromListenPeer) {
+        this.listenForceSettleUntil = null
+        this.listenRecoveryMode = false
+        this.clearListenRecoveryReclaimTimer()
+      }
     }
     this.sessionPaired = true
     this.rememberGuestFailCount = 0
@@ -1800,6 +1899,7 @@ export class Link {
     this.releaseInFlightDial()
     this.closePending()
     this.clearAuthPending()
+    this.clearListenRecoveryReclaimTimer()
     try { this.listenPeer?.destroy() } catch {}
     this.listenPeer = null
     this.peer?.destroy()

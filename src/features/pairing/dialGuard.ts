@@ -27,7 +27,8 @@ export function reopenListenerShouldDial(): boolean {
 export const DIAL_OPEN_TIMEOUT_MS = 12_000
 export const DIAL_OPEN_TIMEOUT_RELAY_MS = 25_000
 
-export function dialOpenTimeoutMs(relayOnly: boolean): number {
+export function dialOpenTimeoutMs(relayOnly: boolean, rememberGuest = false): number {
+  if (rememberGuest) return 5_000
   return relayOnly ? DIAL_OPEN_TIMEOUT_RELAY_MS : DIAL_OPEN_TIMEOUT_MS
 }
 
