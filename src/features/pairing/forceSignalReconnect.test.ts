@@ -83,6 +83,75 @@ describe('forceSignalRunner stuck socket', () => {
     mock.timers.reset()
   })
 
+  it('keeps gaps between reconnect forces at or below 5s while CONNECTING', () => {
+    mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    const connectStarted = 0
+    let sockets = 1
+    const forceTimes: number[] = []
+    const peer = {
+      destroyed: false,
+      disconnected: false,
+      open: false,
+      signalReadyState: () => WS_CONNECTING,
+      signalConnectStartedAt: () => connectStarted,
+      disconnect() {
+        this.disconnected = true
+      },
+      reconnect() {
+        this.disconnected = false
+        sockets += 1
+        forceTimes.push(t.value)
+      },
+      sockets,
+    }
+    const t = { value: 1000 }
+    const runner = makeRunner(t)
+    runner.hook(peer, false)
+    for (let step = 0; step < 6; step += 1) {
+      t.value += FORCE_SIGNAL_DROP_HOOK_CAP_MS
+      mock.timers.tick(FORCE_SIGNAL_DROP_HOOK_CAP_MS)
+    }
+    assert.ok(forceTimes.length >= 3, `expected repeated forces, got ${forceTimes.length}`)
+    for (let i = 1; i < forceTimes.length; i += 1) {
+      assert.ok(
+        forceTimes[i] - forceTimes[i - 1] <= FORCE_SIGNAL_DROP_HOOK_CAP_MS,
+        `gap ${forceTimes[i] - forceTimes[i - 1]}ms at forces ${i - 1} and ${i}`,
+      )
+    }
+    runner.stop()
+  })
+
+  it('kills a mid-cut CONNECTING socket within 5s of restore', () => {
+    mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    const cutAt = 10_000
+    const connectStarted = 15_000
+    const restoreAt = 20_000
+    let recycleAt: number | null = null
+    const peer = {
+      destroyed: false,
+      disconnected: false,
+      open: false,
+      signalReadyState: () => WS_CONNECTING,
+      signalConnectStartedAt: () => connectStarted,
+      disconnect() {
+        this.disconnected = true
+      },
+      reconnect() {
+        this.disconnected = false
+        recycleAt = t.value
+      },
+    }
+    const t = { value: cutAt }
+    const runner = makeRunner(t)
+    runner.onSignalingDrop()
+    runner.restoreSignalAt = restoreAt
+    runner.hook(peer, false)
+    t.value = restoreAt
+    runner.hookOnline(peer, false)
+    assert.ok(recycleAt != null && recycleAt - restoreAt <= FORCE_SIGNAL_DROP_HOOK_CAP_MS)
+    runner.stop()
+  })
+
   it('creates a new socket within the open watchdog after a hook (stuck CONNECTING)', () => {
     mock.timers.enable({ apis: ['setTimeout', 'Date'] })
     const peer = makeMockPeer()

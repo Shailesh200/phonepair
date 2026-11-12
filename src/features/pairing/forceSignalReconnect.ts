@@ -23,6 +23,25 @@ export function capSignalSocketRetryMs(ms: number): number {
 }
 
 /** Watchdog then backoff must not exceed one capped gap (avoids 3s+12s stacks under throttling). */
+/** After this ms since the last force (or drop anchor), bypass CONNECTING grace / min-open refusal. */
+export function forceSignalConnectingGapOverride(
+  lastForceAt: number | null,
+  scheduleAnchor: number | null,
+  now: number,
+): boolean {
+  const anchor = lastForceAt ?? scheduleAnchor
+  if (anchor == null) return false
+  return now - anchor >= FORCE_SIGNAL_DROP_HOOK_CAP_MS
+}
+
+export function isVerifiedHealthyOpenSignalSocket(
+  peer: ForceSignalPeerStateExt,
+  unverifiedAfterDrop: boolean,
+): boolean {
+  if (!peer.open || peer.disconnected || unverifiedAfterDrop) return false
+  return (peer.signalReadyState?.() ?? null) === WS_OPEN
+}
+
 export function capSignalRetryChainMs(
   watchdogMs: number,
   backoffMs: number,
@@ -151,6 +170,7 @@ export class ForceSignalRunner {
   private timers: ForceSignalTimers
   private reclaimMinMs: number
   private onRunForce?: (kind: RunForceKind) => void
+  private lastForceAt: number | null = null
   restoreSignalAt: number | null = null
 
   constructor(
@@ -197,6 +217,7 @@ export class ForceSignalRunner {
     this.dropStartedAt = now
     this.dropHookAnchorAt = now
     this.lastCadenceAt = null
+    this.lastForceAt = null
   }
 
   onPhoneConnected() {
@@ -331,7 +352,9 @@ export class ForceSignalRunner {
     if (unverified) {
       if (this.watchdogId != null || this.retryId != null) return
       if (!signalPeerNeedsForce(peer, false)) return
-      if (!mayForceRecycleOpenSignalSocket(peer, now, this.socketReplaceOpts('tick'))) return
+      const mayTick = mayForceRecycleOpenSignalSocket(peer, now, this.socketReplaceOpts('tick'))
+      const gapTick = this.canGapOverrideForce(peer, now, 'tick')
+      if (!mayTick && !gapTick) return
       this.runForce(peer, idReclaimCap, 'tick')
       return
     }
@@ -342,7 +365,9 @@ export class ForceSignalRunner {
     }
     if (!signalPeerNeedsForce(peer, peerHealthy)) return
     if (this.watchdogId != null || this.retryId != null) return
-    if (!mayForceRecycleOpenSignalSocket(peer, now, this.socketReplaceOpts('tick'))) return
+    const mayTick = mayForceRecycleOpenSignalSocket(peer, now, this.socketReplaceOpts('tick'))
+    const gapTick = this.canGapOverrideForce(peer, now, 'tick')
+    if (!mayTick && !gapTick) return
     this.runForce(peer, idReclaimCap, 'tick')
   }
 
@@ -353,6 +378,30 @@ export class ForceSignalRunner {
       onlineAt: onlineAt ?? this.restoreSignalAt ?? undefined,
       restoreSignalAt: this.restoreSignalAt,
     }
+  }
+
+  private forceScheduleAnchor(): number | null {
+    return this.lastForceAt ?? this.dropHookAnchorAt ?? this.dropStartedAt
+  }
+
+  private msUntilForceGapAllowed(now: number): number {
+    const anchor = this.forceScheduleAnchor()
+    if (anchor == null) return 0
+    return capSignalSocketRetryMs(Math.max(0, anchor + FORCE_SIGNAL_DROP_HOOK_CAP_MS - now))
+  }
+
+  private canGapOverrideForce(
+    peer: ForceSignalPeerStateExt,
+    now: number,
+    mode: ForceMode,
+  ): boolean {
+    if (isVerifiedHealthyOpenSignalSocket(peer, this.unverifiedAfterDrop)) return false
+    if (mode === 'cadence' && peer.open && !peer.disconnected) return false
+    return forceSignalConnectingGapOverride(
+      this.lastForceAt,
+      this.dropHookAnchorAt ?? this.dropStartedAt,
+      now,
+    )
   }
 
   private hookRetryBackoff(attempt: number, mode: ForceMode, now: number): number {
@@ -373,12 +422,21 @@ export class ForceSignalRunner {
     if (peer.destroyed || this.stopped) return
     const now = this.timers.now()
     const opts = this.socketReplaceOpts(mode, onlineAt)
-    if (!mayForceRecycleOpenSignalSocket(peer, now, opts)) {
-      this.armWatchdog(peer, idReclaimCap, mode, onlineAt)
+    const may = mayForceRecycleOpenSignalSocket(peer, now, opts)
+    const gap = this.canGapOverrideForce(peer, now, mode)
+    if (!may && !gap) {
+      this.armWatchdog(
+        peer,
+        idReclaimCap,
+        mode,
+        onlineAt,
+        Math.max(1, this.msUntilForceGapAllowed(now)),
+      )
       return
     }
     this.attempt += 1
     forceSignalReconnect(peer)
+    this.lastForceAt = now
     this.onRunForce?.(countKind ?? mode)
     if (mode === 'cadence') return
     this.armWatchdog(peer, idReclaimCap, mode, onlineAt)
@@ -389,6 +447,7 @@ export class ForceSignalRunner {
     idReclaimCap: boolean,
     mode: ForceMode,
     onlineAt?: number,
+    maxWatchdogMs?: number,
   ) {
     if (this.watchdogId != null) {
       this.timers.clearTimeout(this.watchdogId)
@@ -401,8 +460,10 @@ export class ForceSignalRunner {
       FORCE_SIGNAL_OPEN_WATCHDOG_MS,
       this.unverifiedAfterDrop,
     )
+    let watchdogMs = rawWatchdogMs
+    if (maxWatchdogMs != null) watchdogMs = Math.min(watchdogMs, maxWatchdogMs)
     const rawBackoffMs = this.hookRetryBackoff(this.attempt, mode, now)
-    const { watchdogMs } = capSignalRetryChainMs(rawWatchdogMs, rawBackoffMs)
+    watchdogMs = Math.max(1, capSignalRetryChainMs(watchdogMs, rawBackoffMs).watchdogMs)
     this.watchdogId = this.timers.setTimeout(() => {
       this.watchdogId = null
       if (peer.destroyed || this.stopped) return
@@ -411,11 +472,23 @@ export class ForceSignalRunner {
         return
       }
       const t = this.timers.now()
-      if (!mayForceRecycleOpenSignalSocket(peer, t, this.socketReplaceOpts(mode, onlineAt))) {
-        this.armWatchdog(peer, idReclaimCap, mode, onlineAt)
+      const may = mayForceRecycleOpenSignalSocket(peer, t, this.socketReplaceOpts(mode, onlineAt))
+      const gap = this.canGapOverrideForce(peer, t, mode)
+      if (!may && !gap) {
+        this.armWatchdog(
+          peer,
+          idReclaimCap,
+          mode,
+          onlineAt,
+          Math.max(1, this.msUntilForceGapAllowed(t)),
+        )
         return
       }
       if (idReclaimCap && forceReclaimExpired(this.reclaimStartedAt, t, this.reclaimMinMs)) return
+      if (gap) {
+        this.runForce(peer, idReclaimCap, mode, onlineAt, 'retry')
+        return
+      }
       let delay = capSignalSocketRetryMs(this.hookRetryBackoff(this.attempt, mode, t))
       if (watchdogMs + delay > FORCE_SIGNAL_DROP_HOOK_CAP_MS) {
         delay = Math.max(0, FORCE_SIGNAL_DROP_HOOK_CAP_MS - watchdogMs)
@@ -432,8 +505,16 @@ export class ForceSignalRunner {
           return
         }
         const retryNow = this.timers.now()
-        if (!mayForceRecycleOpenSignalSocket(peer, retryNow, this.socketReplaceOpts(mode, onlineAt))) {
-          this.armWatchdog(peer, idReclaimCap, mode, onlineAt)
+        const mayRetry = mayForceRecycleOpenSignalSocket(peer, retryNow, this.socketReplaceOpts(mode, onlineAt))
+        const gapRetry = this.canGapOverrideForce(peer, retryNow, mode)
+        if (!mayRetry && !gapRetry) {
+          this.armWatchdog(
+            peer,
+            idReclaimCap,
+            mode,
+            onlineAt,
+            Math.max(1, this.msUntilForceGapAllowed(retryNow)),
+          )
           return
         }
         if (idReclaimCap && forceReclaimExpired(this.reclaimStartedAt, retryNow, this.reclaimMinMs)) return

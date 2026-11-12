@@ -6,8 +6,11 @@ import {
   buildLinkHelloMessage,
   dataConnProbeSucceeded,
   freshRemotePongCap,
+  effectiveRemotePongCapForProbe,
   helloCapsIncludePong,
+  isNewToNewProbeSession,
   shouldDispatchConnKeepalive,
+  shouldMarkConnProbeEligible,
   shouldRunDataConnProbe,
 } from './dataConnProbe.ts'
 
@@ -125,6 +128,65 @@ describe('hello pong capability', () => {
     assert.equal(helloCapsIncludePong([]), false)
     assert.equal(helloCapsIncludePong(['clip']), false)
     assert.equal(helloCapsIncludePong(['pong']), true)
+  })
+})
+
+describe('new-to-new probe session', () => {
+  const session = {
+    everConnected: true,
+    sessionPaired: true,
+    rememberGuestAuth: false,
+  }
+
+  it('laptop (host) marks eligible and assumes remote pong before hello on restore', () => {
+    assert.equal(shouldMarkConnProbeEligible({
+      connOpen: true,
+      connProbeEligible: false,
+      ...session,
+    }), true)
+    assert.equal(effectiveRemotePongCapForProbe(false, session), true)
+    assert.equal(
+      shouldRunDataConnProbe({
+        connOpen: true,
+        localOffersPong: true,
+        remoteSupportsPong: effectiveRemotePongCapForProbe(false, session),
+        probePending: false,
+        lastSeen: 0,
+        now: 10_000,
+      }),
+      true,
+    )
+  })
+
+  it('phone (guest) same policy on restore when conn stayed open', () => {
+    assert.equal(isNewToNewProbeSession(session), true)
+    assert.equal(shouldMarkConnProbeEligible({
+      connOpen: true,
+      connProbeEligible: false,
+      ...session,
+    }), true)
+    assert.equal(
+      shouldRunDataConnProbe({
+        connOpen: true,
+        localOffersPong: true,
+        remoteSupportsPong: effectiveRemotePongCapForProbe(freshRemotePongCap(), session),
+        probePending: false,
+        lastSeen: 0,
+        now: 10_000,
+      }),
+      true,
+    )
+  })
+
+  it('remember-guest auth path still requires explicit remote pong cap', () => {
+    const remember = { ...session, rememberGuestAuth: true }
+    assert.equal(isNewToNewProbeSession(remember), false)
+    assert.equal(shouldMarkConnProbeEligible({
+      connOpen: true,
+      connProbeEligible: false,
+      ...remember,
+    }), false)
+    assert.equal(effectiveRemotePongCapForProbe(false, remember), false)
   })
 })
 

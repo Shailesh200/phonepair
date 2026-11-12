@@ -52,6 +52,8 @@ import {
   dataConnProbeSucceeded,
   freshRemotePongCap,
   helloCapsIncludePong,
+  effectiveRemotePongCapForProbe,
+  shouldMarkConnProbeEligible,
   shouldRunDataConnProbe,
 } from '../features/pairing/dataConnProbe'
 import {
@@ -404,7 +406,7 @@ export class Link {
   private maybeBootstrapMissingListenPeer(now = Date.now()) {
     if (this.listenGaveUp || !this.hostHasRememberPhones()) return
     const lp = this.listenPeer
-    if (lp && !lp.destroyed) return
+    if (lp && !lp.destroyed && lp.open) return
     if (this.listenBootstrapInFlight || now < this.listenBackoffUntil) return
     if (!this.shouldHostSignalWorkNow(now)) return
     if (!this.stuckOfflineBootstrapPaceOk(now)) return
@@ -430,6 +432,20 @@ export class Link {
     if (this.conn?.open) this.connProbeEligible = true
   }
 
+  private syncConnProbeEligibleForSession() {
+    if (
+      shouldMarkConnProbeEligible({
+        connOpen: !!this.conn?.open,
+        connProbeEligible: this.connProbeEligible,
+        everConnected: this.everConnected,
+        sessionPaired: this.sessionPaired,
+        rememberGuestAuth: !!this.rememberGuestAuth,
+      })
+    ) {
+      this.connProbeEligible = true
+    }
+  }
+
   private syncRestoreSignalForForce(at: number) {
     this.lastRestoreSignalAt = at
     if (this.listenForceRunner) this.listenForceRunner.restoreSignalAt = at
@@ -439,13 +455,15 @@ export class Link {
   private maybeRecycleStalledSignaling(peer: Peer | null, side: 'listen' | 'code') {
     if (!peer || peer.destroyed) return
     const wrapped = peerAsForceSignal(peer, side)
-    if (!shouldKillStalledConnectingSocket(wrapped, Date.now())) return
+    const restoreAt = this.lastRestoreSignalAt
+    if (!shouldKillStalledConnectingSocket(wrapped, Date.now(), undefined, restoreAt)) return
     ppDebugIncStalledWsKilled()
     forceSignalReconnect(peer)
   }
 
   private noteRestoreSignal(at: number) {
     this.syncRestoreSignalForForce(at)
+    this.syncConnProbeEligibleForSession()
     if (this.role === 'host') {
       this.maybeRecycleStalledSignaling(this.listenPeer, 'listen')
       this.maybeRecycleStalledSignaling(this.peer, 'code')
@@ -465,7 +483,11 @@ export class Link {
       !shouldRunDataConnProbe({
         connOpen: !!this.conn?.open,
         localOffersPong: true,
-        remoteSupportsPong: this.remotePongCap,
+        remoteSupportsPong: effectiveRemotePongCapForProbe(this.remotePongCap, {
+          everConnected: this.everConnected,
+          sessionPaired: this.sessionPaired,
+          rememberGuestAuth: !!this.rememberGuestAuth,
+        }),
         probePending: this.connProbeAt != null || this.connProbeTimer != null,
         lastSeen: this.lastSeen,
         now,
@@ -820,7 +842,10 @@ export class Link {
       if (serverOpenAt != null) this.listenRecoveryRearmedOpenAt = serverOpenAt
       return
     }
-    if (!shouldOneShotRecoveryRearm(serverOpenAt, this.listenRecoveryRearmedOpenAt)) return
+    if (!shouldOneShotRecoveryRearm(serverOpenAt, this.listenRecoveryRearmedOpenAt)) {
+      if (!lp.disconnected || this.ensureListenForceRunner().runnerBusy()) return
+      this.listenRecoveryRearmedOpenAt = null
+    }
     if (serverOpenAt != null) this.listenRecoveryRearmedOpenAt = serverOpenAt
     if (!this.ensureListenForceRunner().runnerBusy()) {
       this.ensureListenForceRunner().hook(peerAsForceSignal(lp, 'listen'), false)

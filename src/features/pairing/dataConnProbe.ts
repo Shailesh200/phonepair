@@ -13,6 +13,39 @@ export function freshRemotePongCap(): false {
   return false
 }
 
+/** Fresh paired session (no remember-guest auth path): both sides advertise pong in hello. */
+export function isNewToNewProbeSession(opts: {
+  everConnected: boolean
+  sessionPaired: boolean
+  rememberGuestAuth: boolean
+}): boolean {
+  return opts.everConnected && opts.sessionPaired && !opts.rememberGuestAuth
+}
+
+export function effectiveRemotePongCapForProbe(
+  remotePongCap: boolean,
+  session: { everConnected: boolean; sessionPaired: boolean; rememberGuestAuth: boolean },
+): boolean {
+  if (remotePongCap) return true
+  return isNewToNewProbeSession(session)
+}
+
+export function shouldMarkConnProbeEligible(opts: {
+  connOpen: boolean
+  connProbeEligible: boolean
+  everConnected: boolean
+  sessionPaired: boolean
+  rememberGuestAuth: boolean
+}): boolean {
+  if (!opts.connOpen) return false
+  if (opts.connProbeEligible) return true
+  return isNewToNewProbeSession({
+    everConnected: opts.everConnected,
+    sessionPaired: opts.sessionPaired,
+    rememberGuestAuth: opts.rememberGuestAuth,
+  })
+}
+
 export function helloCapsIncludePong(caps: unknown): boolean {
   return Array.isArray(caps) && caps.includes(HELLO_CAP_PONG)
 }
