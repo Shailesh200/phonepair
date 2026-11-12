@@ -365,6 +365,7 @@ export class Link {
   }
 
   private nudgeListenForceAfterDrop() {
+    if (this.listenRecoveryMode) return
     const lp = this.listenPeer
     if (!lp || lp.destroyed || !this.hostHasRememberPhones()) return
     const now = Date.now()
@@ -432,7 +433,12 @@ export class Link {
     this.listenRecoveryMode = true
     ppDebugMarkListenRecoveryDrop(at)
     this.clearStaleRememberMainConnForRecovery()
-    this.scheduleListenRecoveryReclaim(LISTEN_RECOVERY_ID_BACKOFF_MS)
+    const lp = this.listenPeer
+    if (lp && !lp.destroyed && lp.open && !lp.disconnected) {
+      this.scheduleListenRecoveryReclaim(LISTEN_RECOVERY_ID_BACKOFF_MS)
+      return
+    }
+    void this.recycleListenPeerForServerReclaim()
   }
 
   /** After a hard drop, PeerJS may keep conn.open while the PC is dead — that blocks listen auth accepts. */
@@ -476,6 +482,7 @@ export class Link {
 
   private recycleListenPeerForServerReclaim() {
     const lp = this.listenPeer
+    if (lp && !lp.destroyed && lp.open && !lp.disconnected) return
     if (lp && !lp.destroyed) {
       this.ensureListenForceRunner().rebindPeer()
       try { lp.destroy() } catch {}
@@ -486,6 +493,7 @@ export class Link {
 
   private tickListenSignalForce(lp: Peer) {
     if (!this.hostHasRememberPhones() || lp.destroyed) return
+    if (this.listenRecoveryMode) return
     if (!listenForceTickAllowed(this.listenPeerEverOpen, this.listenSignalUnverified())) return
     const now = Date.now()
     const codePeer = this.peer
@@ -984,13 +992,8 @@ export class Link {
     if (this.listenGaveUp || this.listenBootstrapInFlight) return
     if (Date.now() < this.listenBackoffUntil) return
     if (this.listenPeer && !this.listenPeer.destroyed && this.listenPeer.open) {
-      if (!(this.listenRecoveryActive() && this.listenSignalUnverified())) {
-        this.listenBootstrapInFlight = false
-        return
-      }
-      this.ensureListenForceRunner().rebindPeer()
-      try { this.listenPeer.destroy() } catch {}
-      this.listenPeer = null
+      this.listenBootstrapInFlight = false
+      return
     }
     this.listenBootstrapInFlight = true
     ppDebugIncListenBootstrap()
@@ -1041,7 +1044,10 @@ export class Link {
       this.listenUnavailableFailures = 0
       ppDebugIncListenServerOpen()
       ppDebugRecordListenFirstServerOpenAfterDrop(Date.now())
-      if (this.listenForceRunner?.isUnverifiedAfterDrop()) {
+      if (this.listenRecoveryMode) {
+        this.clearListenRecoveryReclaimTimer()
+        this.ensureListenForceRunner().endUnverifiedForcing()
+      } else if (this.listenForceRunner?.isUnverifiedAfterDrop()) {
         this.listenForceSettleUntil = Date.now() + FORCE_LISTEN_SETTLE_MS
       }
       this.ensureListenForceRunner().onOpen()
@@ -1333,6 +1339,7 @@ export class Link {
       this.dialHangTimer = null
       if (!this.destroyed && this.inFlightDial === c && !c.open) {
         if (this.rememberGuestAuth) ppDebugRememberDialError('dial-timeout')
+        if (this.authPending?.conn === c) this.clearAuthPending()
         this.releaseInFlightDial()
         this.dropConn()
         if (this.role === 'guest' && !this.destroyed) this.scheduleDial()

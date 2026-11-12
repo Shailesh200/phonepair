@@ -10,7 +10,7 @@ import {
 export const LISTEN_RECOVERY_RECLAIM_MAX_MS = 120_000
 export const LISTEN_RECOVERY_ID_BACKOFF_MS = 2500
 
-export const REMEMBER_GUEST_DIAL_OPEN_MS = 5_000
+export const REMEMBER_GUEST_DIAL_OPEN_MS = 8_000
 
 export function listenRecoveryReclaimMaxMs(recoveryMode: boolean): number {
   return recoveryMode ? LISTEN_RECOVERY_RECLAIM_MAX_MS : LISTEN_ID_RECLAIM_MIN_MS

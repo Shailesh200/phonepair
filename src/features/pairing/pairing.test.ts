@@ -95,7 +95,7 @@ describe('dial guard', () => {
   it('uses longer dial timeout in relay mode', () => {
     assert.equal(dialOpenTimeoutMs(false), 12_000)
     assert.equal(dialOpenTimeoutMs(true), 25_000)
-    assert.equal(dialOpenTimeoutMs(false, true), 5_000)
+    assert.equal(dialOpenTimeoutMs(false, true), 8_000)
   })
 
   it('does not redial from the watchdog while a dial is still in flight at 15s', () => {
