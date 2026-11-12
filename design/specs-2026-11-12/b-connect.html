@@ -9,8 +9,12 @@
 <style>
 @media (max-width:700px){
   .grid .col:first-child{display:none}
-  .pp-step{padding:10px}
-  .pp-steps{gap:8px}
+  .pp-step{padding:8px 10px}
+  .pp-steps{gap:6px}
+  .pp-code{gap:4px}
+  .pp-code-input{height:44px;max-width:34px;font-size:18px;min-width:0}
+  .pp-code-go{width:40px;height:44px}
+  .pp-step p{margin-top:2px}
 }
 </style>
 </head>
@@ -30,6 +34,10 @@
       <div class="col">
         <section class="card pad" data-testid="remote-panel" data-state="steps" data-os="mac">
           <h3>Laptop control</h3>
+          <div class="pp-os-toggle" role="group" aria-label="Operating system">
+            <button type="button" data-os-choice="mac" aria-selected="true">Mac</button>
+            <button type="button" data-os-choice="windows" aria-selected="false">Windows</button>
+          </div>
           <button type="button" class="btn big pp-connect" data-testid="connect-laptop">Connect laptop control</button>
           <ol class="pp-steps" data-testid="helper-steps">
             <li class="pp-step pp-step--active">
@@ -38,7 +46,7 @@
                 <b>Download the helper</b>
                 <p class="mut small" data-testid="helper-hint">Download PhonePair Helper, then come back to this page.</p>
                 <p class="helper-downloads">
-                  <a class="btn pp-os-btn on" data-testid="download-mac" href="https://github.com/Shailesh200/phonepair/releases/latest">Download for Mac</a>
+                  <a class="btn ghost pp-os-btn" data-testid="download-mac" href="https://github.com/Shailesh200/phonepair/releases/latest">Download for Mac</a>
                   <a class="btn ghost pp-os-btn" data-testid="download-win" href="https://github.com/Shailesh200/phonepair/releases/latest">Download for Windows</a>
                 </p>
               </div>
@@ -47,15 +55,16 @@
               <span class="step-n">2</span>
               <div>
                 <b>Open it</b>
-                <p class="mut small" data-testid="mac-open-steps">Open the DMG, drag PhonePair Helper to Applications, and open it.</p>
-                <p class="mut small" data-testid="win-open-steps">If SmartScreen appears, click More info, then Run anyway.</p>
+                <p class="mut small for-mac" data-testid="mac-open-steps">Open the DMG, drag PhonePair Helper to Applications, then open it.</p>
+                <p class="mut small for-win" data-testid="win-open-steps">Run the installer. If SmartScreen appears, click More info, then Run anyway.</p>
               </div>
             </li>
-            <li class="pp-step pp-step--mac">
+            <li class="pp-step">
               <span class="step-n">3</span>
               <div>
-                <b>Allow Accessibility</b>
-                <p class="mut small">macOS needs this so the helper can move the pointer and send keys.</p>
+                <b>Allow access</b>
+                <p class="mut small for-mac">Allow Accessibility: System Settings &gt; Privacy &amp; Security &gt; Accessibility &gt; turn on PhonePair Helper. This lets it move the pointer and type.</p>
+                <p class="mut small for-win">Allow access: if Windows asks to allow PhonePair Helper through the firewall or to make changes, click Allow / Yes.</p>
               </div>
             </li>
             <li class="pp-step">
@@ -63,17 +72,20 @@
               <div>
                 <b>Enter the 6-digit code</b>
                 <div class="pp-code" data-testid="helper-code" role="group" aria-label="Helper code">
-                  <input class="pp-code-input" inputmode="numeric" maxlength="1" aria-label="Digit 1">
-                  <input class="pp-code-input" inputmode="numeric" maxlength="1" aria-label="Digit 2">
-                  <input class="pp-code-input" inputmode="numeric" maxlength="1" aria-label="Digit 3">
-                  <input class="pp-code-input" inputmode="numeric" maxlength="1" aria-label="Digit 4">
-                  <input class="pp-code-input" inputmode="numeric" maxlength="1" aria-label="Digit 5">
-                  <input class="pp-code-input" inputmode="numeric" maxlength="1" aria-label="Digit 6">
+                  <input class="pp-code-input" inputmode="numeric" maxlength="1" aria-label="Digit 1" value="4">
+                  <input class="pp-code-input" inputmode="numeric" maxlength="1" aria-label="Digit 2" value="8">
+                  <input class="pp-code-input" inputmode="numeric" maxlength="1" aria-label="Digit 3" value="2">
+                  <input class="pp-code-input" inputmode="numeric" maxlength="1" aria-label="Digit 4" value="1">
+                  <input class="pp-code-input" inputmode="numeric" maxlength="1" aria-label="Digit 5" value="9">
+                  <input class="pp-code-input" inputmode="numeric" maxlength="1" aria-label="Digit 6" value="6">
+                  <button type="button" class="pp-code-go" aria-label="Connect">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+                  </button>
                 </div>
               </div>
             </li>
           </ol>
-          <p class="mut small" data-testid="helper-status" aria-live="polite" style="margin-top:10px">Not connected</p>
+          <p class="mut small" data-testid="helper-status" aria-live="polite" style="margin-top:8px">Not connected</p>
           <details>
             <summary class="pp-dev-link">Developer</summary>
             <p class="mut small" data-testid="helper-dev-note"><code>cd helper && npm start</code></p>
@@ -82,5 +94,15 @@
       </div>
     </div>
   </div>
+  <script>
+    if (location.hash === "#windows") {
+      var card = document.querySelector("[data-testid=remote-panel]");
+      card.dataset.os = "windows";
+      card.querySelector("[data-os-choice=mac]").setAttribute("aria-selected", "false");
+      card.querySelector("[data-os-choice=windows]").setAttribute("aria-selected", "true");
+      card.querySelectorAll(".pp-code-input").forEach(function (el) { el.value = ""; });
+      card.querySelector(".pp-code-go").disabled = true;
+    }
+  </script>
 </body>
 </html>

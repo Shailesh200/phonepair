@@ -52,7 +52,8 @@
 .pp-step p { margin-top: 4px; }
 .pp-step--active { border-color: var(--accent); background: var(--tile); }
 .pp-step--done .step-n { background: var(--ok); }
-[data-os="windows"] .pp-step--mac { display: none; }
+[data-os="mac"] .for-win,
+[data-os="windows"] .for-mac { display: none; }
 
 [data-state="idle"] .pp-steps,
 [data-state="connected"] .pp-steps { display: none; }
@@ -61,16 +62,63 @@
 [data-state="connected"] .pp-connect,
 [data-state="error"] .pp-connect { display: none; }
 
+.pp-os-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 200px;
+  gap: 4px;
+  padding: 3px;
+  margin-bottom: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.pp-os-toggle button {
+  min-height: 36px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.pp-os-toggle button[aria-selected="true"],
+[data-os="mac"] .pp-os-toggle [data-os-choice="mac"],
+[data-os="windows"] .pp-os-toggle [data-os-choice="windows"] {
+  background: var(--surface);
+  color: var(--text);
+}
 .pp-os-btn { min-height: 44px; }
-.pp-os-btn.on {
+.pp-os-btn.on,
+[data-os="mac"] [data-testid="download-mac"],
+[data-os="windows"] [data-testid="download-win"] {
   background: var(--accent);
   color: var(--accent-ink);
+  border-color: transparent;
 }
 
-.pp-code { display: flex; gap: 8px; margin-top: 8px; }
+.pp-code { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.pp-code-go {
+  width: 52px;
+  height: 52px;
+  flex: none;
+  border-radius: var(--r-md);
+  background: var(--accent);
+  color: var(--accent-ink);
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+.pp-code-go svg { width: 22px; height: 22px; }
+.pp-code-go:disabled {
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  cursor: default;
+}
 .pp-code-input {
   width: 42px;
   height: 52px;
+  flex: 1 1 0;
+  max-width: 48px;
   text-align: center;
   font-family: var(--mono);
   font-size: 22px;

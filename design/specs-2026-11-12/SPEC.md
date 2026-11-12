@@ -33,12 +33,12 @@ One card, `data-testid="remote-panel"`, `data-os="mac"|"windows"`, `data-state` 
 | `connected` | Steps hidden. `helper-status` uses `.on` (existing green). Copy: **Connected**. |
 | `error` | Existing `.err`. Copy stays: **Couldn't reach the helper. Make sure it's running, and click Allow if Chrome asks about local network access, then try again.** Rejected code: **That code was rejected. Check the helper window and try again.** |
 
-Steps (all visible in `steps`, not a wizard):
+`.pp-os-toggle` sits at the top of the guide (Mac / Windows) and auto-selects the detected OS (`data-os`). Steps stay open together, not a wizard.
 
-1. **Download the helper.** `data-testid="download-mac"` and `download-win`. Add `.on` to the detected OS.
-2. **Open it.** Mac `data-testid="mac-open-steps"`: Open the DMG, drag PhonePair Helper to Applications, and open it. Windows `data-testid="win-open-steps"`: If SmartScreen appears, click More info, then Run anyway.
-3. **Allow Accessibility** (`.pp-step--mac`, hidden when `data-os="windows"`). Why: macOS needs this so the helper can move the pointer and send keys.
-4. **Enter the 6-digit code.** Six `.pp-code-input` boxes inside `[data-testid="helper-code"]`. Digits only, length 6.
+1. **Download the helper.** `data-testid="download-mac"` and `download-win`. Highlight the selected OS (`.on`).
+2. **Open it.** Mac `mac-open-steps`: Open the DMG, drag PhonePair Helper to Applications, then open it. Windows `win-open-steps`: Run the installer. If SmartScreen appears, click More info, then Run anyway.
+3. **Allow access.** Mac: Allow Accessibility: System Settings > Privacy & Security > Accessibility > turn on PhonePair Helper. This lets it move the pointer and type. Windows: Allow access: if Windows asks to allow PhonePair Helper through the firewall or to make changes, click Allow / Yes.
+4. **Enter the 6-digit code.** Six `.pp-code-input` boxes inside `[data-testid="helper-code"]`. `.pp-code-go` sits on the right, same height as the boxes: `--accent` background, `--accent-ink` arrow, `aria-label="Connect"`. Disabled and muted until 6 digits are entered.
 
 No “run from source” line. `.pp-dev-link` (**Developer**) reveals `data-testid="helper-dev-note"`: `cd helper && npm start`.
 
