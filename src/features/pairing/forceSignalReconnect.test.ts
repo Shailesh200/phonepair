@@ -3,10 +3,13 @@ import assert from 'node:assert/strict'
 import {
   FORCE_SIGNAL_OPEN_WATCHDOG_MS,
   FORCE_SIGNAL_RECLAIM_MIN_MS,
+  FORCE_SIGNAL_DROP_HOOK_CAP_MS,
+  SIGNAL_FRESH_CONNECTING_GRACE_MS,
   FORCE_SIGNAL_VERIFY_CADENCE_MS,
   FORCE_SIGNAL_VERIFY_FAST_PHASE_MS,
   FORCE_SIGNAL_VERIFY_SLOW_CADENCE_MS,
   ForceSignalRunner,
+  forceSignalGapOverrideAllowed,
   forceSignalCadenceDue,
   forceSignalReconnect,
   forceReclaimExpired,
@@ -80,6 +83,167 @@ describe('forceSignalReconnect', () => {
 describe('forceSignalRunner stuck socket', () => {
   afterEach(() => {
     mock.timers.reset()
+  })
+
+  it('keeps gaps between reconnect forces at or below 5s while CONNECTING', () => {
+    mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    const connectStarted = 0
+    let sockets = 1
+    const forceTimes: number[] = []
+    const peer = {
+      destroyed: false,
+      disconnected: false,
+      open: false,
+      signalReadyState: () => WS_CONNECTING,
+      signalConnectStartedAt: () => connectStarted,
+      disconnect() {
+        this.disconnected = true
+      },
+      reconnect() {
+        this.disconnected = false
+        sockets += 1
+        forceTimes.push(t.value)
+      },
+      sockets,
+    }
+    const t = { value: 1000 }
+    const runner = makeRunner(t)
+    runner.hook(peer, false)
+    for (let step = 0; step < 6; step += 1) {
+      t.value += FORCE_SIGNAL_DROP_HOOK_CAP_MS
+      mock.timers.tick(FORCE_SIGNAL_DROP_HOOK_CAP_MS)
+    }
+    assert.ok(forceTimes.length >= 3, `expected repeated forces, got ${forceTimes.length}`)
+    for (let i = 1; i < forceTimes.length; i += 1) {
+      assert.ok(
+        forceTimes[i] - forceTimes[i - 1] <= FORCE_SIGNAL_DROP_HOOK_CAP_MS,
+        `gap ${forceTimes[i] - forceTimes[i - 1]}ms at forces ${i - 1} and ${i}`,
+      )
+    }
+    runner.stop()
+  })
+
+  it('defers gap override on fresh CONNECTING until 8s from connect start', () => {
+    const t0 = 1000
+    const started = t0 + 500
+    const peer = {
+      destroyed: false,
+      disconnected: false,
+      open: false,
+      signalReadyState: () => WS_CONNECTING,
+      signalConnectStartedAt: () => started,
+    }
+    const opts = {
+      lastForceAt: t0,
+      scheduleAnchor: t0,
+      restoreSignalAt: null,
+      mode: 'hook' as const,
+    }
+    assert.equal(forceSignalGapOverrideAllowed(peer, t0 + 8499, opts), false)
+    assert.equal(forceSignalGapOverrideAllowed(peer, t0 + 8500, opts), true)
+    assert.equal(SIGNAL_FRESH_CONNECTING_GRACE_MS, 8000)
+  })
+
+  it('fresh CONNECTING from +0.5s is not recycled before force+8.5s then is if still stuck', () => {
+    mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    const t0 = 1000
+    let connectStarted = t0 - 20_000
+    let recycleCount = 0
+    const peer = {
+      destroyed: false,
+      disconnected: false,
+      open: false,
+      signalReadyState: () => WS_CONNECTING,
+      signalConnectStartedAt: () => connectStarted,
+      disconnect() {
+        this.disconnected = true
+      },
+      reconnect() {
+        this.disconnected = false
+        recycleCount += 1
+        connectStarted = t0 + 500
+      },
+    }
+    const t = { value: t0 }
+    const runner = makeRunner(t)
+    runner.hook(peer, false)
+    assert.equal(recycleCount, 1)
+    t.value = t0 + 8499
+    mock.timers.tick(7499)
+    assert.equal(recycleCount, 1)
+    t.value = t0 + 9000
+    mock.timers.tick(501)
+    assert.ok(recycleCount >= 2)
+    runner.stop()
+  })
+
+  it('does not gap-force a fresh OPEN socket within 10s while unverified after drop', () => {
+    mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    const dropAt = 1000
+    const openAt = dropAt + 1000
+    const peer = makeMockPeer()
+    const peerExt = {
+      ...peer,
+      signalReadyState: () => (peer.open ? WS_OPEN : WS_CONNECTING),
+      signalPeerOpenAt: () => (peer.open ? openAt : null),
+      signalConnectStartedAt: () => dropAt,
+    }
+    const t = { value: dropAt }
+    const runner = makeRunner(t)
+    runner.onSignalingDrop()
+    runner.hook(peerExt, false)
+    const afterForce = peer.sockets.length
+    t.value = openAt
+    peerExt.open = true
+    peerExt.disconnected = false
+    const s = peerExt._getSocket()
+    if (s) s.readyState = WS_OPEN
+    let prev = openAt
+    const end = dropAt + 10_000
+    while (prev < end) {
+      const step = Math.min(FORCE_SIGNAL_DROP_HOOK_CAP_MS, end - prev)
+      prev += step
+      t.value = prev
+      mock.timers.tick(step)
+      assert.equal(
+        peer.sockets.length,
+        afterForce,
+        `unexpected force between +1s open and +10s after drop at t=${prev}`,
+      )
+    }
+    assert.equal(runner.isUnverifiedAfterDrop(), true)
+    runner.stop()
+  })
+
+  it('kills a mid-cut CONNECTING socket within 5s of restore', () => {
+    mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    const cutAt = 10_000
+    const connectStarted = 15_000
+    const restoreAt = 20_000
+    let recycleAt: number | null = null
+    const peer = {
+      destroyed: false,
+      disconnected: false,
+      open: false,
+      signalReadyState: () => WS_CONNECTING,
+      signalConnectStartedAt: () => connectStarted,
+      disconnect() {
+        this.disconnected = true
+      },
+      reconnect() {
+        this.disconnected = false
+        recycleAt = t.value
+      },
+    }
+    const t = { value: cutAt }
+    const runner = makeRunner(t)
+    runner.onSignalingDrop()
+    runner.restoreSignalAt = restoreAt
+    runner.hook(peer, false)
+    t.value = restoreAt
+    runner.hookOnline(peer, false)
+    assert.ok(recycleAt != null && recycleAt - restoreAt <= FORCE_SIGNAL_DROP_HOOK_CAP_MS)
+    runner.stop()
   })
 
   it('creates a new socket within the open watchdog after a hook (stuck CONNECTING)', () => {
@@ -263,14 +427,15 @@ describe('forceSignalRunner stuck socket', () => {
     runner.stop()
   })
 
-  it('uses 60s cadence after the first 5 minutes of unverified forcing', () => {
-    assert.equal(forceSignalUnverifiedIntervalMs(FORCE_SIGNAL_VERIFY_FAST_PHASE_MS - 1), FORCE_SIGNAL_VERIFY_CADENCE_MS)
-    assert.equal(forceSignalUnverifiedIntervalMs(FORCE_SIGNAL_VERIFY_FAST_PHASE_MS), FORCE_SIGNAL_VERIFY_SLOW_CADENCE_MS)
+  it('cadence interval is capped at 5s (fast and slow phases)', () => {
+    assert.equal(forceSignalUnverifiedIntervalMs(FORCE_SIGNAL_VERIFY_FAST_PHASE_MS - 1), FORCE_SIGNAL_DROP_HOOK_CAP_MS)
+    assert.equal(forceSignalUnverifiedIntervalMs(FORCE_SIGNAL_VERIFY_FAST_PHASE_MS), FORCE_SIGNAL_DROP_HOOK_CAP_MS)
     const drop = 0
-    assert.equal(forceSignalCadenceDue(drop, drop, drop + FORCE_SIGNAL_VERIFY_CADENCE_MS - 1), false)
-    assert.equal(forceSignalCadenceDue(drop, drop, drop + FORCE_SIGNAL_VERIFY_CADENCE_MS), true)
+    const cap = FORCE_SIGNAL_DROP_HOOK_CAP_MS
+    assert.equal(forceSignalCadenceDue(drop, drop, drop + cap - 1), false)
+    assert.equal(forceSignalCadenceDue(drop, drop, drop + cap), true)
     const lateDrop = 0
-    const lateNow = FORCE_SIGNAL_VERIFY_FAST_PHASE_MS + FORCE_SIGNAL_VERIFY_SLOW_CADENCE_MS
+    const lateNow = FORCE_SIGNAL_VERIFY_FAST_PHASE_MS + cap
     assert.equal(forceSignalCadenceDue(lateDrop, lateDrop, lateNow), true)
   })
 
@@ -363,11 +528,11 @@ describe('forceSignalRunner stuck socket', () => {
     runner.stop()
   })
 
-  it('post-settle cadence anchors to server OPEN: no recycle within 12s after a 30s outage', () => {
+  it('post-settle cadence anchors to server OPEN: no recycle within 5s after a 30s outage', () => {
     const dropAt = 0
     const openAt = 30_000
     const settleEnd = openAt + 8_000
-    const checkAt = openAt + FORCE_SIGNAL_VERIFY_CADENCE_MS - 1
+    const checkAt = openAt + FORCE_SIGNAL_DROP_HOOK_CAP_MS - 1
     assert.equal(forceSignalCadenceDue(dropAt, null, settleEnd), true, 'drop-anchored cadence fires as soon as ticks resume')
     assert.equal(forceSignalCadenceDue(openAt, null, checkAt), false, 'open-anchored cadence must wait')
     const t = { value: openAt }

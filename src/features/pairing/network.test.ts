@@ -82,7 +82,7 @@ describe('host id reclaim window', () => {
   const t0 = 0
   it('uses reclaim backoff 1,2,4,8 then 10s and gives up only after 75s', () => {
     assert.equal(hostReclaimIdBackoffMs(1), 1000)
-    assert.equal(hostReclaimDelayBeforeAttempt(5), 15_000)
+    assert.equal(hostReclaimDelayBeforeAttempt(5), 12_000)
     assert.equal(hostUnavailableIdShouldGiveUp(8, t0, 15_000, true), false)
     assert.equal(hostUnavailableIdShouldGiveUp(8, t0, 75_000, true), true)
     assert.equal(hostReclaimIdGiveUp(t0, 75_000), true)

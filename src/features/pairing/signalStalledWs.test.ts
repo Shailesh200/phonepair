@@ -21,6 +21,20 @@ describe('shouldKillStalledConnectingSocket', () => {
     assert.equal(STALLED_SIGNAL_CONNECTING_AFTER_DROP_MS, 3000)
   })
 
+  it('kills a mid-cut CONNECTING socket as soon as restore is recorded', () => {
+    const dropAt = 10_000
+    const started = 15_000
+    const restoreAt = 20_000
+    const peer = {
+      destroyed: false,
+      signalReadyState: () => WS_CONNECTING,
+      signalConnectStartedAt: () => started,
+      signalLastDropAt: () => dropAt,
+    }
+    assert.equal(shouldKillStalledConnectingSocket(peer, restoreAt - 1, undefined, restoreAt), false)
+    assert.equal(shouldKillStalledConnectingSocket(peer, restoreAt, undefined, restoreAt), true)
+  })
+
   it('does not kill young CONNECTING sockets with no drop since create', () => {
     const peer = {
       destroyed: false,

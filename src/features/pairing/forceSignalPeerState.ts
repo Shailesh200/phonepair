@@ -1,6 +1,7 @@
 import type { ForceSignalPeerLike } from './forceSignalReconnect.ts'
 import {
   FORCE_SIGNAL_CONNECTING_GRACE_UNVERIFIED_MS,
+  capSignalSocketRetryMs,
   forceSignalConnectingGraceMs,
 } from './forceSignalReconnect.ts'
 
@@ -87,5 +88,5 @@ export function forceSignalWatchdogDelayMs(
   if (unverifiedAfterDrop) {
     delay = Math.min(FORCE_SIGNAL_CONNECTING_GRACE_UNVERIFIED_MS, delay)
   }
-  return delay
+  return capSignalSocketRetryMs(delay)
 }

@@ -1,3 +1,4 @@
+import { capSignalSocketRetryMs } from '../features/pairing/forceSignalReconnect.ts'
 import {
   LISTEN_ID_RECLAIM_MIN_MS,
   listenBackoffForClaim as listenBackoffForClaimBase,
@@ -8,7 +9,7 @@ import {
 
 /** After a hard laptop cut, keep reclaiming the listen id through server ghost registrations. */
 export const LISTEN_RECOVERY_RECLAIM_MAX_MS = 120_000
-export const LISTEN_RECOVERY_ID_BACKOFF_MS = 2500
+export const LISTEN_RECOVERY_ID_BACKOFF_MS = capSignalSocketRetryMs(2500)
 
 export const REMEMBER_GUEST_DIAL_OPEN_MS = 8_000
 

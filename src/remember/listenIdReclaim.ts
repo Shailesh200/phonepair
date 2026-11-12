@@ -1,14 +1,17 @@
+import { capSignalSocketRetryMs } from '../features/pairing/forceSignalReconnect.ts'
 import { listenClaimGiveUp, REMEMBER_LISTEN_UNAVAILABLE_GIVE_UP } from './rememberListenClaim.ts'
 
 export const LISTEN_ID_RECLAIM_MIN_MS = 75_000
 
-/** Reclaim backoff (s): 1, 2, 4, 8, then 10s for every further attempt. */
+/** Reclaim backoff (s): 1, 2, 4, then 5s cap for every further attempt. */
 export function listenReclaimIdBackoffMs(attempt: number): number {
-  if (attempt <= 1) return 1000
-  if (attempt === 2) return 2000
-  if (attempt === 3) return 4000
-  if (attempt === 4) return 8000
-  return 10_000
+  let ms = 1000
+  if (attempt <= 1) ms = 1000
+  else if (attempt === 2) ms = 2000
+  else if (attempt === 3) ms = 4000
+  else if (attempt === 4) ms = 8000
+  else ms = 10_000
+  return capSignalSocketRetryMs(ms)
 }
 
 export function listenReclaimIdGiveUp(reclaimStartedAt: number, now: number, minMs = LISTEN_ID_RECLAIM_MIN_MS): boolean {

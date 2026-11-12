@@ -7,7 +7,10 @@ import {
   dataConnProbeSucceeded,
   freshRemotePongCap,
   helloCapsIncludePong,
+  recordRemoteHelloPongCap,
+  remotePongCapSeenForPeer,
   shouldDispatchConnKeepalive,
+  shouldMarkConnProbeEligible,
   shouldRunDataConnProbe,
 } from './dataConnProbe.ts'
 
@@ -125,6 +128,86 @@ describe('hello pong capability', () => {
     assert.equal(helloCapsIncludePong([]), false)
     assert.equal(helloCapsIncludePong(['clip']), false)
     assert.equal(helloCapsIncludePong(['pong']), true)
+  })
+})
+
+describe('remote pong cap ledger', () => {
+  const freshPair = {
+    everConnected: true,
+    sessionPaired: true,
+    rememberGuestAuth: false,
+  }
+  const probeBase = {
+    connOpen: true,
+    localOffersPong: true,
+    probePending: false,
+    lastSeen: 0,
+    now: 10_000,
+  }
+
+  it('new phone and laptop: cut restore before new hello probes when cap was recorded', () => {
+    const hostLedger = new Map<string, boolean>()
+    const phoneLedger = new Map<string, boolean>()
+    const phonePeer = 'guest-new-1'
+    const hostPeer = 'phonepair-ab12cd'
+    recordRemoteHelloPongCap(hostLedger, phonePeer, ['pong'])
+    recordRemoteHelloPongCap(phoneLedger, hostPeer, ['pong'])
+    freshRemotePongCap()
+    freshRemotePongCap()
+    assert.equal(
+      shouldMarkConnProbeEligible({ connOpen: true, connProbeEligible: false, ...freshPair }),
+      true,
+    )
+    assert.equal(
+      shouldRunDataConnProbe({
+        ...probeBase,
+        remoteSupportsPong: remotePongCapSeenForPeer(hostLedger, phonePeer),
+      }),
+      true,
+    )
+    assert.equal(
+      shouldRunDataConnProbe({
+        ...probeBase,
+        remoteSupportsPong: remotePongCapSeenForPeer(phoneLedger, hostPeer),
+      }),
+      true,
+    )
+  })
+
+  it('old peer without pong cap in hello is never probed, even after cut on a fresh pair', () => {
+    const ledger = new Map<string, boolean>()
+    const oldPeer = 'legacy-guest'
+    recordRemoteHelloPongCap(ledger, oldPeer, undefined)
+    assert.equal(remotePongCapSeenForPeer(ledger, oldPeer), false)
+    assert.equal(
+      shouldMarkConnProbeEligible({ connOpen: true, connProbeEligible: true, ...freshPair }),
+      true,
+    )
+    assert.equal(
+      shouldRunDataConnProbe({
+        ...probeBase,
+        remoteSupportsPong: remotePongCapSeenForPeer(ledger, oldPeer),
+      }),
+      false,
+    )
+  })
+
+  it('cap phone then different old phone: ledger does not cross peers', () => {
+    const ledger = new Map<string, boolean>()
+    const capPhone = 'guest-cap'
+    const oldPhone = 'guest-old'
+    recordRemoteHelloPongCap(ledger, capPhone, ['pong'])
+    freshRemotePongCap()
+    assert.equal(remotePongCapSeenForPeer(ledger, capPhone), true)
+    recordRemoteHelloPongCap(ledger, oldPhone, [])
+    assert.equal(remotePongCapSeenForPeer(ledger, oldPhone), false)
+    assert.equal(
+      shouldRunDataConnProbe({
+        ...probeBase,
+        remoteSupportsPong: remotePongCapSeenForPeer(ledger, oldPhone),
+      }),
+      false,
+    )
   })
 })
 
