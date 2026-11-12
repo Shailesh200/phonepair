@@ -122,6 +122,8 @@ test('window copy and builder ids stay fixed', () => {
   assert.ok(remote.includes('>Download for Mac<'))
   assert.ok(remote.includes('>Download for Windows<'))
   assert.ok(remote.includes('https://github.com/Shailesh200/phonepair/releases/latest/download/PhonePair-Helper-mac.dmg'))
+  assert.ok(remote.includes('https://github.com/Shailesh200/phonepair/releases/latest/download/PhonePair-Helper-mac.zip'))
+  assert.ok(remote.includes('data-testid="download-mac-zip"'))
   assert.ok(remote.includes('https://github.com/Shailesh200/phonepair/releases/latest/download/PhonePair-Helper-win.exe'))
   assert.ok(remote.includes('href="https://github.com/Shailesh200/phonepair/releases/latest" target="_blank" rel="noopener noreferrer"'))
   assert.ok(remote.includes('>Other downloads<'))

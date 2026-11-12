@@ -156,7 +156,11 @@ export function ConnectGuide({
               <p className="mut small">{COPY[step.id].body}</p>
               {step.id === 'download' ? <>
                 <p className="mut small" data-testid="helper-hint">Download the PhonePair Helper, open it, and type the 6-digit code it shows.</p>
-                <p className="mut small"><a className="mut" href="https://github.com/Shailesh200/phonepair/releases/latest" target="_blank" rel="noopener noreferrer" data-testid="other-downloads">Other downloads</a></p>
+                <p className="mut small">
+                  <a className="mut" href="https://github.com/Shailesh200/phonepair/releases/latest/download/PhonePair-Helper-mac.zip" target="_blank" rel="noreferrer" data-testid="download-mac-zip">Mac .zip</a>
+                  {' · '}
+                  <a className="mut" href="https://github.com/Shailesh200/phonepair/releases/latest" target="_blank" rel="noopener noreferrer" data-testid="other-downloads">Other downloads</a>
+                </p>
               </> : null}
               {step.id === 'open-mac' ? <p className="mut small for-mac" data-testid="mac-open-steps">{MAC_OPEN}</p> : null}
               {step.id === 'open-win' ? <p className="mut small for-win" data-testid="win-open-steps">{WIN_OPEN}</p> : null}

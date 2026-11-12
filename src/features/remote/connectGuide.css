@@ -156,6 +156,16 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
   outline: none;
 }
+@media (max-width: 960px) {
+  .pp-code { gap: 4px; }
+  .pp-code-input {
+    width: auto;
+    height: 44px;
+    flex: 1 1 30px;
+    min-width: 30px;
+    max-width: 34px;
+  }
+}
 
 .pp-dev-link {
   color: var(--muted);
