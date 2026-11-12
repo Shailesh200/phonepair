@@ -1,0 +1,175 @@
+/* Paste under the Espresso stylesheet. Uses existing variables only.
+   Builders: drop these class names on the markup in SPEC.md. */
+
+.pp-shell {
+  box-sizing: border-box;
+  width: 100%;
+  margin-inline: auto;
+  padding-inline: clamp(16px, 4vw, 48px);
+}
+@media (min-width: 1600px) {
+  .pp-shell { max-width: min(80vw, 1440px); }
+}
+
+.pp-connect { width: 100%; }
+
+.pp-steps {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+}
+.pp-step {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.pp-step .step-n {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  font-size: 15px;
+  flex: none;
+}
+.pp-step b { display: block; font-size: 15px; letter-spacing: -.02em; }
+.pp-step p { margin-top: 4px; }
+.pp-step--active { border-color: var(--accent); background: var(--tile); }
+.pp-step--done .step-n { background: var(--ok); }
+[data-os="windows"] .pp-step--mac { display: none; }
+
+[data-state="idle"] .pp-steps,
+[data-state="connected"] .pp-steps { display: none; }
+[data-state="steps"] .pp-connect,
+[data-state="waiting"] .pp-connect,
+[data-state="connected"] .pp-connect,
+[data-state="error"] .pp-connect { display: none; }
+
+.pp-os-btn { min-height: 44px; }
+.pp-os-btn.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.pp-code { display: flex; gap: 8px; margin-top: 8px; }
+.pp-code-input {
+  width: 42px;
+  height: 52px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 600;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+  padding: 0;
+}
+.pp-code-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: none;
+}
+
+.pp-dev-link {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 15px;
+  background: none;
+  min-height: 44px;
+  padding: 8px 0;
+  cursor: pointer;
+  list-style: none;
+}
+.pp-dev-link::-webkit-details-marker { display: none; }
+.pp-dev-link:hover { color: var(--text); }
+
+.pp-remote {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  flex: 1;
+}
+.pp-seg {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 4px;
+}
+.pp-seg-btn {
+  min-height: 52px;
+  border-radius: var(--r-md);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--muted);
+  background: transparent;
+}
+.pp-seg-btn[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--text);
+}
+.pp-remote-pad {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 180px;
+  border-radius: var(--r-xl);
+  border: 1px solid var(--line);
+  background-color: var(--surface);
+  background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+  background-size: 18px 18px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  touch-action: none;
+}
+.pp-remote .pad-scroll {
+  position: absolute;
+  right: 10px;
+  top: 28px;
+  bottom: 28px;
+  width: 30px;
+  border-radius: 15px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.pp-device-row { width: 100%; }
+.pp-device-row:hover,
+.pp-device-row.is-hover { background: var(--surface-soft); border-color: var(--line-strong); }
+.pp-device-row.is-editing { background: var(--tile); border-color: var(--accent); }
+.pp-star[aria-pressed="true"] { color: var(--spark); }
+.pp-star[aria-pressed="true"] svg { fill: var(--spark); stroke: var(--spark); }
+.pp-rename-input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  max-width: 100%;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
+  background: var(--tile);
+  color: var(--text);
+  padding: 0 12px;
+  font: inherit;
+  font-size: 15px;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.pp-rename-input:focus { outline: none; }

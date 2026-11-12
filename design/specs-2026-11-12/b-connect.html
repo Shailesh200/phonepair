@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect laptop control</title>
+<link rel="stylesheet" href="mock-base.css">
+<link rel="stylesheet" href="espresso-additions.css">
+<style>
+@media (max-width:700px){
+  .grid .col:first-child{display:none}
+  .pp-step{padding:10px}
+  .pp-steps{gap:8px}
+}
+</style>
+</head>
+<body>
+  <div class="pp-shell" style="padding-top:8px">
+    <header class="nav">
+      <a class="logo" href="/">PhonePair<i>.</i></a>
+      <span class="pill" data-testid="status">Connected to Shailesh's iPhone</span>
+    </header>
+    <div class="grid">
+      <div class="col">
+        <div class="card pad">
+          <h3>Send files</h3>
+          <div class="drop"><b>Drop files</b><small>or click to browse</small></div>
+        </div>
+      </div>
+      <div class="col">
+        <section class="card pad" data-testid="remote-panel" data-state="steps" data-os="mac">
+          <h3>Laptop control</h3>
+          <button type="button" class="btn big pp-connect" data-testid="connect-laptop">Connect laptop control</button>
+          <ol class="pp-steps" data-testid="helper-steps">
+            <li class="pp-step pp-step--active">
+              <span class="step-n">1</span>
+              <div>
+                <b>Download the helper</b>
+                <p class="mut small" data-testid="helper-hint">Download PhonePair Helper, then come back to this page.</p>
+                <p class="helper-downloads">
+                  <a class="btn pp-os-btn on" data-testid="download-mac" href="https://github.com/Shailesh200/phonepair/releases/latest">Download for Mac</a>
+                  <a class="btn ghost pp-os-btn" data-testid="download-win" href="https://github.com/Shailesh200/phonepair/releases/latest">Download for Windows</a>
+                </p>
+              </div>
+            </li>
+            <li class="pp-step">
+              <span class="step-n">2</span>
+              <div>
+                <b>Open it</b>
+                <p class="mut small" data-testid="mac-open-steps">Open the DMG, drag PhonePair Helper to Applications, and open it.</p>
+                <p class="mut small" data-testid="win-open-steps">If SmartScreen appears, click More info, then Run anyway.</p>
+              </div>
+            </li>
+            <li class="pp-step pp-step--mac">
+              <span class="step-n">3</span>
+              <div>
+                <b>Allow Accessibility</b>
+                <p class="mut small">macOS needs this so the helper can move the pointer and send keys.</p>
+              </div>
+            </li>
+            <li class="pp-step">
+              <span class="step-n">4</span>
+              <div>
+                <b>Enter the 6-digit code</b>
+                <div class="pp-code" data-testid="helper-code" role="group" aria-label="Helper code">
+                  <input class="pp-code-input" inputmode="numeric" maxlength="1" aria-label="Digit 1">
+                  <input class="pp-code-input" inputmode="numeric" maxlength="1" aria-label="Digit 2">
+                  <input class="pp-code-input" inputmode="numeric" maxlength="1" aria-label="Digit 3">
+                  <input class="pp-code-input" inputmode="numeric" maxlength="1" aria-label="Digit 4">
+                  <input class="pp-code-input" inputmode="numeric" maxlength="1" aria-label="Digit 5">
+                  <input class="pp-code-input" inputmode="numeric" maxlength="1" aria-label="Digit 6">
+                </div>
+              </div>
+            </li>
+          </ol>
+          <p class="mut small" data-testid="helper-status" aria-live="polite" style="margin-top:10px">Not connected</p>
+          <details>
+            <summary class="pp-dev-link">Developer</summary>
+            <p class="mut small" data-testid="helper-dev-note"><code>cd helper && npm start</code></p>
+          </details>
+        </section>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
