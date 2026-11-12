@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wide screen</title>
+<link rel="stylesheet" href="mock-base.css">
+<link rel="stylesheet" href="espresso-additions.css">
+</head>
+<body>
+  <div class="pp-shell" style="padding-top:12px">
+    <header class="nav">
+      <a class="logo" href="/">PhonePair<i>.</i></a>
+      <span class="pill" data-testid="status">Connected to Shailesh's iPhone</span>
+    </header>
+    <div class="grid">
+      <div class="col">
+        <div class="card pad">
+          <h3>Send files</h3>
+          <div class="drop" style="min-height:280px"><b>Drop files</b><small>or click to browse</small></div>
+        </div>
+        <div class="card pad">
+          <h3>Live clipboard</h3>
+          <textarea class="clip" rows="3" placeholder="Copy on one device, paste on the other."></textarea>
+        </div>
+      </div>
+      <div class="col">
+        <section class="card pad" data-testid="remote-panel">
+          <h3>Remote</h3>
+          <div class="pp-seg" role="tablist" aria-label="Remote mode">
+            <button type="button" class="pp-seg-btn" role="tab" aria-selected="true" data-testid="rtab-trackpad">Trackpad</button>
+            <button type="button" class="pp-seg-btn" role="tab" aria-selected="false" data-testid="rtab-clicker">Clicker</button>
+            <button type="button" class="pp-seg-btn" role="tab" aria-selected="false" data-testid="rtab-pointer">Pointer</button>
+          </div>
+          <p class="mut small" data-testid="helper-status" style="margin-top:8px">Connected · Trackpad</p>
+          <textarea class="clip" data-testid="remote-text" rows="2" placeholder="Open Remote on your phone and type. Text lands here, or in the field the pointer focuses."></textarea>
+        </section>
+        <section class="card pad">
+          <h3>Connected devices</h3>
+          <div class="pp-list">
+            <div class="pp-list-row pp-device-row">
+              <div class="grow"><b>Studio Mac</b><small>Connected 2 min ago</small></div>
+              <button type="button" class="pp-icon-toggle pp-star" aria-pressed="true" aria-label="Favourite"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.8"><path d="m12 3 2.6 5.6L21 9.3l-4.5 4.2 1.2 6.2L12 16.8 6.3 19.7l1.2-6.2L3 9.3l6.4-.7L12 3z"/></svg></button>
+            </div>
+            <div class="pp-list-row pp-device-row">
+              <div class="grow"><b>Pixel 8</b><small>Connected 3 days ago</small></div>
+              <button type="button" class="pp-icon-toggle pp-star" aria-pressed="false" aria-label="Favourite"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 2.6 5.6L21 9.3l-4.5 4.2 1.2 6.2L12 16.8 6.3 19.7l1.2-6.2L3 9.3l6.4-.7L12 3z"/></svg></button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
