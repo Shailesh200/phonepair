@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
+import { mkdirSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, it } from 'node:test'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   CODE_REJECTED,
   CODE_REQUIRED,
@@ -9,6 +12,7 @@ import {
   WINDOWS_STEPS,
   applyConnectFocus,
   codeSubmitEnabled,
+  connectStepBodies,
   connectStepStates,
   detectConnectPlatform,
   initialConnectGuide,
@@ -348,6 +352,17 @@ describe('connect guide platform', () => {
     assert.equal(detectConnectPlatform({}), 'mac')
   })
 
+  it('renders exactly one body paragraph on every Mac and Windows step', () => {
+    for (const id of MAC_STEPS) assert.equal(connectStepBodies(id).length, 1, id)
+    for (const id of WINDOWS_STEPS) assert.equal(connectStepBodies(id).length, 1, id)
+    assert.deepEqual(connectStepBodies('download'), ['specific'])
+    assert.deepEqual(connectStepBodies('open-mac'), ['specific'])
+    assert.deepEqual(connectStepBodies('accessibility-mac'), ['specific'])
+    assert.deepEqual(connectStepBodies('open-win'), ['specific'])
+    assert.deepEqual(connectStepBodies('access-win'), ['specific'])
+    assert.deepEqual(connectStepBodies('code'), ['generic'])
+  })
+
   it('enables the code arrow only when six digits are entered and the helper is not connecting', () => {
     assert.equal(codeSubmitEnabled('', 'off'), false)
     assert.equal(codeSubmitEnabled('12345', 'off'), false)
@@ -447,5 +462,139 @@ describe('connect guide focus', () => {
     })
     assert.equal(cleared, null)
     assert.deepEqual(focused, ['connect-open'])
+  })
+})
+
+const MAC_DMG = 'https://github.com/Shailesh200/phonepair/releases/latest/download/PhonePair-Helper-mac.dmg'
+const MAC_ZIP = 'https://github.com/Shailesh200/phonepair/releases/latest/download/PhonePair-Helper-mac.zip'
+const WIN_EXE = 'https://github.com/Shailesh200/phonepair/releases/latest/download/PhonePair-Helper-win.exe'
+const STEP_BODIES = {
+  mac: [
+    'Download the PhonePair Helper, open it, and type the 6-digit code it shows.',
+    'Open the DMG, drag PhonePair Helper to Applications, then open it.',
+    'Allow Accessibility: System Settings > Privacy & Security > Accessibility > turn on PhonePair Helper. This lets it move the pointer and type.',
+    'Type the 6-digit code the helper shows.',
+  ],
+  windows: [
+    'Download the PhonePair Helper, open it, and type the 6-digit code it shows.',
+    'Run the installer. If SmartScreen appears, click More info, then Run anyway.',
+    'Allow access: if Windows asks to allow PhonePair Helper through the firewall or to make changes, click Allow / Yes.',
+    'Type the 6-digit code the helper shows.',
+  ],
+} as const
+
+function countText(html: string, text: string) {
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+  return html.split(escaped).length - 1
+}
+
+function assertControlOrder(html: string, ids: string[]) {
+  let at = -1
+  for (const id of ids) {
+    const found = html.indexOf(`data-testid="${id}"`)
+    assert.ok(found > at, `${id} should come after the previous download control`)
+    at = found
+  }
+}
+
+async function renderConnectGuide(platform: 'mac' | 'windows') {
+  const esbuild = await import('esbuild')
+  const dir = fileURLToPath(new URL('../../../node_modules/.cache', import.meta.url))
+  mkdirSync(dir, { recursive: true })
+  const outfile = join(dir, `connect-guide-render-${platform}.mjs`)
+  const guide = fileURLToPath(new URL('./ConnectGuide.tsx', import.meta.url))
+  try {
+    await esbuild.build({
+      absWorkingDir: fileURLToPath(new URL('../../..', import.meta.url)),
+      stdin: {
+        contents: `
+          import React from 'react'
+          import { renderToStaticMarkup } from 'react-dom/server'
+          import { ConnectGuide } from ${JSON.stringify(guide)}
+          export function render() {
+            return renderToStaticMarkup(React.createElement(ConnectGuide, {
+              status: 'off',
+              attempt: null,
+              onSubmitCode() {},
+              onDisconnect() {},
+            }))
+          }
+        `,
+        loader: 'tsx',
+        resolveDir: fileURLToPath(new URL('.', import.meta.url)),
+        sourcefile: 'connect-guide-render.tsx',
+      },
+      bundle: true,
+      packages: 'external',
+      format: 'esm',
+      platform: 'node',
+      outfile,
+      jsx: 'automatic',
+      define: { 'import.meta.env.DEV': 'false' },
+      loader: { '.css': 'empty' },
+      logLevel: 'silent',
+      plugins: [{
+        name: 'connect-guide-logic',
+        setup(build) {
+          build.onResolve({ filter: /^\.\/connectGuide$/ }, () => ({
+            path: fileURLToPath(new URL('./connectGuide.ts', import.meta.url)),
+          }))
+        },
+      }],
+    })
+    const mod = await import(pathToFileURL(outfile).href + '?t=' + Date.now())
+    const previous = globalThis.navigator
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: platform === 'windows'
+        ? { userAgentData: { platform: 'Windows' }, platform: 'Win32' }
+        : { userAgentData: { platform: 'macOS' }, platform: 'MacIntel' },
+    })
+    try {
+      return mod.render() as string
+    } finally {
+      Object.defineProperty(globalThis, 'navigator', { configurable: true, value: previous })
+    }
+  } finally {
+    rmSync(outfile, { force: true })
+  }
+}
+
+describe('connect guide markup', () => {
+  it('renders one description per step, in order, with one download for the selected OS', async () => {
+    const mac = await renderConnectGuide('mac')
+    const windows = await renderConnectGuide('windows')
+
+    for (const text of STEP_BODIES.mac) assert.equal(countText(mac, text), 1, text)
+    for (const text of STEP_BODIES.windows) assert.equal(countText(windows, text), 1, text)
+    assert.equal(countText(mac, STEP_BODIES.windows[1]), 0)
+    assert.equal(countText(mac, STEP_BODIES.windows[2]), 0)
+    assert.equal(countText(windows, STEP_BODIES.mac[1]), 0)
+    assert.equal(countText(windows, STEP_BODIES.mac[2]), 0)
+    assert.equal(countText(mac, 'Download PhonePair Helper, then come back to this page.'), 0)
+    assert.equal(countText(windows, 'Download PhonePair Helper, then come back to this page.'), 0)
+
+    assertControlOrder(mac, ['helper-hint', 'download-mac', 'download-mac-zip', 'other-downloads', 'connect-confirm-download'])
+    assertControlOrder(windows, ['helper-hint', 'download-win', 'download-mac-zip', 'other-downloads', 'connect-confirm-download'])
+    assert.equal(mac.includes('data-testid="download-win"'), false)
+    assert.equal(windows.includes('data-testid="download-mac"'), false)
+    assert.equal(mac.split('data-testid="download-mac"').length - 1, 1)
+    assert.equal(windows.split('data-testid="download-win"').length - 1, 1)
+    assert.equal(countText(mac, "I've done this"), 1)
+    assert.equal(countText(windows, "I've done this"), 1)
+
+    assert.equal(mac.includes(`href="${MAC_DMG}"`), true)
+    assert.equal(mac.includes(`href="${WIN_EXE}"`), false)
+    assert.equal(windows.includes(`href="${WIN_EXE}"`), true)
+    assert.equal(windows.includes(`href="${MAC_DMG}"`), false)
+    assert.equal(mac.includes(`href="${MAC_ZIP}"`), true)
+    assert.equal(windows.includes(`href="${MAC_ZIP}"`), true)
+    assert.equal(mac.includes('href="https://github.com/Shailesh200/phonepair/releases/latest"'), true)
+    assert.equal(windows.includes('href="https://github.com/Shailesh200/phonepair/releases/latest"'), true)
   })
 })

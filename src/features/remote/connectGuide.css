@@ -73,34 +73,41 @@
   background: var(--surface);
   color: var(--text);
 }
-.full-laptop .pp-step > .helper-downloads {
+.full-laptop .pp-step .helper-downloads {
   display: flex;
-  flex: 1 0 100%;
-  flex-wrap: nowrap;
-  gap: 8px;
   width: 100%;
-  margin: 0;
+  margin: 8px 0 0;
 }
 .full-laptop .helper-downloads .pp-os-btn {
-  flex: 1 1 0;
-  width: auto;
+  flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
   min-height: 44px;
-  padding: 8px 4px;
-  font-size: 13px;
+  padding: 10px 18px;
+  font-size: 15px;
   white-space: nowrap;
 }
-@media (max-width: 340px) {
-  .full-laptop .helper-downloads { flex-wrap: wrap; }
-  .full-laptop .helper-downloads .pp-os-btn { flex: 1 1 100%; }
+.full-laptop .pp-step .helper-downloads + .mut,
+.full-laptop .pp-step .btn { margin-top: 8px; }
+@media (max-width: 400px) {
+  .full-laptop .helper-downloads .pp-os-btn {
+    white-space: normal;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
 }
 .pp-os-btn { min-height: 44px; }
 .pp-os-btn.on,
-[data-os="mac"] [data-testid="download-mac"],
-[data-os="windows"] [data-testid="download-win"] {
+.full-laptop [data-os="mac"] [data-testid="download-mac"],
+.full-laptop [data-os="windows"] [data-testid="download-win"] {
   background: var(--accent);
   color: var(--accent-ink);
   border-color: transparent;
+}
+.full-laptop [data-os="mac"] [data-testid="download-mac"]:hover,
+.full-laptop [data-os="windows"] [data-testid="download-win"]:hover {
+  background: var(--accent-strong);
+  color: var(--accent-ink);
 }
 
 .pp-code { display: flex; align-items: center; gap: 8px; margin-top: 8px; width: 100%; min-width: 0; }
