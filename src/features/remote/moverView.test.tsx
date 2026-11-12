@@ -57,47 +57,87 @@ describe('mouse mover control', () => {
     assert.deepEqual(moverToggleCommand({ on: true, interval: '5m' }), { on: false })
     assert.deepEqual(moverIntervalCommand('30s'), { on: true, interval: '30s' })
 
-    const disconnected = markup(React.createElement(MoverControl, {
-      connected: false,
-      state: { on: true, interval: '1m' },
-      onToggle() {},
-      onInterval() {},
+    const hands = { onToggle() {}, onInterval() {}, onAutoStop() {} }
+    const screen = markup(React.createElement(MoverControl, {
+      ...hands,
+      state: { on: true, interval: '1m', status: 'On (screen awake)', mode: 'wakeLock', autoStop: 'never' },
     }))
-    assert.match(disconnected, /data-state="disconnected"/)
-    assert.match(disconnected, /data-testid="mover-toggle"[^>]*disabled/)
-    assert.match(disconnected, /aria-checked="false"/)
-    assert.match(disconnected, /Connect laptop control first\./)
-    assert.equal(disconnected.includes('data-testid="mover-badge"'), false)
-    assert.equal(disconnected.includes('Mouse mover on'), false)
+    assert.match(screen, /class="pp-mover-main"/)
+    assert.match(screen, /data-state="on"/)
+    assert.match(screen, /aria-checked="true"/)
+    assert.equal(/data-testid="mover-toggle"[^>]*disabled/.test(screen), false)
+    assert.match(screen, /data-testid="mover-status"/)
+    assert.match(screen, /On \(screen awake\)/)
+    assert.equal(screen.includes('On (real mouse)'), false)
+    assert.equal(screen.includes('Connect laptop control first'), false)
+    assert.equal(screen.includes('data-mode'), false)
+    assert.equal(screen.includes('mover-debug-mode'), false)
+    assert.equal(screen.includes('mover-pip'), false)
+    assert.match(screen, /Interval applies to laptop nudges\./)
+    assert.match(screen, /aria-pressed="true"[^>]*data-testid="mover-autostop-never"/)
     for (const id of ['30s', '1m', '5m']) {
-      assert.match(disconnected, new RegExp(`data-testid="mover-interval-${id}"[^>]*disabled`))
+      assert.match(screen, new RegExp(`data-testid="mover-interval-${id}"[^>]*disabled`))
     }
 
     const off = markup(React.createElement(MoverControl, {
-      connected: true,
-      state: { on: false, interval: null },
-      onToggle() {},
-      onInterval() {},
+      ...hands,
+      state: { on: false, interval: null, status: null, mode: 'none', autoStop: 'never' },
     }))
     assert.match(off, /data-state="off"/)
     assert.match(off, /aria-checked="false"/)
-    assert.equal(off.includes('data-testid="mover-toggle" disabled'), false)
+    assert.equal(/data-testid="mover-toggle"[^>]*disabled/.test(off), false)
     assert.match(off, /data-testid="mover-interval-30s"[^>]*disabled/)
     assert.equal(off.includes('mover-badge'), false)
+    assert.equal(off.includes('data-mode'), false)
+    assert.equal(off.includes('mover-debug-mode'), false)
 
     const on = markup(React.createElement(MoverControl, {
-      connected: true,
-      state: { on: true, interval: '1m' },
-      onToggle() {},
-      onInterval() {},
+      ...hands,
+      state: { on: true, interval: '1m', status: 'On (real mouse)', mode: 'helper', autoStop: '1h' },
     }))
     assert.match(on, /data-state="on"/)
     assert.match(on, /aria-checked="true"/)
     assert.match(on, /data-testid="mover-badge"/)
-    assert.match(on, /Mouse mover on · every 1m/)
+    assert.match(on, /data-testid="mover-status"/)
+    assert.match(on, /On \(real mouse\)/)
+    assert.equal(on.includes('Interval applies to laptop nudges'), false)
     assert.match(on, /aria-pressed="true"[^>]*data-testid="mover-interval-1m"/)
     assert.match(on, /aria-pressed="false"[^>]*data-testid="mover-interval-30s"/)
     assert.equal(on.includes('mover-interval-1m" disabled'), false)
+    assert.match(on, /aria-pressed="true"[^>]*data-testid="mover-autostop-1h"/)
+
+    const paused = markup(React.createElement(MoverControl, {
+      ...hands,
+      showPip: true,
+      state: { on: true, interval: '5m', status: 'Paused, tab hidden', mode: 'video', autoStop: '2h' },
+    }))
+    assert.match(paused, /data-state="paused"/)
+    assert.match(paused, /Paused, tab hidden/)
+    assert.match(paused, /data-testid="mover-pip"/)
+
+    const unsupported = markup(React.createElement(MoverControl, {
+      ...hands,
+      state: { on: true, interval: '1m', status: 'Not supported', mode: 'none', autoStop: '15m' },
+    }))
+    assert.match(unsupported, /data-state="unsupported"/)
+    assert.match(unsupported, /Not supported/)
+    assert.match(unsupported, /data-testid="mover-autostop-15m"/)
+    assert.match(unsupported, /data-testid="mover-autostop-30m"/)
+
+    const qa = markup(React.createElement(MoverControl, {
+      ...hands,
+      qa: true,
+      state: { on: false, interval: null, status: null, mode: 'wakeLock', autoStop: 'never' },
+    }))
+    assert.match(qa, /data-mode="wakeLock"/)
+    assert.match(qa, /data-testid="mover-debug-mode"[^>]*>wakeLock</)
+    const hidden = markup(React.createElement(MoverControl, {
+      ...hands,
+      qa: false,
+      state: { on: false, interval: null, status: null, mode: 'video', autoStop: 'never' },
+    }))
+    assert.equal(hidden.includes('data-mode'), false)
+    assert.equal(hidden.includes('mover-debug-mode'), false)
   })
 
   it('places Keep awake between the pointer and the keyboard on the phone', () => {
@@ -107,9 +147,16 @@ describe('mouse mover control', () => {
     const keyboard = html.indexOf('data-testid="kb-input"')
     assert.ok(pointer >= 0 && toggle > pointer && keyboard > toggle, html)
     assert.match(html, /Keep awake/)
-    assert.match(html, /data-state="disconnected"/)
-    assert.match(html, /Connect laptop control first\./)
+    assert.match(html, /class="pp-mover-main"/)
+    assert.match(html, /data-state="off"/)
+    assert.equal(/data-testid="mover-toggle"[^>]*disabled/.test(html), false)
+    assert.equal(html.includes('Connect laptop control first'), false)
+    assert.equal(html.includes('data-mode'), false)
+    assert.equal(html.includes('mover-debug-mode'), false)
+    assert.match(html, /Interval applies to laptop nudges\./)
+    assert.match(html, /data-testid="mover-autostop-never"/)
     assert.equal(html.includes('Mouse mover on'), false)
+    assert.equal(html.includes('On (real mouse)'), false)
     const src = readFileSync(join(process.cwd(), 'src/features/remote/Remote.tsx'), 'utf8')
     assert.match(src, /useMessage\('mover'/)
     assert.match(src, /readMoverState/)

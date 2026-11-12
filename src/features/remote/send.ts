@@ -1,4 +1,5 @@
 import type { Msg } from '../../core/bus'
+import type { AutoStop } from './keepAwake'
 
 export type RemoteClick = 'left' | 'right'
 export type RemoteDir = 'prev' | 'next'
@@ -17,7 +18,7 @@ export type RemotePayload =
   | { t: 'remote:key'; key: string }
   | { t: 'remote:pointer'; on: boolean }
   | { t: 'remote:helper'; ask?: boolean; on?: boolean }
-  | { t: 'mover'; ask?: boolean; on?: boolean; interval?: '30s' | '1m' | '5m' | null }
+  | { t: 'mover'; ask?: boolean; on?: boolean; interval?: '30s' | '1m' | '5m' | null; autoStop?: AutoStop }
 
 export type RemoteSend = {
   /** Single outbound function. Every mode calls this and nothing else. */
@@ -30,7 +31,7 @@ export type RemoteSend = {
   key: (key: string) => void
   pointer: (on: boolean) => void
   helper: (body: { ask?: boolean; on?: boolean }) => void
-  mover: (body: { ask?: boolean; on?: boolean; interval?: '30s' | '1m' | '5m' | null }) => void
+  mover: (body: { ask?: boolean; on?: boolean; interval?: '30s' | '1m' | '5m' | null; autoStop?: AutoStop }) => void
 }
 
 let channelsCreated = 0

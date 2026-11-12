@@ -7,7 +7,8 @@ import { Icon } from '../../core/icons'
 import { MoverControl } from './Mover'
 import { createRemoteSend, type RemoteSend } from './send'
 import { remotePageClass, remoteScrollClass, remoteStyles } from './styles'
-import { moverIntervalCommand, moverToggleCommand, readMoverState, type MoverState } from '../screen/mover'
+import { moverIntervalCommand, moverToggleCommand, readMoverState } from '../screen/mover'
+import { KEEP_AWAKE_IDLE, browserSearch, qaHooksEnabled, readRelayReport, type KeepAwakeViewState } from './keepAwake'
 
 export type PadGesture = {
   pts: Map<number, { x: number; y: number }>
@@ -60,12 +61,14 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
   const stripRaf = useRef(0)
   const linked = ctx.link.remoteName || 'Connecting…'
   const [fullLaptop, setFullLaptop] = useState(false)
-  const [mover, setMover] = useState<MoverState>({ on: false, interval: null })
+  const [mover, setMover] = useState<KeepAwakeViewState>(KEEP_AWAKE_IDLE)
   const send = useSharedSend(ctx)
   useMessage('remote:helper', (m) => { if (typeof m.on === 'boolean') setFullLaptop(m.on) })
   useMessage('mover', (m) => {
+    const relay = readRelayReport(m)
+    if (relay) { setMover(relay); return }
     const next = readMoverState(m)
-    if (next) setMover(next)
+    if (next) setMover({ ...KEEP_AWAKE_IDLE, on: next.on, interval: next.interval })
   })
 
   useEffect(() => {
@@ -245,10 +248,19 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
     </div>
     <button type="button" className={remoteStyles.laser} data-testid="pointer" onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); point(true) }} onPointerUp={(e) => { point(false); try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* already released */ } }} onPointerCancel={() => point(false)} onBlur={() => point(false)} onLostPointerCapture={() => point(false)}>Pointer · hold to point</button>
     <MoverControl
-      connected={fullLaptop}
       state={mover}
-      onToggle={() => { if (fullLaptop) send.mover(moverToggleCommand(mover)) }}
-      onInterval={(interval) => { if (fullLaptop && mover.on) send.mover(moverIntervalCommand(interval)) }}
+      qa={qaHooksEnabled(browserSearch())}
+      onToggle={() => {
+        const cmd = moverToggleCommand(mover)
+        send.mover({ ...cmd, autoStop: mover.autoStop })
+      }}
+      onInterval={(interval) => {
+        if (mover.mode === 'helper' && mover.on) send.mover({ ...moverIntervalCommand(interval), autoStop: mover.autoStop })
+      }}
+      onAutoStop={(preset) => {
+        if (mover.on) send.mover({ on: true, interval: mover.interval ?? '1m', autoStop: preset })
+        else send.mover({ autoStop: preset })
+      }}
     />
     <button type="button" className={remoteStyles.keyboard} data-testid="kb-toggle" onClick={() => setKb((v) => { if (!v) last.current = ''; return !v })}><Icon n="keyboard" />Keyboard</button>
     {kb && <form className={remoteStyles.form} onSubmit={(e) => { e.preventDefault(); send.key('Enter'); const input = e.currentTarget.elements[0] as HTMLInputElement; input.value = ''; last.current = '' }}>

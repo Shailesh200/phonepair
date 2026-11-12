@@ -9,15 +9,13 @@ import { CopyBtn } from '../../core/ui'
 import { ConnectGuide } from './ConnectGuide'
 import { helperProbeTimeout, settleHelperProbe, type HelperProbeSocket } from './helperProbe'
 import {
-  moverBadgeText,
-  moverCommandFrom,
   moverIntervalCommand,
   moverStopsOn,
   moverToggleCommand,
-  moverView,
   readMoverState,
-  type MoverState,
 } from '../screen/mover'
+import { KEEP_AWAKE_IDLE, browserSearch, pictureInPictureEnabled, qaHooksEnabled, readRelayCommand, relayReport, type KeepAwakeViewState } from './keepAwake'
+import { createBrowserKeepAwake } from './keepAwakeRun'
 import { navKey, showPointerLaser } from './send'
 import type { HelperAttempt } from './connectGuide.ts'
 import './remote.css'
@@ -40,30 +38,25 @@ const helper = {
   ws: null as WebSocket | null,
   listeners: new Set<() => void>(),
 }
-const moverReported = createStore<MoverState>({ on: false, interval: null })
-let moverRelay: { send: (msg: { t: 'mover'; on: boolean; interval: MoverState['interval'] }) => void; connected: () => boolean } | null = null
-
-function applyMoverReport(state: MoverState) {
-  moverReported.set(state)
-  if (moverRelay?.connected()) moverRelay.send({ t: 'mover', on: state.on, interval: state.interval })
-}
+const moverReported = createStore<KeepAwakeViewState>(KEEP_AWAKE_IDLE)
+let moverRelay: { send: (msg: ReturnType<typeof relayReport>) => void; connected: () => boolean } | null = null
+let awake!: ReturnType<typeof createBrowserKeepAwake>
 
 function readHelperMover(data: unknown) {
   let parsed: unknown
   try { parsed = JSON.parse(String(data)) } catch { return }
   const state = readMoverState(parsed)
-  if (state) applyMoverReport(state)
+  if (state) awake.noteHelperReport(state)
 }
 
 export function stopMouseMover() {
-  sendHelper({ t: 'mover', on: false })
+  awake.stop()
 }
 
 export function MoverHeaderBadge() {
-  const link = useHelper()
   const state = moverReported.use()
-  if (moverView(link.status === 'connected', state) !== 'on' || !state.interval) return null
-  return <span className="pp-mover-badge" data-testid="mover-badge">{moverBadgeText(state.interval)}</span>
+  if (!state.status) return null
+  return <span className="pp-mover-badge" data-testid="mover-badge">{state.status}</span>
 }
 let helperJob = 0
 let helperConnects = 0
@@ -92,6 +85,15 @@ function sendHelper(msg: object) {
   return true
 }
 
+awake = createBrowserKeepAwake({
+  helperConnected: () => helperReady(),
+  sendHelper: (msg) => { sendHelper(msg) },
+  publish: (state) => {
+    moverReported.set(state)
+    if (moverRelay?.connected()) moverRelay.send(relayReport(state))
+  },
+})
+
 export function helperConnected() {
   return helperReady()
 }
@@ -111,7 +113,7 @@ function watchHelper(ws: WebSocket) {
     if (helper.ws !== ws) return
     helper.ws = null
     helper.status = 'off'
-    applyMoverReport({ on: false, interval: null })
+    awake.onHelperDisconnected()
     emitHelper()
   }
 }
@@ -164,7 +166,7 @@ async function connectHelper(code: string): Promise<HelperResult> {
   const mine = ++helperJob
   closeHelperSocket()
   helper.status = 'connecting'
-  applyMoverReport({ on: false, interval: null })
+  awake.onHelperDisconnected()
   emitHelper()
   let rejected = false
   for (let portIndex = 0; portIndex < HELPER_PORTS.length; portIndex++) {
@@ -175,6 +177,7 @@ async function connectHelper(code: string): Promise<HelperResult> {
     if (result === 'connected') {
       helper.status = 'connected'
       suppressOverlay()
+      awake.onHelperConnected()
       emitHelper()
       return 'connected'
     }
@@ -191,7 +194,7 @@ function disconnectHelper() {
   helperJob += 1
   closeHelperSocket()
   helper.status = 'off'
-  applyMoverReport({ on: false, interval: null })
+  awake.onHelperDisconnected()
   emitHelper()
 }
 
@@ -459,10 +462,19 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
   return <div className="card pad" data-testid="remote-panel">
     <h3 className="h-row"><span><Icon n="keyboard" /> Phone keyboard</span>{text ? <CopyBtn text={text} ctx={ctx} label="Copy" /> : null}</h3>
     <MoverControl
-      connected={helperOn}
       state={mover}
-      onToggle={() => { if (helperOn) sendHelper({ t: 'mover', ...moverToggleCommand(mover) }) }}
-      onInterval={(interval) => { if (helperOn && mover.on) sendHelper({ t: 'mover', ...moverIntervalCommand(interval) }) }}
+      qa={qaHooksEnabled(browserSearch())}
+      showPip={pictureInPictureEnabled()}
+      onToggle={() => {
+        if (helperOn) sendHelper({ t: 'mover', ...moverToggleCommand(mover) })
+        awake.afterToggle(moverToggleCommand(mover), helperOn)
+      }}
+      onInterval={(interval) => {
+        if (helperOn && mover.on) sendHelper({ t: 'mover', ...moverIntervalCommand(interval) })
+        awake.noteInterval(interval)
+      }}
+      onAutoStop={(preset) => awake.setAutoStop(preset)}
+      onPip={() => { void awake.pip() }}
     />
     <textarea data-testid="remote-text" className="clip" rows={2} onChange={(e) => setText(e.target.value)} placeholder="Open Remote on your phone and type. Text lands here, or in the field the pointer focuses." />
     <div className="full-laptop" data-testid="full-laptop">
@@ -565,17 +577,32 @@ registerFeature({
       }),
       onMessage('mover', (m) => {
         if (m.ask) {
-          const state = moverReported.get()
-          ctx.send({ t: 'mover', on: state.on, interval: state.interval })
+          ctx.send(relayReport(awake.view()))
           return
         }
-        const cmd = moverCommandFrom(m)
+        const cmd = readRelayCommand(m)
         if (!cmd) return
-        sendHelper({ t: 'mover', ...cmd })
+        if (!('on' in cmd)) {
+          awake.setAutoStop(cmd.autoStop)
+          return
+        }
+        if (!cmd.on) {
+          if (helperReady()) sendHelper({ t: 'mover', on: false })
+          awake.stop({ tellHelper: !helperReady() })
+          if (cmd.autoStop) awake.setAutoStop(cmd.autoStop)
+          return
+        }
+        if (cmd.autoStop) awake.setAutoStop(cmd.autoStop)
+        if (helperReady()) {
+          sendHelper({ t: 'mover', on: true, interval: cmd.interval })
+          awake.noteInterval(cmd.interval)
+          return
+        }
+        void awake.start(cmd.interval)
       }),
     ]
     const relay = {
-      send: (msg: { t: 'mover'; on: boolean; interval: MoverState['interval'] }) => ctx.send(msg),
+      send: (msg: ReturnType<typeof relayReport>) => ctx.send(msg),
       connected: () => ctx.link.connected,
     }
     moverRelay = relay
@@ -589,6 +616,8 @@ registerFeature({
       if (moverRelay === relay) moverRelay = null
       window.removeEventListener('resize', onResize)
       window.clearTimeout(hideTimer)
+      awake.stop({ tellHelper: true })
+      awake.dispose()
     }
   },
 })
