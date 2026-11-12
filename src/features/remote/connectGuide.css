@@ -67,7 +67,7 @@
   font-weight: 600;
   color: var(--muted);
 }
-.pp-os-toggle button[aria-selected="true"],
+.pp-os-toggle button[aria-checked="true"],
 [data-os="mac"] .pp-os-toggle [data-os-choice="mac"],
 [data-os="windows"] .pp-os-toggle [data-os-choice="windows"] {
   background: var(--surface);

@@ -127,9 +127,13 @@ export function ConnectGuide({
         <p className={'mut small helper-status' + (cardState === 'connected' ? ' on' : '')} data-testid="helper-status" aria-live="polite">{statusText}</p>
       </div>
     </div>
-    <div className="pp-os-toggle" role="group" aria-label="Operating system" data-testid="os-toggle">
-      <button type="button" data-os-choice="mac" aria-selected={guide.platform === 'mac'} onClick={() => onEvent({ type: 'platform', platform: 'mac' })}>Mac</button>
-      <button type="button" data-os-choice="windows" aria-selected={guide.platform === 'windows'} onClick={() => onEvent({ type: 'platform', platform: 'windows' })}>Windows</button>
+    <div className="pp-os-toggle" role="radiogroup" aria-label="Operating system" data-testid="os-toggle" onKeyDown={(e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+      e.preventDefault()
+      onEvent({ type: 'platform', platform: guide.platform === 'mac' ? 'windows' : 'mac' })
+    }}>
+      <button type="button" role="radio" data-os-choice="mac" aria-checked={guide.platform === 'mac'} onClick={() => onEvent({ type: 'platform', platform: 'mac' })}>Mac</button>
+      <button type="button" role="radio" data-os-choice="windows" aria-checked={guide.platform === 'windows'} onClick={() => onEvent({ type: 'platform', platform: 'windows' })}>Windows</button>
     </div>
     <div data-testid="connect-laptop">
       <button ref={openButtonRef} type="button" className="btn big pp-connect" data-testid="connect-open" data-state={cardState} onClick={() => onEvent({ type: 'open-guide' })}>Connect laptop control</button>
@@ -185,7 +189,7 @@ export function ConnectGuide({
                   onDigit(i, e.clipboardData.getData('text'))
                 }}
               />)}
-              <button type="submit" className="pp-code-go" data-testid="code-submit" aria-label="Connect" disabled={!arrowOn}>
+              <button type="submit" className="pp-code-go" data-testid="connect-submit" aria-label="Connect" disabled={!arrowOn}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></svg>
               </button>
             </form> : null}
@@ -202,9 +206,9 @@ export function ConnectGuide({
       <p className="mut small">Your phone controls the whole laptop. Disconnect to keep control inside this tab.</p>
       <button type="button" className="btn ghost" data-testid="connect-disconnect" onClick={() => onEvent({ type: 'user-disconnect' })}>Disconnect</button>
     </> : null}
-    <details>
+    {import.meta.env.DEV ? <details>
       <summary className="pp-dev-link">Developer</summary>
       <p className="mut small helper-dev-note" data-testid="helper-dev-note"><code>cd helper && npm start</code></p>
-    </details>
+    </details> : null}
   </div>
 }
