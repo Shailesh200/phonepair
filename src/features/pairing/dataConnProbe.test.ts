@@ -3,10 +3,121 @@ import assert from 'node:assert/strict'
 import {
   DATA_CONN_PROBE_SKIP_RECENT_MS,
   DATA_CONN_PROBE_TIMEOUT_MS,
+  buildLinkHelloMessage,
   dataConnProbeSucceeded,
+  freshRemotePongCap,
   helloCapsIncludePong,
+  shouldDispatchConnKeepalive,
   shouldRunDataConnProbe,
 } from './dataConnProbe.ts'
+
+describe('buildLinkHelloMessage', () => {
+  it('always uses local deviceName, never a remote hint', () => {
+    const local = 'Guest Pixel'
+    const remoteHint = 'Saved Laptop Name'
+    const msg = buildLinkHelloMessage(local)
+    assert.equal(msg.name, local)
+    assert.notEqual(msg.name, remoteHint)
+    assert.equal(msg.t, 'hello')
+    assert.deepEqual(msg.caps, ['pong'])
+  })
+})
+
+describe('remotePongCap lifecycle', () => {
+  it('clears on drop and new conn so old peer without cap hello is never probed', () => {
+    let cap = true
+    cap = freshRemotePongCap()
+    assert.equal(cap, false)
+    assert.equal(
+      shouldRunDataConnProbe({
+        connOpen: true,
+        localOffersPong: true,
+        remoteSupportsPong: cap,
+        probePending: false,
+        lastSeen: 0,
+        now: 10_000,
+      }),
+      false,
+    )
+    cap = true
+    cap = freshRemotePongCap()
+    assert.equal(
+      shouldRunDataConnProbe({
+        connOpen: true,
+        localOffersPong: true,
+        remoteSupportsPong: cap,
+        probePending: false,
+        lastSeen: 0,
+        now: 10_000,
+      }),
+      false,
+    )
+  })
+
+  it('phone with cap then drop: stale cap must not enable probe until new hello', () => {
+    let remotePongCap = true
+    remotePongCap = freshRemotePongCap()
+    const probeAfterOldPhone = shouldRunDataConnProbe({
+      connOpen: true,
+      localOffersPong: true,
+      remoteSupportsPong: remotePongCap,
+      probePending: false,
+      lastSeen: 0,
+      now: 50_000,
+    })
+    assert.equal(probeAfterOldPhone, false)
+    remotePongCap = helloCapsIncludePong(['pong'])
+    assert.equal(
+      shouldRunDataConnProbe({
+        connOpen: true,
+        localOffersPong: true,
+        remoteSupportsPong: remotePongCap,
+        probePending: false,
+        lastSeen: 0,
+        now: 50_000,
+      }),
+      true,
+    )
+  })
+})
+
+describe('shouldDispatchConnKeepalive', () => {
+  it('ping/pong on open conn while guest reconnecting', () => {
+    assert.equal(
+      shouldDispatchConnKeepalive({
+        connOpen: true,
+        rememberGuestAuth: true,
+        status: 'reconnecting',
+        t: 'ping',
+      }),
+      true,
+    )
+    assert.equal(
+      shouldDispatchConnKeepalive({
+        connOpen: true,
+        rememberGuestAuth: true,
+        status: 'reconnecting',
+        t: 'pong',
+      }),
+      true,
+    )
+    assert.equal(
+      shouldDispatchConnKeepalive({
+        connOpen: true,
+        rememberGuestAuth: true,
+        status: 'reconnecting',
+        t: 'clip:set',
+      }),
+      false,
+    )
+  })
+
+  it('host probe pong after probeAt counts as alive (no abandon)', () => {
+    const probeAt = 10_000
+    const lastSeenAfterPong = 10_001
+    assert.equal(dataConnProbeSucceeded(lastSeenAfterPong, probeAt), true)
+  })
+})
 
 describe('hello pong capability', () => {
   it('old hello without caps is not probed', () => {

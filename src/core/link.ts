@@ -48,9 +48,10 @@ import {
 } from '../features/pairing/peerForceAdapter'
 import {
   DATA_CONN_PROBE_TIMEOUT_MS,
+  buildLinkHelloMessage,
   dataConnProbeSucceeded,
+  freshRemotePongCap,
   helloCapsIncludePong,
-  LINK_HELLO_CAPS,
   shouldRunDataConnProbe,
 } from '../features/pairing/dataConnProbe'
 import {
@@ -412,8 +413,8 @@ export class Link {
     void this.bootstrapRememberListen()
   }
 
-  private helloMessage(remoteName?: string) {
-    return { t: 'hello', name: remoteName ?? deviceName(), caps: [...LINK_HELLO_CAPS] }
+  private helloMessage() {
+    return buildLinkHelloMessage(deviceName())
   }
 
   private clearConnProbeTimer() {
@@ -1584,6 +1585,10 @@ export class Link {
       try { this.conn.close() } catch {}
     }
     this.clearIceRecovery()
+    this.clearConnProbeTimer()
+    this.connProbeAt = null
+    this.connProbeEligible = false
+    this.remotePongCap = freshRemotePongCap()
     this.connViaRelay = null
     this.conn = null
     this.connPeer = null
@@ -1795,6 +1800,7 @@ export class Link {
       return
     }
     if (this.role === 'host' || c.open) {
+      this.remotePongCap = freshRemotePongCap()
       this.conn = c
       this.connPeer = this.peer
     }
@@ -1811,6 +1817,7 @@ export class Link {
       this.inFlightDial = null
       this.inFlightDialUntil = 0
       this.pending = null
+      this.remotePongCap = freshRemotePongCap()
       this.conn = c
       this.connPeer = this.peer
       if (this.hostGrace) { clearTimeout(this.hostGrace); this.hostGrace = null }
@@ -1838,17 +1845,20 @@ export class Link {
 
   private dispatchPayload(m: any, c: DataConnection) {
     if (c !== this.conn) return
-    if (!this.rememberGuestLive()) return
-    this.lastSeen = Date.now()
     if (!m || typeof m !== 'object') return
-    if (this.connProbeAt != null && c === this.conn && dataConnProbeSucceeded(this.lastSeen, this.connProbeAt)) {
-      this.completeConnProbeSuccess(this.lastSeen - this.connProbeAt)
+    const connOpen = !!c.open
+    if (connOpen) {
+      this.lastSeen = Date.now()
+      if (this.connProbeAt != null && dataConnProbeSucceeded(this.lastSeen, this.connProbeAt)) {
+        this.completeConnProbeSuccess(this.lastSeen - this.connProbeAt)
+      }
+      if (m.t === 'ping') {
+        try { c.send({ t: 'pong' }) } catch {}
+        return
+      }
+      if (m.t === 'pong') return
     }
-    if (m.t === 'ping') {
-      try { c.send({ t: 'pong' }) } catch {}
-      return
-    }
-    if (m.t === 'pong') return
+    if (!this.rememberGuestLive()) return
     if (m.t === 'hello') {
       this.remotePongCap = helloCapsIncludePong((m as { caps?: unknown }).caps)
       this.set({ remoteName: m.name })
@@ -1984,6 +1994,7 @@ export class Link {
     this.inFlightDialUntil = 0
     this.pending = null
     this.clearAuthPending()
+    this.remotePongCap = freshRemotePongCap()
     this.conn = c
     this.connPeer = fromListenPeer ? this.listenPeer : this.peer
     if (fromListenPeer && rememberPhoneId) this.authenticatedRememberPhoneId = rememberPhoneId
@@ -2001,7 +2012,7 @@ export class Link {
       this.rememberGuestDeadlineMs = 0
     }
     if (this.hostGrace) { clearTimeout(this.hostGrace); this.hostGrace = null }
-    try { c.send(this.helloMessage(remoteHint)) } catch {}
+    try { c.send(this.helloMessage()) } catch {}
     if (remoteHint) this.set({ remoteName: remoteHint })
     this.set({ status: 'connected', error: '' })
     if (this.role === 'guest') {

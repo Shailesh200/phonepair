@@ -1,3 +1,4 @@
+// esbuild is provided by vite (transitive dependency — not listed in package.json).
 import * as esbuild from 'esbuild'
 import { spawn } from 'node:child_process'
 import { mkdirSync, readdirSync, statSync } from 'node:fs'
