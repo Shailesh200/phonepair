@@ -8,6 +8,8 @@ import {
   listenRecoveryServerOpenAfterDrop,
   listenRecoveryReclaimSchedulingActive,
   listenRecoveryStaleOpenNeedsImmediateRecycle,
+  shouldForceHookOnRecoveryRearm,
+  shouldOneShotRecoveryRearm,
   shouldRearmListenAfterServerReopen,
   listenReclaimRecycleSkipsConnectingPeer,
   listenReclaimRecycleSkipsOpenSocket,
@@ -70,6 +72,20 @@ describe('remember recovery conn hygiene', () => {
     assert.equal(shouldRearmListenAfterServerReopen(dropAt, serverOpenAt, false), true)
     assert.equal(shouldRearmListenAfterServerReopen(dropAt, serverOpenAt, true), false)
     assert.equal(shouldRearmListenAfterServerReopen(dropAt, null, false), false)
+  })
+
+  it('healthy post-drop listen socket: recovery rearm reloads only, no force hook', () => {
+    assert.equal(shouldForceHookOnRecoveryRearm(true, false), false)
+    assert.equal(shouldForceHookOnRecoveryRearm(false, false), true)
+    assert.equal(shouldForceHookOnRecoveryRearm(true, true), true)
+  })
+
+  it('recovery rearm is one-shot per serverOpenAt (4s ticks cannot recycle)', () => {
+    const openAt = 50_000
+    assert.equal(shouldOneShotRecoveryRearm(openAt, null), true)
+    assert.equal(shouldOneShotRecoveryRearm(openAt, openAt), false)
+    assert.equal(shouldOneShotRecoveryRearm(openAt + 1, openAt), true)
+    assert.equal(shouldOneShotRecoveryRearm(null, openAt), true)
   })
 
   it('stops reclaim polling after the 120s cap when OPEN never arrives', () => {

@@ -149,7 +149,9 @@ import {
   listenRecoveryAwaitingServerOpenSinceDrop,
   listenReclaimRecycleSkipsOpenSocket,
   shouldClearStaleRememberMainConnForRecovery,
+  shouldForceHookOnRecoveryRearm,
   shouldListenReclaimRecyclePeer,
+  shouldOneShotRecoveryRearm,
   shouldRearmListenAfterServerReopen,
 } from '../remember/rememberRecoveryConn'
 import {
@@ -270,6 +272,7 @@ export class Link {
   private listenRecoveryReclaimUntil: number | null = null
   private listenRecoveryReclaimTimer: number | null = null
   private listenRecoveryModeClearTimer: number | null = null
+  private listenRecoveryRearmedOpenAt: number | null = null
   private listenReclaimStartedAt: number | null = null
   private visibilityListener: (() => void) | null = null
   private networkListener: (() => void) | null = null
@@ -682,6 +685,7 @@ export class Link {
     this.listenRecoveryMode = false
     this.listenRecoveryDropAt = null
     this.listenRecoveryReclaimUntil = null
+    this.listenRecoveryRearmedOpenAt = null
     this.clearListenRecoveryReclaimTimer()
     this.clearListenRecoveryModeClearTimer()
   }
@@ -706,6 +710,7 @@ export class Link {
     if (!this.hostRememberListenRecoveryArmed()) return
     this.listenRecoveryMode = true
     this.listenRecoveryDropAt = at
+    this.listenRecoveryRearmedOpenAt = null
     this.listenRecoveryReclaimUntil = listenRecoveryReclaimUntilFromDrop(at)
     this.scheduleListenRecoveryModeClearAt(this.listenRecoveryReclaimUntil)
     ppDebugMarkListenRecoveryDrop(at)
@@ -801,6 +806,9 @@ export class Link {
 
   private rearmListenForRecoveryAccept(peer?: Peer) {
     const lp = peer ?? this.listenPeer
+    const wrapped = lp && !lp.destroyed ? peerAsForceSignal(lp, 'listen') : null
+    const serverOpenAt = wrapped?.signalPeerOpenAt?.() ?? null
+    if (!shouldOneShotRecoveryRearm(serverOpenAt, this.listenRecoveryRearmedOpenAt)) return
     if (!lp || lp.destroyed) {
       if (!this.listenBootstrapInFlight && Date.now() >= this.listenBackoffUntil) {
         void this.bootstrapRememberListen()
@@ -809,12 +817,8 @@ export class Link {
     }
     if (this.isRememberConnOnListenPeer()) return
     this.reloadRememberPhonesMap()
-    if (!lp.open || lp.disconnected) {
-      if (!this.ensureListenForceRunner().runnerBusy()) {
-        this.ensureListenForceRunner().hook(peerAsForceSignal(lp, 'listen'), false)
-      }
-      return
-    }
+    if (serverOpenAt != null) this.listenRecoveryRearmedOpenAt = serverOpenAt
+    if (!shouldForceHookOnRecoveryRearm(!!lp.open, !!lp.disconnected)) return
     if (!this.ensureListenForceRunner().runnerBusy()) {
       this.ensureListenForceRunner().hook(peerAsForceSignal(lp, 'listen'), false)
     }
@@ -906,7 +910,10 @@ export class Link {
     if (!this.listenSignalUnverified()) {
       const lpHealthy = this.listenPeer
       if (lpHealthy?.open && !lpHealthy.disconnected) {
-        if (!(this.listenRecoveryMode && !this.isRememberConnOnListenPeer())) return
+        if (this.listenRecoveryMode && !this.isRememberConnOnListenPeer()) {
+          this.reloadRememberPhonesMap()
+        }
+        return
       }
     }
     if (this.listenGaveUp) {
@@ -1444,6 +1451,7 @@ export class Link {
     }
     this.listenPeer = peer
     this.listenPeerEverOpen = false
+    this.listenRecoveryRearmedOpenAt = null
     this.listenBootstrapInFlight = false
     trackListenPeerSocketOpen(peer, () => {
       const now = Date.now()

@@ -128,6 +128,21 @@ export function shouldRearmListenAfterServerReopen(
   return listenRecoveryServerOpenAfterDrop(recoveryDropAt, serverOpenAt)
 }
 
+/** Healthy post-drop listen socket: reload phone map only — no force hook (avoids 8s recycle churn). */
+export function shouldForceHookOnRecoveryRearm(listenOpen: boolean, disconnected: boolean): boolean {
+  return !listenOpen || disconnected
+}
+
+/** One rearm per server OPEN timestamp so 4s recovery ticks cannot repeat hook/recycle. */
+export function shouldOneShotRecoveryRearm(
+  serverOpenAt: number | null,
+  lastRearmedOpenAt: number | null,
+): boolean {
+  if (serverOpenAt == null) return true
+  if (lastRearmedOpenAt == null) return true
+  return lastRearmedOpenAt < serverOpenAt
+}
+
 /** After recovery settle, listen forcing may run again (silent open sockets, cadence/tick). */
 /** `lost()` on the host must not arm listen-id recovery — only signal-peer drops do. */
 export function shouldBeginListenIdRecoveryOnDataConnClose(): boolean {
