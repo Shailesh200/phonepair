@@ -464,7 +464,7 @@ registerFeature({
   title: 'Remote',
   icon: 'pointer',
   order: 40,
-  laptopColumn: 'right',
+  laptopColumn: 'left',
   PhonePage: Remote,
   LaptopPanel,
   LaptopOverlay,

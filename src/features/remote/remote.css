@@ -181,9 +181,23 @@
   flex: 0 0 auto;
 }
 
+.pp-remote { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.pp-remote-pad { touch-action: none; }
+.pp-remote-clicker { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pp-remote-laser {
+  width: 100%;
+  min-height: 52px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text, var(--ink));
+  font-weight: 600;
+  font-size: 16px;
+}
+
 @media (orientation: landscape) and (max-height: 500px) {
   .phone-page:has(.pg.remote) > .pg.remote {
-    display: grid;
+    display: flex;
     grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.9fr);
     grid-template-rows: auto minmax(0, 1fr) auto auto;
     column-gap: 10px;

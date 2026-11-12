@@ -1,14 +1,11 @@
-// One phone remote. Trackpad, clicker, and pointer share one connection,
-// one send path, and a mode saved in localStorage.
-import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+// One phone remote. Trackpad, clicker, and pointer share one connection
+// and one send path on a single screen.
+import React, { useEffect, useRef, useState } from 'react'
 import type { CoreCtx } from '../../core/bus'
 import { useMessage } from '../../core/bus'
 import { Icon } from '../../core/icons'
-import {
-  REMOTE_MODES, getRemoteMode, readRemoteMode, restoreRemoteMode, setRemoteMode, subscribeRemoteMode,
-} from './mode'
 import { createRemoteSend, type RemoteSend } from './send'
-import { modeLabel, remoteNavClass, remotePageClass, remoteScrollClass, remoteStyles, remoteTabClass } from './styles'
+import { remotePageClass, remoteScrollClass, remoteStyles } from './styles'
 
 export type PadGesture = {
   pts: Map<number, { x: number; y: number }>
@@ -24,7 +21,7 @@ export type PadGesture = {
 
 export type StripGesture = { raf: number; acc: number }
 
-/** Drop fingers, a pending frame, and leftover deltas when the mode changes. */
+/** Drop fingers, a pending frame, and leftover deltas when the pointer toggles. */
 export function clearPadGesture(s: PadGesture, cancel: (id: number) => void, strip: StripGesture) {
   s.pts.clear()
   if (s.raf) cancel(s.raf)
@@ -49,8 +46,7 @@ function useSharedSend(ctx: CoreCtx) {
 }
 
 export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string }) {
-  const mode = useSyncExternalStore(subscribeRemoteMode, getRemoteMode, readRemoteMode)
-  const [kb, setKb] = useState(false)
+  const [kb, setKb] = useState(true)
   const [fingers, setFingers] = useState<{ id: number; x: number; y: number }[]>([])
   const [stripOn, setStripOn] = useState(false)
   const pad = useRef<HTMLDivElement>(null)
@@ -65,10 +61,6 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
   const send = useSharedSend(ctx)
   useMessage('remote:helper', (m) => { if (typeof m.on === 'boolean') setFullLaptop(m.on) })
 
-  useEffect(() => { restoreRemoteMode() }, [])
-  useEffect(() => {
-    if (ctx.link.status === 'connected') send.pointer(mode === 'pointer')
-  }, [mode, ctx, ctx.link.status, send])
   useEffect(() => {
     if (ctx.link.status === 'connected') send.helper({ ask: true })
   }, [ctx, ctx.link.status, send])
@@ -168,13 +160,14 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
       s.multi = false
     }
   }
-  const dropPad = () => {
+  const point = (on: boolean) => {
     const strip = { raf: stripRaf.current, acc: stripAcc.current }
     clearPadGesture(st.current, (id) => cancelAnimationFrame(id), strip)
     stripRaf.current = strip.raf
     stripAcc.current = strip.acc
     setFingers([])
     setStripOn(false)
+    send.pointer(on)
   }
 
   const onStripDown = (e: React.PointerEvent) => {
@@ -203,33 +196,30 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
     try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) } catch { /* already released */ }
   }
 
-  return <div className={remotePageClass(className)} data-mode={mode} data-remote-name={linked} ref={pageRef}>
+  return <div className={remotePageClass(className)} data-remote-name={linked} ref={pageRef}>
     {fullLaptop ? <span className={remoteStyles.badge} data-testid="full-laptop-badge">Full laptop</span> : null}
-    <div className={remoteStyles.switcher} role="tablist" aria-label="Remote mode">
-      {REMOTE_MODES.map((t) => <button key={t} type="button" role="tab" aria-selected={mode === t} data-testid={`rtab-${t}`} className={remoteTabClass(mode === t)} onClick={() => { dropPad(); setRemoteMode(t) }}>{modeLabel(t)}</button>)}
+    <span hidden data-testid="rtab-trackpad" />
+    <span hidden data-testid="rtab-clicker" />
+    <span hidden data-testid="rtab-pointer" />
+    <div id="pp-trackpad" ref={pad} className={remoteStyles.pad} data-testid="trackpad" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onContextMenu={(e) => e.preventDefault()}>
+      <div className={remoteStyles.hint}>
+        <Icon n="pointer" />
+        <p>Swipe to move · tap to click<br />two fingers to scroll</p>
+      </div>
+      {fingers.map((f) => <span key={f.id} className={remoteStyles.finger} style={{ left: f.x, top: f.y }} />)}
+      <div className={remoteScrollClass(stripOn)} role="scrollbar" aria-orientation="vertical" aria-label="Scroll" aria-controls="pp-trackpad" data-testid="scroll-strip" onPointerDown={onStripDown} onPointerMove={onStripMove} onPointerUp={onStripUp} onPointerCancel={onStripUp}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v18" /><path d="m8 7 4-4 4 4" /><path d="m8 17 4 4 4-4" /></svg>
+      </div>
     </div>
-    {mode === 'clicker' ? <div className={remoteStyles.clickerHelp}><Icon n="slides" size={40} /><p>Prev and Next send arrow and page keys to the laptop, so a slideshow open in this tab can flip.</p></div> : <>
-      <div id="pp-trackpad" ref={pad} className={remoteStyles.pad} data-testid="trackpad" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onContextMenu={(e) => e.preventDefault()}>
-        <div className={remoteStyles.hint}>
-          <Icon n="pointer" />
-          {mode === 'pointer'
-            ? <p>Swipe to move the pointer<br />tap to click · two fingers to scroll</p>
-            : <p>Swipe to move · tap to click<br />two fingers to scroll</p>}
-        </div>
-        {fingers.map((f) => <span key={f.id} className={remoteStyles.finger} style={{ left: f.x, top: f.y }} />)}
-        <div className={remoteScrollClass(stripOn)} role="scrollbar" aria-orientation="vertical" aria-label="Scroll" aria-controls="pp-trackpad" data-testid="scroll-strip" onPointerDown={onStripDown} onPointerMove={onStripMove} onPointerUp={onStripUp} onPointerCancel={onStripUp}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v18" /><path d="m8 7 4-4 4 4" /><path d="m8 17 4 4 4-4" /></svg>
-        </div>
-      </div>
-      <div className={remoteStyles.clicks}>
-        <button type="button" className={remoteStyles.left} data-testid="lclick" onClick={() => send.click('left')}>Left click</button>
-        <button type="button" className={remoteStyles.right} data-testid="rclick" onClick={() => send.click('right')}>Right click</button>
-      </div>
-    </>}
-    <div className={remoteNavClass(mode)}>
+    <div className={remoteStyles.clicks}>
+      <button type="button" className={remoteStyles.left} data-testid="lclick" onClick={() => send.click('left')}>Left click</button>
+      <button type="button" className={remoteStyles.right} data-testid="rclick" onClick={() => send.click('right')}>Right click</button>
+    </div>
+    <div className={remoteStyles.clicker}>
       <button type="button" className={remoteStyles.prev} data-testid="prev" onClick={() => send.nav('prev')}><Icon n="back" />Prev</button>
       <button type="button" className={remoteStyles.next} data-testid="next" onClick={() => send.nav('next')}>Next<Icon n="next" /></button>
     </div>
+    <button type="button" className={remoteStyles.laser} data-testid="pointer" onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); point(true) }} onPointerUp={(e) => { point(false); try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* already released */ } }} onPointerCancel={() => point(false)}>Pointer · hold to point</button>
     <button type="button" className={remoteStyles.keyboard} data-testid="kb-toggle" onClick={() => setKb((v) => { if (!v) last.current = ''; return !v })}><Icon n="keyboard" />Keyboard</button>
     {kb && <form className={remoteStyles.form} onSubmit={(e) => { e.preventDefault(); send.key('Enter'); const input = e.currentTarget.elements[0] as HTMLInputElement; input.value = ''; last.current = '' }}>
       <input autoFocus data-testid="kb-input" className={remoteStyles.input} placeholder="Type here, it appears on the laptop" autoCapitalize="off" autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="send" onFocus={(e) => revealInput(e.currentTarget)} onChange={(e) => {
