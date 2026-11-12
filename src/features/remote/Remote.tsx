@@ -10,6 +10,36 @@ import {
 import { createRemoteSend, type RemoteSend } from './send'
 import { modeLabel, remoteNavClass, remotePageClass, remoteScrollClass, remoteStyles, remoteTabClass } from './styles'
 
+export type PadGesture = {
+  pts: Map<number, { x: number; y: number }>
+  accX: number
+  accY: number
+  scrX: number
+  scrY: number
+  raf: number
+  down: number
+  moved: number
+  multi: boolean
+}
+
+export type StripGesture = { raf: number; acc: number }
+
+/** Drop fingers, a pending frame, and leftover deltas when the mode changes. */
+export function clearPadGesture(s: PadGesture, cancel: (id: number) => void, strip: StripGesture) {
+  s.pts.clear()
+  if (s.raf) cancel(s.raf)
+  s.raf = 0
+  s.accX = 0
+  s.accY = 0
+  s.scrX = 0
+  s.scrY = 0
+  s.moved = 0
+  s.multi = false
+  if (strip.raf) cancel(strip.raf)
+  strip.raf = 0
+  strip.acc = 0
+}
+
 function useSharedSend(ctx: CoreCtx) {
   const ctxRef = useRef(ctx)
   ctxRef.current = ctx
@@ -26,7 +56,7 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
   const pad = useRef<HTMLDivElement>(null)
   const pageRef = useRef<HTMLDivElement>(null)
   const focusTimer = useRef(0)
-  const st = useRef({ pts: new Map<number, { x: number; y: number }>(), accX: 0, accY: 0, scrX: 0, scrY: 0, raf: 0, down: 0, moved: 0, multi: false })
+  const st = useRef<PadGesture>({ pts: new Map(), accX: 0, accY: 0, scrX: 0, scrY: 0, raf: 0, down: 0, moved: 0, multi: false })
   const last = useRef('')
   const stripAcc = useRef(0)
   const stripRaf = useRef(0)
@@ -138,6 +168,14 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
       s.multi = false
     }
   }
+  const dropPad = () => {
+    const strip = { raf: stripRaf.current, acc: stripAcc.current }
+    clearPadGesture(st.current, (id) => cancelAnimationFrame(id), strip)
+    stripRaf.current = strip.raf
+    stripAcc.current = strip.acc
+    setFingers([])
+    setStripOn(false)
+  }
 
   const onStripDown = (e: React.PointerEvent) => {
     e.stopPropagation()
@@ -168,7 +206,7 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
   return <div className={remotePageClass(className)} data-mode={mode} data-remote-name={linked} ref={pageRef}>
     {fullLaptop ? <span className={remoteStyles.badge} data-testid="full-laptop-badge">Full laptop</span> : null}
     <div className={remoteStyles.switcher} role="tablist" aria-label="Remote mode">
-      {REMOTE_MODES.map((t) => <button key={t} type="button" role="tab" aria-selected={mode === t} data-testid={`rtab-${t}`} className={remoteTabClass(mode === t)} onClick={() => setRemoteMode(t)}>{modeLabel(t)}</button>)}
+      {REMOTE_MODES.map((t) => <button key={t} type="button" role="tab" aria-selected={mode === t} data-testid={`rtab-${t}`} className={remoteTabClass(mode === t)} onClick={() => { dropPad(); setRemoteMode(t) }}>{modeLabel(t)}</button>)}
     </div>
     {mode === 'clicker' ? <div className={remoteStyles.clickerHelp}><Icon n="slides" size={40} /><p>Prev and Next send arrow and page keys to the laptop, so a slideshow open in this tab can flip.</p></div> : <>
       <div id="pp-trackpad" ref={pad} className={remoteStyles.pad} data-testid="trackpad" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onContextMenu={(e) => e.preventDefault()}>

@@ -1,45 +1,77 @@
-import { spawn } from 'node:child_process'
 import * as esbuild from 'esbuild'
-import { mkdirSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { spawn } from 'node:child_process'
+import { mkdirSync, readdirSync, statSync } from 'node:fs'
+import { basename, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const remoteDir = join(root, 'src/features/remote')
-const outfile = join(root, 'node_modules/.cache/remote-tests.mjs')
-mkdirSync(dirname(outfile), { recursive: true })
-await esbuild.build({
-  absWorkingDir: root,
-  entryPoints: [join(remoteDir, 'remote.test.tsx')],
-  bundle: true,
-  packages: 'external',
-  format: 'esm',
-  platform: 'node',
-  outfile,
-  jsx: 'automatic',
-  define: {
-    __REMOTE_SRC__: JSON.stringify(readFileSync(join(remoteDir, 'Remote.tsx'), 'utf8')),
-    __INDEX_SRC__: JSON.stringify(readFileSync(join(remoteDir, 'index.tsx'), 'utf8')),
-    __SEND_SRC__: JSON.stringify(readFileSync(join(remoteDir, 'send.ts'), 'utf8')),
-    __MODE_SRC__: JSON.stringify(readFileSync(join(remoteDir, 'mode.ts'), 'utf8')),
-  },
-})
-const remoteTests = await import(pathToFileURL(outfile).href + '?t=' + Date.now())
-try {
-  await remoteTests.runRemoteTests()
-} catch (err) {
-  console.error(err)
-  process.exit(1)
+const root = fileURLToPath(new URL('..', import.meta.url))
+const src = join(root, 'src')
+const tsxCache = join(root, 'node_modules/.cache/pairing-tsx-tests')
+
+function collectTests(dir) {
+  const out = []
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name)
+    if (statSync(p).isDirectory()) out.push(...collectTests(p))
+    else if (name.endsWith('.test.ts') || name.endsWith('.test.tsx')) out.push(p)
+  }
+  return out.sort()
 }
-console.log('remote tests passed')
 
-const child = spawn(process.execPath, [
-  '--experimental-strip-types',
-  '--test',
-  'src/features/pairing/pairing.test.ts',
-  'src/features/screen/map.test.ts',
-  'src/features/screen/control.test.ts',
-  'src/features/remote/helperProbe.test.ts',
-], { stdio: 'inherit', cwd: new URL('..', import.meta.url).pathname })
+async function bundleTsxTest(entry) {
+  mkdirSync(tsxCache, { recursive: true })
+  const out = join(tsxCache, basename(entry).replace(/\.tsx$/, '.mjs'))
+  await esbuild.build({
+    absWorkingDir: root,
+    entryPoints: [entry],
+    bundle: true,
+    packages: 'external',
+    format: 'esm',
+    platform: 'node',
+    outfile: out,
+    jsx: 'automatic',
+  })
+  return out
+}
 
-child.on('exit', (code) => process.exit(code ?? 1))
+function runNodeTest(files) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, ['--experimental-strip-types', '--test', ...files], {
+      stdio: 'inherit',
+      cwd: root,
+    })
+    child.on('exit', (code) => resolve(code ?? 1))
+  })
+}
+
+function runScript(script) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [script], { stdio: 'inherit', cwd: root })
+    child.on('exit', (code) => resolve(code ?? 1))
+  })
+}
+
+const all = collectTests(src)
+const tsFiles = all.filter((f) => f.endsWith('.test.ts'))
+const tsxFiles = all.filter((f) => f.endsWith('.test.tsx'))
+
+const clipboardTest = join(src, 'features/clipboard/clipboard.test.tsx')
+const remoteTest = join(src, 'features/remote/remote.test.tsx')
+const tsxForBundle = tsxFiles.filter((f) => f !== clipboardTest && f !== remoteTest)
+
+const bundled = []
+for (const entry of tsxForBundle) {
+  bundled.push(await bundleTsxTest(entry))
+}
+
+let code = await runNodeTest([...tsFiles, ...bundled])
+if (code !== 0) process.exit(code)
+
+if (tsxFiles.includes(clipboardTest)) {
+  code = await runScript(join(src, 'features/clipboard/run-tests.mjs'))
+}
+if (code === 0 && tsxFiles.includes(remoteTest)) {
+  code = await runScript(join(src, 'features/remote/run-tests.mjs'))
+}
+
+process.exit(code ?? 0)
