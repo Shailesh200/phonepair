@@ -71,8 +71,9 @@
   --layout-max:none;
 }
 @media (min-width:1200px){:root{--layout-max:min(80vw, 1440px)}}
-.laptop,.phone-wrap{width:100%;max-width:var(--layout-max);margin-inline:auto;padding-inline:clamp(16px, 4vw, 48px)}
-@media (min-width:1200px) and (max-width:1500px){.art{transform:scale(.75)}}
+.laptop,.phone-wrap{width:100%;max-width:var(--layout-max);margin-inline:auto}
+@media (min-width:431px){.laptop,.phone-wrap{padding-inline:clamp(16px, 4vw, 48px)}}
+@media (min-width:1200px) and (max-width:1500px){.art{transform:scale(.75);transform-origin:left bottom}}
 
 html,body,#root{min-height:100vh;min-height:100dvh}
 html{background:var(--bg)}
