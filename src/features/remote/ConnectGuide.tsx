@@ -14,7 +14,7 @@ import {
   type ConnectStep,
   type HelperAttempt,
   type HelperStatus,
-} from './connectGuide'
+} from './connectGuide.ts'
 import './connectGuide.css'
 
 const MAC_OPEN = 'Open the DMG, drag PhonePair Helper to Applications, then open it.'
@@ -212,7 +212,7 @@ export function ConnectGuide({
       <p className="mut small">Your phone controls the whole laptop. Disconnect to keep control inside this tab.</p>
       <button type="button" className="btn ghost" data-testid="connect-disconnect" onClick={() => onEvent({ type: 'user-disconnect' })}>Disconnect</button>
     </> : null}
-    {import.meta.env.DEV ? <details>
+    {import.meta.env && import.meta.env.DEV ? <details>
       <summary className="pp-dev-link">Developer</summary>
       <p className="mut small helper-dev-note" data-testid="helper-dev-note"><code>cd helper && npm start</code></p>
     </details> : null}

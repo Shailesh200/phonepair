@@ -19,6 +19,7 @@ function injector() {
     async btn(btn, state) { calls.push(['btn', btn, state]) },
     async dbl() { calls.push(['dbl']) },
     async release() { calls.push(['release']) },
+    async nudge() { calls.push(['nudge']) },
   }
 }
 
@@ -289,4 +290,128 @@ test('localhost dev origin can pair only when PHONEPAIR_DEV=1', async (t) => {
   ws.send(JSON.stringify({ t: 'pair', code: '042817' }))
   assert.deepEqual(await onceMessage(ws), { t: 'paired' })
   ws.close()
+})
+
+function moverClock() {
+  const timers = []
+  return {
+    setTimer(fn, ms) {
+      const timer = { fn, ms, left: ms }
+      timers.push(timer)
+      return timer
+    },
+    clearTimer(timer) {
+      const index = timers.indexOf(timer)
+      if (index >= 0) timers.splice(index, 1)
+    },
+    tick(ms) {
+      let left = ms
+      let guard = 0
+      while (left > 0 && timers.length && guard < 100000) {
+        guard += 1
+        const step = Math.min(left, ...timers.map((timer) => timer.left))
+        for (const timer of timers) timer.left -= step
+        left -= step
+        for (const timer of timers.filter((item) => item.left <= 0)) {
+          timer.left += timer.ms
+          timer.fn()
+        }
+      }
+    },
+  }
+}
+
+function takeMessages(ws) {
+  const queue = []
+  const waiters = []
+  ws.on('message', (data) => {
+    const msg = JSON.parse(String(data))
+    const waiter = waiters.shift()
+    if (waiter) waiter(msg)
+    else queue.push(msg)
+  })
+  return () => {
+    const next = queue.shift()
+    if (next) return Promise.resolve(next)
+    return new Promise((resolve) => { waiters.push(resolve) })
+  }
+}
+
+test('mover reports on connect, rejects a bad interval, and stops on unpair', async (t) => {
+  const clock = moverClock()
+  const inject = injector()
+  const logs = []
+  const helper = await startHelper({
+    code: '042817',
+    inject,
+    ports: [0],
+    log: (line) => logs.push(line),
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+  })
+  t.after(() => helper.close())
+  const ws = connect(helper.port)
+  const next = takeMessages(ws)
+  await opened(ws)
+  ws.send(JSON.stringify({ t: 'pair', code: '042817' }))
+  assert.deepEqual(await next(), { t: 'paired' })
+  assert.deepEqual(await next(), { t: 'mover', on: false, interval: null })
+  ws.send(JSON.stringify({ t: 'mover', on: true, interval: '10s' }))
+  ws.send(JSON.stringify({ t: 'mover', on: true, interval: '2m' }))
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  assert.equal(inject.calls.some((call) => call[0] === 'nudge'), false)
+  ws.send(JSON.stringify({ t: 'mover', on: true, interval: '30s' }))
+  assert.deepEqual(await next(), { t: 'mover', on: true, interval: '30s' })
+  clock.tick(29_999)
+  assert.equal(inject.calls.filter((call) => call[0] === 'nudge').length, 0)
+  clock.tick(1)
+  assert.equal(inject.calls.filter((call) => call[0] === 'nudge').length, 1)
+  ws.send(JSON.stringify({ t: 'mover', on: true, interval: '1m' }))
+  assert.deepEqual(await next(), { t: 'mover', on: true, interval: '1m' })
+  clock.tick(30_000)
+  assert.equal(inject.calls.filter((call) => call[0] === 'nudge').length, 1)
+  clock.tick(30_000)
+  assert.equal(inject.calls.filter((call) => call[0] === 'nudge').length, 2)
+  ws.close()
+  await waitFor(() => logs.includes('CONTROL OFF'))
+  const nudges = inject.calls.filter((call) => call[0] === 'nudge').length
+  clock.tick(300_000)
+  assert.equal(inject.calls.filter((call) => call[0] === 'nudge').length, nudges)
+  helper.stopMover()
+  clock.tick(300_000)
+  assert.equal(inject.calls.filter((call) => call[0] === 'nudge').length, nudges)
+})
+
+test('sc:stop leaves the mover on, and unpair stops it', async (t) => {
+  const clock = moverClock()
+  const inject = injector()
+  const logs = []
+  const helper = await startHelper({
+    code: '042817',
+    inject,
+    ports: [0],
+    log: (line) => logs.push(line),
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+  })
+  t.after(() => helper.close())
+  const ws = connect(helper.port)
+  const next = takeMessages(ws)
+  await opened(ws)
+  ws.send(JSON.stringify({ t: 'pair', code: '042817' }))
+  assert.deepEqual(await next(), { t: 'paired' })
+  assert.deepEqual(await next(), { t: 'mover', on: false, interval: null })
+  ws.send(JSON.stringify({ t: 'mover', on: true, interval: '30s' }))
+  assert.deepEqual(await next(), { t: 'mover', on: true, interval: '30s' })
+  ws.send(JSON.stringify({ t: 'sc:stop' }))
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  clock.tick(30_000)
+  assert.equal(inject.calls.filter((call) => call[0] === 'nudge').length, 1)
+  clock.tick(30_000)
+  assert.equal(inject.calls.filter((call) => call[0] === 'nudge').length, 2)
+  ws.close()
+  await waitFor(() => logs.includes('CONTROL OFF'))
+  const nudges = inject.calls.filter((call) => call[0] === 'nudge').length
+  clock.tick(300_000)
+  assert.equal(inject.calls.filter((call) => call[0] === 'nudge').length, nudges)
 })

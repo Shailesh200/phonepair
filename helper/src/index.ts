@@ -36,6 +36,7 @@ async function main() {
   const stop = async () => {
     if (stopping) return
     stopping = true
+    helper.stopMover()
     await helper.close()
     await Promise.race([
       Promise.all([inject.release(), releaseModifiers()]),
@@ -43,6 +44,7 @@ async function main() {
     ])
     process.exit(0)
   }
+  process.on('exit', () => { helper.stopMover() })
   process.on('SIGINT', () => { void stop() })
   process.on('SIGTERM', () => { void stop() })
 }

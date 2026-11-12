@@ -1,12 +1,25 @@
 // Phone as a remote for this tab. Messages: remote:move, remote:click, remote:scroll,
 // remote:nav, remote:type, remote:key, remote:pointer.
 import React, { useEffect, useRef, useState } from 'react'
-import { CoreCtx, onMessage, registerFeature, useMessage } from '../../core/bus'
+import { CoreCtx, createStore, onMessage, registerFeature } from '../../core/bus'
+import { Remote } from './Remote'
+import { MoverControl } from './Mover'
 import { Icon } from '../../core/icons'
 import { CopyBtn } from '../../core/ui'
 import { ConnectGuide } from './ConnectGuide'
 import { helperProbeTimeout, settleHelperProbe, type HelperProbeSocket } from './helperProbe'
-import type { HelperAttempt } from './connectGuide'
+import {
+  moverBadgeText,
+  moverCommandFrom,
+  moverIntervalCommand,
+  moverStopsOn,
+  moverToggleCommand,
+  moverView,
+  readMoverState,
+  type MoverState,
+} from '../screen/mover'
+import { navKey, showPointerLaser } from './send'
+import type { HelperAttempt } from './connectGuide.ts'
 import './remote.css'
 
 const MOVE_GAIN = 1.6
@@ -14,7 +27,6 @@ const SCROLL_GAIN = 2
 const NON_TEXT = new Set(['button', 'submit', 'reset', 'checkbox', 'radio', 'file', 'range', 'color', 'image', 'hidden'])
 
 type Btn = 'left' | 'right'
-type Tab = 'trackpad' | 'clicker' | 'pointer'
 
 const HELPER_PORTS = [47811, 47812, 47813, 47814]
 type HelperStatus = 'off' | 'connecting' | 'connected'
@@ -27,6 +39,31 @@ const helper = {
   status: 'off' as HelperStatus,
   ws: null as WebSocket | null,
   listeners: new Set<() => void>(),
+}
+const moverReported = createStore<MoverState>({ on: false, interval: null })
+let moverRelay: { send: (msg: { t: 'mover'; on: boolean; interval: MoverState['interval'] }) => void; connected: () => boolean } | null = null
+
+function applyMoverReport(state: MoverState) {
+  moverReported.set(state)
+  if (moverRelay?.connected()) moverRelay.send({ t: 'mover', on: state.on, interval: state.interval })
+}
+
+function readHelperMover(data: unknown) {
+  let parsed: unknown
+  try { parsed = JSON.parse(String(data)) } catch { return }
+  const state = readMoverState(parsed)
+  if (state) applyMoverReport(state)
+}
+
+export function stopMouseMover() {
+  sendHelper({ t: 'mover', on: false })
+}
+
+export function MoverHeaderBadge() {
+  const link = useHelper()
+  const state = moverReported.use()
+  if (moverView(link.status === 'connected', state) !== 'on' || !state.interval) return null
+  return <span className="pp-mover-badge" data-testid="mover-badge">{moverBadgeText(state.interval)}</span>
 }
 let helperJob = 0
 let helperConnects = 0
@@ -68,6 +105,17 @@ export function subscribeHelper(listener: () => void) {
   return () => { helper.listeners.delete(listener) }
 }
 
+function watchHelper(ws: WebSocket) {
+  ws.onmessage = (ev) => { readHelperMover(ev.data) }
+  ws.onclose = () => {
+    if (helper.ws !== ws) return
+    helper.ws = null
+    helper.status = 'off'
+    applyMoverReport({ on: false, interval: null })
+    emitHelper()
+  }
+}
+
 function closeHelperSocket() {
   const ws = helper.ws
   helper.ws = null
@@ -105,12 +153,7 @@ function tryHelperPort(port: number, code: string, mine: number, attempt: number
     clearTimer: (id) => { window.clearTimeout(id) },
     onPaired: () => {
       helper.ws = ws
-      ws.onclose = () => {
-        if (helper.ws !== ws) return
-        helper.ws = null
-        helper.status = 'off'
-        emitHelper()
-      }
+      watchHelper(ws)
     },
   })
 }
@@ -121,6 +164,7 @@ async function connectHelper(code: string): Promise<HelperResult> {
   const mine = ++helperJob
   closeHelperSocket()
   helper.status = 'connecting'
+  applyMoverReport({ on: false, interval: null })
   emitHelper()
   let rejected = false
   for (let portIndex = 0; portIndex < HELPER_PORTS.length; portIndex++) {
@@ -147,6 +191,7 @@ function disconnectHelper() {
   helperJob += 1
   closeHelperSocket()
   helper.status = 'off'
+  applyMoverReport({ on: false, interval: null })
   emitHelper()
 }
 
@@ -383,9 +428,7 @@ function moveBy(dx: number, dy: number) {
 }
 
 function nav(dir: unknown) {
-  const prev = dir === 'prev'
-  pageKey(prev ? 'ArrowLeft' : 'ArrowRight')
-  pageKey(prev ? 'PageUp' : 'PageDown')
+  pageKey(navKey(dir))
 }
 
 function LaptopOverlay() {
@@ -411,8 +454,16 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
     ctx.send({ t: 'remote:helper', on: link.status === 'connected' })
   }, [ctx, ctx.link.status, link.status])
 
+  const mover = moverReported.use()
+  const helperOn = link.status === 'connected'
   return <div className="card pad" data-testid="remote-panel">
     <h3 className="h-row"><span><Icon n="keyboard" /> Phone keyboard</span>{text ? <CopyBtn text={text} ctx={ctx} label="Copy" /> : null}</h3>
+    <MoverControl
+      connected={helperOn}
+      state={mover}
+      onToggle={() => { if (helperOn) sendHelper({ t: 'mover', ...moverToggleCommand(mover) }) }}
+      onInterval={(interval) => { if (helperOn && mover.on) sendHelper({ t: 'mover', ...moverIntervalCommand(interval) }) }}
+    />
     <textarea data-testid="remote-text" className="clip" rows={2} onChange={(e) => setText(e.target.value)} placeholder="Open Remote on your phone and type. Text lands here, or in the field the pointer focuses." />
     <div className="full-laptop" data-testid="full-laptop">
       <ConnectGuide
@@ -434,203 +485,13 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
   </div>
 }
 
-function PhonePage({ ctx }: { ctx: CoreCtx }) {
-  const [tab, setTab] = useState<Tab>('trackpad')
-  const [kb, setKb] = useState(false)
-  const [fingers, setFingers] = useState<{ id: number; x: number; y: number }[]>([])
-  const [stripOn, setStripOn] = useState(false)
-  const pad = useRef<HTMLDivElement>(null)
-  const pageRef = useRef<HTMLDivElement>(null)
-  const focusTimer = useRef(0)
-  const st = useRef({ pts: new Map<number, { x: number; y: number }>(), accX: 0, accY: 0, scrX: 0, scrY: 0, raf: 0, down: 0, moved: 0, multi: false })
-  const last = useRef('')
-  const ctxRef = useRef(ctx)
-  ctxRef.current = ctx
-  const stripAcc = useRef(0)
-  const stripRaf = useRef(0)
-  const linked = ctx.link.remoteName || 'Connecting…'
-  const [fullLaptop, setFullLaptop] = useState(false)
-  useMessage('remote:helper', (m) => { if (typeof m.on === 'boolean') setFullLaptop(m.on) })
-
-  useEffect(() => {
-    if (ctx.link.status === 'connected') ctx.send({ t: 'remote:pointer', on: tab === 'pointer' })
-  }, [tab, ctx, ctx.link.status])
-  useEffect(() => {
-    if (ctx.link.status === 'connected') ctx.send({ t: 'remote:helper', ask: true })
-  }, [ctx, ctx.link.status])
-  useEffect(() => {
-    const page = pageRef.current?.closest('.phone-page') as HTMLElement | null
-    if (!page) return
-    const apply = () => {
-      const vv = window.visualViewport
-      const h = vv ? vv.height : window.innerHeight
-      page.style.setProperty('--vvh', `${Math.round(h)}px`)
-      const input = document.activeElement
-      if (input instanceof HTMLElement && input.dataset.testid === 'kb-input') {
-        requestAnimationFrame(() => input.scrollIntoView({ block: 'nearest' }))
-      }
-    }
-    apply()
-    const vv = window.visualViewport
-    vv?.addEventListener('resize', apply)
-    vv?.addEventListener('scroll', apply)
-    return () => {
-      vv?.removeEventListener('resize', apply)
-      vv?.removeEventListener('scroll', apply)
-      window.clearTimeout(focusTimer.current)
-      page.style.removeProperty('--vvh')
-    }
-  }, [])
-  const revealInput = (el: HTMLElement) => {
-    window.clearTimeout(focusTimer.current)
-    requestAnimationFrame(() => {
-      focusTimer.current = window.setTimeout(() => el.scrollIntoView({ block: 'nearest' }), 50)
-    })
-  }
-  useEffect(() => () => {
-    const s = st.current
-    if (s.raf) cancelAnimationFrame(s.raf)
-    if (stripRaf.current) cancelAnimationFrame(stripRaf.current)
-    ctxRef.current.send({ t: 'remote:pointer', on: false })
-  }, [])
-
-  const flush = () => {
-    const s = st.current
-    s.raf = 0
-    const send = ctxRef.current.send
-    if (s.scrX || s.scrY) { send({ t: 'remote:scroll', dx: Math.round(s.scrX), dy: Math.round(s.scrY) }); s.scrX = 0; s.scrY = 0 }
-    if (s.accX || s.accY) { send({ t: 'remote:move', dx: Math.round(s.accX), dy: Math.round(s.accY) }); s.accX = 0; s.accY = 0 }
-  }
-  const queue = () => { const s = st.current; if (!s.raf) s.raf = requestAnimationFrame(flush) }
-
-  const placeFinger = (id: number, e: React.PointerEvent) => {
-    const box = pad.current?.getBoundingClientRect()
-    if (!box) return
-    const x = e.clientX - box.left
-    const y = e.clientY - box.top
-    setFingers((fs) => {
-      const i = fs.findIndex((f) => f.id === id)
-      if (i < 0) return [...fs, { id, x, y }]
-      const next = fs.slice()
-      next[i] = { id, x, y }
-      return next
-    })
-  }
-
-  const onDown = (e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest('.pad-scroll')) return
-    e.preventDefault()
-    pad.current?.setPointerCapture(e.pointerId)
-    const s = st.current
-    s.pts.set(e.pointerId, { x: e.clientX, y: e.clientY })
-    if (s.pts.size === 1) { s.down = Date.now(); s.moved = 0; s.multi = false } else s.multi = true
-    placeFinger(e.pointerId, e)
-  }
-  const onMove = (e: React.PointerEvent) => {
-    const s = st.current
-    const p = s.pts.get(e.pointerId)
-    if (!p) return
-    const dx = e.clientX - p.x
-    const dy = e.clientY - p.y
-    s.pts.set(e.pointerId, { x: e.clientX, y: e.clientY })
-    s.moved += Math.abs(dx) + Math.abs(dy)
-    placeFinger(e.pointerId, e)
-    if (s.pts.size >= 2) {
-      s.multi = true
-      s.scrX += dx / s.pts.size
-      s.scrY += dy / s.pts.size
-      queue()
-      return
-    }
-    s.accX += dx
-    s.accY += dy
-    queue()
-  }
-  const onUp = (e: React.PointerEvent) => {
-    const s = st.current
-    s.pts.delete(e.pointerId)
-    setFingers((fs) => fs.filter((f) => f.id !== e.pointerId))
-    if (s.pts.size === 0) {
-      if (!s.multi && s.moved < 10 && Date.now() - s.down < 350) ctxRef.current.send({ t: 'remote:click', btn: 'left' })
-      s.multi = false
-    }
-  }
-
-  const onStripDown = (e: React.PointerEvent) => {
-    e.stopPropagation()
-    e.preventDefault()
-    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-    setStripOn(true)
-    stripAcc.current = 0
-    ;(e.currentTarget as HTMLElement).dataset.y = String(e.clientY)
-  }
-  const onStripMove = (e: React.PointerEvent) => {
-    const host = e.currentTarget as HTMLElement
-    if (!host.hasPointerCapture(e.pointerId)) return
-    const prev = Number(host.dataset.y || e.clientY)
-    host.dataset.y = String(e.clientY)
-    stripAcc.current += (e.clientY - prev) * 1.8
-    if (!stripRaf.current) stripRaf.current = requestAnimationFrame(() => {
-      stripRaf.current = 0
-      const dy = Math.round(stripAcc.current)
-      stripAcc.current = 0
-      if (dy) ctxRef.current.send({ t: 'remote:scroll', dx: 0, dy })
-    })
-  }
-  const onStripUp = (e: React.PointerEvent) => {
-    setStripOn(false)
-    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) } catch { /* already released */ }
-  }
-
-  return <div className="pg remote" data-remote-name={linked} ref={pageRef}>
-    {fullLaptop ? <span className="tag ok" data-testid="full-laptop-badge">Full laptop</span> : null}
-    <div className="seg" role="tablist" aria-label="Remote mode">
-      {(['trackpad', 'clicker', 'pointer'] as const).map((t) => <button key={t} type="button" role="tab" aria-selected={tab === t} data-testid={`rtab-${t}`} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t === 'trackpad' ? 'Trackpad' : t === 'clicker' ? 'Clicker' : 'Pointer'}</button>)}
-    </div>
-    {tab === 'clicker' ? <div className="clicker-help card"><Icon n="slides" size={40} /><p>Prev and Next send arrow and page keys to the laptop, so a slideshow open in this tab can flip.</p></div> : <>
-      <div id="pp-trackpad" ref={pad} className="pad-area" data-testid="trackpad" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onContextMenu={(e) => e.preventDefault()}>
-        <div className="pad-hint">
-          <Icon n="pointer" />
-          {tab === 'pointer'
-            ? <p>Swipe to move the pointer<br />tap to click · two fingers to scroll</p>
-            : <p>Swipe to move · tap to click<br />two fingers to scroll</p>}
-        </div>
-        {fingers.map((f) => <span key={f.id} className="touch-dot" style={{ left: f.x, top: f.y }} />)}
-        <div className={'pad-scroll' + (stripOn ? ' on' : '')} role="scrollbar" aria-orientation="vertical" aria-label="Scroll" aria-controls="pp-trackpad" data-testid="scroll-strip" onPointerDown={onStripDown} onPointerMove={onStripMove} onPointerUp={onStripUp} onPointerCancel={onStripUp}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v18" /><path d="m8 7 4-4 4 4" /><path d="m8 17 4 4 4-4" /></svg>
-        </div>
-      </div>
-      <div className="two clicks">
-        <button type="button" className="btn ghost big" data-testid="lclick" onClick={() => ctx.send({ t: 'remote:click', btn: 'left' })}>Left click</button>
-        <button type="button" className="btn ghost big" data-testid="rclick" onClick={() => ctx.send({ t: 'remote:click', btn: 'right' })}>Right click</button>
-      </div>
-    </>}
-    <div className={'two nav2' + (tab === 'clicker' ? ' tall' : '')}>
-      <button type="button" className="btn soft big" data-testid="prev" onClick={() => ctx.send({ t: 'remote:nav', dir: 'prev' })}><Icon n="back" />Prev</button>
-      <button type="button" className="btn big" data-testid="next" onClick={() => ctx.send({ t: 'remote:nav', dir: 'next' })}>Next<Icon n="next" /></button>
-    </div>
-    <button type="button" className="btn ghost big kb-btn" data-testid="kb-toggle" onClick={() => setKb((v) => { if (!v) last.current = ''; return !v })}><Icon n="keyboard" />Keyboard</button>
-    {kb && <form className="kb-form" onSubmit={(e) => { e.preventDefault(); ctx.send({ t: 'remote:key', key: 'Enter' }); const input = e.currentTarget.elements[0] as HTMLInputElement; input.value = ''; last.current = '' }}>
-      <input autoFocus data-testid="kb-input" className="kb" placeholder="Type here, it appears on the laptop" autoCapitalize="off" autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="send" onFocus={(e) => revealInput(e.currentTarget)} onChange={(e) => {
-        const v = e.target.value
-        const p = last.current
-        let i = 0
-        while (i < v.length && i < p.length && v[i] === p[i]) i++
-        for (let k = 0; k < p.length - i; k++) ctx.send({ t: 'remote:key', key: 'Backspace' })
-        if (v.length > i) ctx.send({ t: 'remote:type', text: v.slice(i) })
-        last.current = v
-      }} onKeyDown={(e) => { if (e.key === 'Backspace' && !(e.target as HTMLInputElement).value) ctx.send({ t: 'remote:key', key: 'Backspace' }) }} />
-    </form>}
-  </div>
-}
-
 registerFeature({
   id: 'remote',
   title: 'Remote',
   icon: 'pointer',
   order: 40,
-  laptopColumn: 'right',
-  PhonePage,
+  laptopColumn: 'left',
+  PhonePage: Remote,
   LaptopPanel,
   LaptopOverlay,
   init: (ctx) => {
@@ -641,6 +502,9 @@ registerFeature({
     pos.laser = false
     paint()
     const onResize = () => { clampPos(); paint() }
+    const syncLaser = () => { if (!showPointerLaser(ctx.link.status)) suppressOverlay() }
+    syncLaser()
+    const offStatus = ctx.link.subscribe(syncLaser)
     window.addEventListener('resize', onResize)
     const offs = [
       onMessage('remote:move', (m) => {
@@ -664,12 +528,7 @@ registerFeature({
         showCursor()
       }),
       onMessage('remote:nav', (m) => {
-        if (helperReady()) {
-          const prev = m.dir === 'prev'
-          sendHelper({ t: 'key', key: prev ? 'ArrowLeft' : 'ArrowRight' })
-          sendHelper({ t: 'key', key: prev ? 'PageUp' : 'PageDown' })
-          return
-        }
+        if (sendHelper({ t: 'key', key: navKey(m.dir) })) return
         nav(m.dir)
       }),
       onMessage('remote:type', (m) => {
@@ -704,9 +563,30 @@ registerFeature({
       onMessage('remote:helper', (m) => {
         if (m.ask) ctx.send({ t: 'remote:helper', on: helperReady() })
       }),
+      onMessage('mover', (m) => {
+        if (m.ask) {
+          const state = moverReported.get()
+          ctx.send({ t: 'mover', on: state.on, interval: state.interval })
+          return
+        }
+        const cmd = moverCommandFrom(m)
+        if (!cmd) return
+        sendHelper({ t: 'mover', ...cmd })
+      }),
     ]
+    const relay = {
+      send: (msg: { t: 'mover'; on: boolean; interval: MoverState['interval'] }) => ctx.send(msg),
+      connected: () => ctx.link.connected,
+    }
+    moverRelay = relay
+    const offLink = ctx.link.subscribe(() => {
+      if (!ctx.link.connected && moverStopsOn('disconnect')) stopMouseMover()
+    })
     return () => {
       offs.forEach((off) => off())
+      offLink()
+      offStatus()
+      if (moverRelay === relay) moverRelay = null
       window.removeEventListener('resize', onResize)
       window.clearTimeout(hideTimer)
     }

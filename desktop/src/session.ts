@@ -13,6 +13,8 @@ export type HelperApp = {
   readonly host: string
   status(): HelperStatus
   close(): Promise<void>
+  /** Clear the mouse-mover timer. Safe to call more than once. */
+  stopMover(): void
   /** Drop the current session and listen again with the same code. */
   stop(): Promise<{ code: string; port: number; status: HelperStatus }>
 }
@@ -59,8 +61,10 @@ export async function startHelperApp(opts: {
     get port() { return helper.port },
     get host() { return helper.host },
     status: () => status,
+    stopMover() { helper.stopMover() },
     close: () => helper.close(),
     async stop() {
+      helper.stopMover()
       await helper.close()
       status = 'waiting'
       opts.onStatus?.('waiting')

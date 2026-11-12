@@ -1,5 +1,6 @@
 import { Button, Key, Point, keyboard, mouse, screen } from '@nut-tree-fork/nut-js'
 import { planKey } from './keys.js'
+import { NUDGE_DWELL_MS, performNudge } from './mover.js'
 import type { Injector } from './server.js'
 import type { Mod } from './validate.js'
 
@@ -117,7 +118,28 @@ export function nutScrollName(dir: ScrollDir, platform: NodeJS.Platform = proces
   return horizontalInverted ? 'scrollRight' : 'scrollLeft'
 }
 
-async function tap(names: string[]) {
+/** One keystroke. `keyboard.type(Key…)` is a single keyTap, not press plus release. */
+export type KeyPort = {
+  tap(names: string[]): Promise<void>
+  typeChar(ch: string): Promise<void>
+}
+
+/** One `remote:type` character becomes one keystroke. Newline is one Return. */
+export function strokesForText(text: string): Array<{ op: 'char'; ch: string } | { op: 'tap'; names: string[] }> {
+  return [...text].map((ch) => {
+    if (ch === '\n' || ch === '\r') return { op: 'tap', names: ['Return'] }
+    return { op: 'char', ch }
+  })
+}
+
+export async function playStrokes(port: KeyPort, text: string): Promise<void> {
+  for (const stroke of strokesForText(text)) {
+    if (stroke.op === 'tap') await port.tap(stroke.names)
+    else await port.typeChar(stroke.ch)
+  }
+}
+
+async function nutTap(names: string[]) {
   const keys: Key[] = []
   for (const name of names) {
     const key = nutKey(name)
@@ -125,13 +147,18 @@ async function tap(names: string[]) {
     keys.push(key)
   }
   if (!keys.length) return
-  await keyboard.pressKey(...keys)
-  await keyboard.releaseKey(...keys)
+  await keyboard.type(...keys)
 }
 
-async function typeText(text: string, mods: Mod[]) {
+async function nutTypeChar(ch: string) {
+  await keyboard.type(ch)
+}
+
+const nutKeys: KeyPort = { tap: nutTap, typeChar: nutTypeChar }
+
+async function typeText(port: KeyPort, text: string, mods: Mod[]) {
   if (!mods.length) {
-    await keyboard.type(text)
+    await playStrokes(port, text)
     return
   }
   const held: Key[] = []
@@ -142,7 +169,7 @@ async function typeText(text: string, mods: Mod[]) {
   }
   if (held.length) await keyboard.pressKey(...held)
   try {
-    await keyboard.type(text)
+    await playStrokes(port, text)
   } finally {
     if (held.length) await keyboard.releaseKey(...held)
   }
@@ -162,7 +189,39 @@ export async function releaseModifiers(): Promise<void> {
   }
 }
 
-export function createNutInjector(): Injector {
+export type CursorPort = {
+  getPosition(): Promise<{ x: number; y: number }>
+  setPosition(x: number, y: number): Promise<void>
+}
+
+export type ClickPort = {
+  press(btn: 'left' | 'right'): Promise<void>
+  release(btn: 'left' | 'right'): Promise<void>
+}
+
+const nutCursor: CursorPort = {
+  async getPosition() {
+    const pos = await mouse.getPosition()
+    return { x: pos.x, y: pos.y }
+  },
+  async setPosition(x, y) {
+    await mouse.setPosition(new Point(x, y))
+  },
+}
+
+const nutClick: ClickPort = {
+  async press(btn) {
+    await mouse.pressButton(btn === 'right' ? Button.RIGHT : Button.LEFT)
+  },
+  async release(btn) {
+    await mouse.releaseButton(btn === 'right' ? Button.RIGHT : Button.LEFT)
+  },
+}
+
+export function createNutInjector(port: KeyPort = nutKeys, io?: { cursor?: CursorPort; click?: ClickPort; dwellMs?: number }): Injector {
+  const cursor = io?.cursor ?? nutCursor
+  const buttons = io?.click ?? nutClick
+  const dwellMs = io?.dwellMs ?? NUDGE_DWELL_MS
   mouse.config.autoDelayMs = 0
   keyboard.config.autoDelayMs = 0
   mouse.config.mouseSpeed = 4000
@@ -201,8 +260,9 @@ export function createNutInjector(): Injector {
     click(btn) {
       return run(async () => {
         await pointer.release()
-        if (btn === 'right') await mouse.rightClick()
-        else await mouse.leftClick()
+        const which = btn === 'right' ? 'right' : 'left'
+        await buttons.press(which)
+        await buttons.release(which)
       })
     },
     scroll(dx, dy) {
@@ -232,14 +292,14 @@ export function createNutInjector(): Injector {
         await pointer.release()
         const plan = planKey(key, mods)
         if (!plan) return
-        if (plan.kind === 'tap') await tap(plan.keys)
-        else await typeText(plan.text, plan.mods)
+        if (plan.kind === 'tap') await port.tap(plan.keys)
+        else await typeText(port, plan.text, plan.mods)
       })
     },
     type(text) {
       return run(async () => {
         await pointer.release()
-        await keyboard.type(text)
+        await playStrokes(port, text)
       })
     },
     abs(x, y) {
@@ -253,6 +313,9 @@ export function createNutInjector(): Injector {
     },
     release() {
       return run(() => pointer.release())
+    },
+    nudge() {
+      return run(() => performNudge(cursor, { dwellMs }))
     },
   }
 }

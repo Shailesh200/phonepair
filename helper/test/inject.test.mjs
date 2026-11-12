@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createPointerController, mapAbs, nutScrollName, scrollPlan } from '../dist/inject.js'
+import { createNutInjector, createPointerController, mapAbs, nutScrollName, playStrokes, scrollPlan, strokesForText } from '../dist/inject.js'
 
 test('mapAbs uses primary-display size and stays on the last pixel', () => {
   assert.deepEqual(mapAbs(0, 0, 1920, 1080), { x: 0, y: 0 })
@@ -60,6 +60,55 @@ test('positive dx scrolls right and positive dy scrolls down', () => {
   assert.equal(nutScrollName('up', 'linux'), 'scrollUp')
   assert.equal(nutScrollName('right', 'win32'), 'scrollLeft')
   assert.equal(nutScrollName('left', 'win32'), 'scrollRight')
+})
+
+test('a left click is one press and one release', async () => {
+  const calls = []
+  const inject = createNutInjector({
+    async tap() {},
+    async typeChar() {},
+  }, {
+    click: {
+      async press(btn) { calls.push(['press', btn]) },
+      async release(btn) { calls.push(['release', btn]) },
+    },
+  })
+  await inject.click('left')
+  await inject.click('right')
+  assert.deepEqual(calls, [
+    ['press', 'left'],
+    ['release', 'left'],
+    ['press', 'right'],
+    ['release', 'right'],
+  ])
+})
+
+test('one typed character, Enter, and Backspace are each one keystroke', async () => {
+  assert.deepEqual(strokesForText('ab'), [{ op: 'char', ch: 'a' }, { op: 'char', ch: 'b' }])
+  assert.deepEqual(strokesForText('a\n'), [{ op: 'char', ch: 'a' }, { op: 'tap', names: ['Return'] }])
+  const calls = []
+  const port = {
+    async tap(names) { calls.push(['tap', ...names]) },
+    async typeChar(ch) { calls.push(['char', ch]) },
+  }
+  await playStrokes(port, 'Hi')
+  await playStrokes(port, '\n')
+  const inject = createNutInjector(port)
+  await inject.type('ab')
+  await inject.type('c\n')
+  await inject.key('Enter', [])
+  await inject.key('Backspace', [])
+  assert.deepEqual(calls, [
+    ['char', 'H'],
+    ['char', 'i'],
+    ['tap', 'Return'],
+    ['char', 'a'],
+    ['char', 'b'],
+    ['char', 'c'],
+    ['tap', 'Return'],
+    ['tap', 'Return'],
+    ['tap', 'Backspace'],
+  ])
 })
 
 test('double-click releases a held button before the click', async () => {

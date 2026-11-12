@@ -90,10 +90,13 @@ app.on('window-all-closed', () => {
   app.quit()
 })
 
+process.on('exit', () => { running?.stopMover() })
+
 app.on('before-quit', (event) => {
   if (cleaned) return
   event.preventDefault()
   cleaned = true
+  running?.stopMover()
   void (async () => {
     await running?.close()
     await Promise.race([

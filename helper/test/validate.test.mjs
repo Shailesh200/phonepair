@@ -8,6 +8,7 @@ import {
   clampUnit,
   originAllowed,
   parseInput,
+  parseMover,
   parsePair,
   setDevOriginEnabled,
 } from '../dist/validate.js'
@@ -175,6 +176,26 @@ test('button drags are left or right, down or up, and double-click is empty', ()
   assert.equal(parseInput({ t: 'abs' }).ok, false)
   assert.equal(parseInput({ t: 'file', path: '/etc/passwd' }).ok, false)
   assert.equal(parseInput({ t: 'shell', command: 'open' }).ok, false)
+})
+
+test('mover commands are on/off and only 30s, 1m, or 5m', () => {
+  assert.deepEqual(parseMover({ t: 'mover', on: true, interval: '30s' }).msg, { t: 'mover', on: true, interval: '30s' })
+  assert.deepEqual(parseMover({ t: 'mover', on: true, interval: '1m' }).msg, { t: 'mover', on: true, interval: '1m' })
+  assert.deepEqual(parseMover({ t: 'mover', on: true, interval: '5m' }).msg, { t: 'mover', on: true, interval: '5m' })
+  assert.deepEqual(parseMover({ t: 'mover', on: false }).msg, { t: 'mover', on: false })
+  assert.deepEqual(parseMover({ t: 'mover', on: false, interval: 'nope' }).msg, { t: 'mover', on: false })
+  for (const bad of [
+    { t: 'mover', on: true },
+    { t: 'mover', on: true, interval: '10s' },
+    { t: 'mover', on: true, interval: '2m' },
+    { t: 'mover', on: true, interval: '1min' },
+    { t: 'mover', on: true, interval: 30 },
+    { t: 'mover', on: 'yes', interval: '30s' },
+    { t: 'move', on: true, interval: '30s' },
+    null,
+  ]) {
+    assert.equal(parseMover(bad).ok, false, JSON.stringify(bad))
+  }
 })
 
 test('the first message must be a 6-digit pair code', () => {

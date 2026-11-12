@@ -51,17 +51,18 @@ export function settleHelperProbe(args: {
       if (args.mine !== args.currentJob()) { finish('down'); return }
       try { ws.send(JSON.stringify({ t: 'pair', code: args.code })) } catch { finish('down') }
     }
-    ws.onmessage = (ev) => {
+    const onProbeMessage = (ev: { data: unknown }) => {
       let msg: { t?: string } = {}
       try { msg = JSON.parse(String(ev.data)) as { t?: string } } catch { finish('rejected'); return }
       if (msg.t === 'paired' && args.mine === args.currentJob()) {
         ws.onerror = null
         args.onPaired(ws)
-        ws.onmessage = null
+        if (ws.onmessage === onProbeMessage) ws.onmessage = null
         finish('connected')
         return
       }
       finish(msg.t === 'rejected' ? 'rejected' : 'down')
     }
+    ws.onmessage = onProbeMessage
   })
 }
