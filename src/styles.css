@@ -417,7 +417,22 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
 .pp-icon-toggle svg{width:20px;height:20px}
 .pp-icon-toggle.on{color:var(--accent)}
 .pp-icon-toggle:hover{background:rgba(42,28,22,.04)}
-.pp-device-row{width:100%}
+.pp-device-row{width:100%;min-width:0;max-width:100%}
+.remember-panel,
+.remember-saved,
+.pp-list{min-width:0;max-width:100%}
+.pp-device-name,
+.pp-device-name b{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.pp-device-name{flex:1 1 auto}
+.pp-device-row>button,
+.pp-device-row .pp-icon-toggle,
+.pp-device-row .btn,
+.pp-device-row .linkbtn{flex-shrink:0}
 .pp-device-row:hover,
 .pp-device-row.is-hover{background:var(--surface-soft);border-color:var(--line-strong)}
 .pp-device-row.is-editing{background:var(--tile);border-color:var(--accent)}

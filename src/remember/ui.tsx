@@ -33,7 +33,7 @@ function DeviceNameEditor({ id, fallback, onEditing }: { id: string; fallback: s
   if (!editing) {
     return (
       <>
-        <div className="grow" data-testid="device-name"><b>{shown}</b></div>
+        <div className="grow pp-device-name" data-testid="device-name" title={shown}><b>{shown}</b></div>
         <button
           type="button"
           className="pp-icon-toggle"
