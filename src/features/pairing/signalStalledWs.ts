@@ -14,6 +14,7 @@ export function shouldKillStalledConnectingSocket(
   if (rs !== WS_CONNECTING) return false
   const started = peer.signalConnectStartedAt?.() ?? null
   if (started == null) return false
+  if (restoreAt != null && started >= restoreAt) return false
   if (restoreAt != null && started < restoreAt && now >= restoreAt) return true
   const dropAt = peer.signalLastDropAt?.() ?? null
   if (dropAt == null) return false

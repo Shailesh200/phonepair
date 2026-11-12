@@ -1,4 +1,5 @@
 import { ppDebug } from './ppDebug.ts'
+import { ppDebugListenPeerGenServerOpen } from './ppDebugListenPeer.ts'
 
 export type PpDebugListenSocket = {
   wsCreated: number
@@ -30,6 +31,7 @@ export function ppDebugIncListenServerOpen(): void {
   const s = sock()
   s.serverOpen += 1
   ppDebug().listenSocketOpens += 1
+  ppDebugListenPeerGenServerOpen(Date.now())
 }
 
 export function ppDebugIncListenSocketUnavailableId(): void {

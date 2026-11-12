@@ -74,7 +74,9 @@ export function forceSignalGapOverrideAllowed(
 
   if (rs === WS_OPEN) {
     const openAt = peer.signalPeerOpenAt?.() ?? null
-    if (openAt == null || freshBound == null) return false
+    if (openAt == null) return false
+    if (opts.restoreSignalAt != null && openAt >= opts.restoreSignalAt) return false
+    if (freshBound == null) return false
     return openAt < freshBound
   }
 

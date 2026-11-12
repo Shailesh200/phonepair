@@ -35,6 +35,18 @@ describe('shouldKillStalledConnectingSocket', () => {
     assert.equal(shouldKillStalledConnectingSocket(peer, restoreAt, undefined, restoreAt), true)
   })
 
+  it('does not stalled-kill a listen socket that started after restore', () => {
+    const restoreAt = 20_000
+    const started = 21_000
+    const peer = {
+      destroyed: false,
+      signalReadyState: () => WS_CONNECTING,
+      signalConnectStartedAt: () => started,
+      signalLastDropAt: () => 10_000,
+    }
+    assert.equal(shouldKillStalledConnectingSocket(peer, restoreAt + 10_000, undefined, restoreAt), false)
+  })
+
   it('does not kill young CONNECTING sockets with no drop since create', () => {
     const peer = {
       destroyed: false,

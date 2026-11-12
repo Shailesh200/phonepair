@@ -1,4 +1,5 @@
 import { ppDebug } from './ppDebug.ts'
+import { ppDebugListenPeerGenIncomingConn } from './ppDebugListenPeer.ts'
 
 export type PpDebugListenHost = {
   incomingConn: number
@@ -24,6 +25,7 @@ export function ppDebugListenHost(): PpDebugListenHost {
 
 export function ppDebugIncListenIncomingConn(): void {
   ppDebugListenHost().incomingConn += 1
+  ppDebugListenPeerGenIncomingConn()
 }
 
 export function ppDebugIncListenConnOpened(): void {
