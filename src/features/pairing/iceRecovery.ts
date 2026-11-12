@@ -56,6 +56,7 @@ export type AbandonOpenDataConnInput = {
   lastSeen: number
   now: number
   lastSeenTimeoutMs?: number
+  iceDisconnectedSince?: number | null
 }
 
 /** Only drop an open data channel when ICE is dead or the session is stale — not on signal `disconnected` alone. */
@@ -64,7 +65,12 @@ export function shouldAbandonOpenDataConn(opts: AbandonOpenDataConnInput): boole
   const conn = opts.connectionState
   if (conn === 'disconnected' || conn === 'failed' || conn === 'closed') return true
   const ice = opts.iceState
-  if (ice === 'disconnected' || ice === 'failed' || ice === 'closed') return true
+  if (ice === 'disconnected') {
+    const since = opts.iceDisconnectedSince
+    if (since != null && since > 0 && opts.now - since < ICE_DISCONNECTED_GRACE_MS) return false
+    return true
+  }
+  if (ice === 'failed' || ice === 'closed') return true
   const timeout = opts.lastSeenTimeoutMs ?? DATA_CONN_LAST_SEEN_TIMEOUT_MS
   if (opts.lastSeen > 0 && opts.now - opts.lastSeen >= timeout) return true
   return false

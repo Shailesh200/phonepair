@@ -173,6 +173,21 @@ describe('abandon open data conn', () => {
     )
   })
 
+  it('does not abandon on ICE disconnected during the grace window', () => {
+    const now = 20_000
+    assert.equal(
+      shouldAbandonOpenDataConn({
+        everConnected: true,
+        dataConnOpen: true,
+        iceState: 'disconnected',
+        lastSeen: now - 1000,
+        now,
+        iceDisconnectedSince: now - 5000,
+      }),
+      false,
+    )
+  })
+
   it('abandons when ICE is disconnected/failed or lastSeen is stale', () => {
     const now = 100_000
     assert.equal(
