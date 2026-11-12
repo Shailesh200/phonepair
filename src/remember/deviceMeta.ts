@@ -3,7 +3,7 @@
 export const DEVICE_META_KEY = 'pp.deviceMeta.v1'
 export const DEVICE_NAME_MAX = 32
 
-export type DeviceMeta = { name?: string; fav?: boolean }
+export type DeviceMeta = { name?: string; fav?: boolean; lastConnectedMs?: number }
 export type DeviceMetaStore = { v: 1; devices: Record<string, DeviceMeta> }
 
 const listeners = new Set<() => void>()
@@ -49,13 +49,20 @@ export function normalizeDeviceName(raw: unknown): string {
   return chars.slice(0, DEVICE_NAME_MAX).join('').trim()
 }
 
+function finiteMs(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+  return value
+}
+
 function sanitizeEntry(value: unknown): DeviceMeta | null {
   if (!isRecord(value)) return null
   const entry: DeviceMeta = {}
   const name = normalizeDeviceName(value.name)
   if (name) entry.name = name
   if (value.fav === true) entry.fav = true
-  if (!entry.name && entry.fav !== true) return null
+  const lastConnectedMs = finiteMs(value.lastConnectedMs)
+  if (lastConnectedMs != null) entry.lastConnectedMs = lastConnectedMs
+  if (!entry.name && entry.fav !== true && entry.lastConnectedMs == null) return null
   return entry
 }
 
@@ -117,6 +124,7 @@ export function getDeviceMeta(id: string): DeviceMeta {
   const copy: DeviceMeta = {}
   if (entry.name) copy.name = entry.name
   if (entry.fav === true) copy.fav = true
+  if (entry.lastConnectedMs != null) copy.lastConnectedMs = entry.lastConnectedMs
   return copy
 }
 
@@ -160,7 +168,8 @@ export function renameDevice(id: string, name: string): void {
     const entry: DeviceMeta = {}
     if (nextName) entry.name = nextName
     if (prev?.fav === true) entry.fav = true
-    if (!entry.name && entry.fav !== true) delete store.devices[id]
+    if (prev?.lastConnectedMs != null) entry.lastConnectedMs = prev.lastConnectedMs
+    if (!entry.name && entry.fav !== true && entry.lastConnectedMs == null) delete store.devices[id]
     else store.devices[id] = entry
   })
 }
@@ -172,10 +181,23 @@ export function toggleFavourite(id: string): boolean {
     const entry: DeviceMeta = {}
     if (prev?.name) entry.name = prev.name
     if (prev?.fav !== true) entry.fav = true
-    if (!entry.name && entry.fav !== true) delete store.devices[id]
+    if (prev?.lastConnectedMs != null) entry.lastConnectedMs = prev.lastConnectedMs
+    if (!entry.name && entry.fav !== true && entry.lastConnectedMs == null) delete store.devices[id]
     else store.devices[id] = entry
   })
   return getDeviceMeta(id).fav === true
+}
+
+/** Record that a saved device connected. Invalid times and a future store are ignored. */
+export function markDeviceConnected(id: string, nowMs: number): void {
+  if (!safeId(id) || finiteMs(nowMs) == null) return
+  mutate((store) => {
+    const prev = store.devices[id]
+    const entry: DeviceMeta = { lastConnectedMs: nowMs }
+    if (prev?.name) entry.name = prev.name
+    if (prev?.fav === true) entry.fav = true
+    store.devices[id] = entry
+  })
 }
 
 /** Clear one device, or every device when called with no id. */

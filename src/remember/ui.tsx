@@ -162,7 +162,11 @@ export function SavedPhonesPanel({ ctx }: { ctx: CoreCtx }) {
   useDeviceMeta()
   const store = loadHostStore()
   if (!store?.phones.length) return null
-  const phones = sortFavouritesFirst(store.phones, (p) => getDeviceMeta(p.id).fav === true)
+  const phones = sortFavouritesFirst(
+    store.phones,
+    (p) => getDeviceMeta(p.id).fav === true,
+    (p) => getDeviceMeta(p.id).lastConnectedMs ?? null,
+  )
   return (
     <div className="remember-panel card" data-testid="saved-phones">
       <h4>Connected devices</h4>
@@ -195,7 +199,11 @@ export function SavedLaptopsList({
   useDeviceMeta()
   const { laptops } = loadGuestStore()
   if (!laptops.length) return null
-  const ordered = sortFavouritesFirst(laptops, (lap) => getDeviceMeta(lap.listenId).fav === true)
+  const ordered = sortFavouritesFirst(
+    laptops,
+    (lap) => getDeviceMeta(lap.listenId).fav === true,
+    (lap) => getDeviceMeta(lap.listenId).lastConnectedMs ?? null,
+  )
   return (
     <div className="remember-saved">
       <p className="mut saved-h">Connected devices</p>

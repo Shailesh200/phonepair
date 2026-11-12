@@ -168,7 +168,7 @@ import { guestForgetMatchesSavedLaptop } from '../remember/guestForgetMatch'
 import { REMEMBER_PROOF_TIMEOUT_MS, type RememberGatePhase } from '../remember/gate'
 import { RememberHostAuth } from '../remember/hostAuth'
 import { connBlockedByRememberAuth, shouldAcceptIncomingCall, shouldLinkSend } from '../remember/hostAuthSend'
-import { clearDeviceMeta } from '../remember/deviceMeta'
+import { clearDeviceMeta, markDeviceConnected } from '../remember/deviceMeta'
 import { hostAcceptsPhoneForget } from '../remember/hostForgetInbound'
 import { shouldFailRememberGuestHome } from '../remember/guestHomeWatchdog'
 import { rememberGuestDeadlineArm, REMEMBER_GUEST_HOME_MS } from '../remember/rememberGuestDeadline'
@@ -1986,6 +1986,7 @@ export class Link {
     })) return
     this.lastSeen = Date.now()
     this.everConnected = true
+    markDeviceConnected(rememberPhoneId || this.rememberGuestAuth?.listenId || '', this.lastSeen)
     this.retry = 0
     this.guestUnavailableSince = null
     this.hostFails = 0

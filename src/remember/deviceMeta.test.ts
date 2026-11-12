@@ -8,6 +8,7 @@ import {
   getDeviceMeta,
   normalizeDeviceName,
   renameDevice,
+  markDeviceConnected,
   sortFavouritesFirst,
   toggleFavourite,
 } from './deviceMeta.ts'
@@ -218,6 +219,26 @@ describe('device meta store', { concurrency: false }, () => {
     assert.deepEqual(getDeviceMeta('a'), { name: 'Kept', fav: true })
   })
 
+  it('stores lastConnectedMs and ignores invalid or future-store writes', () => {
+    markDeviceConnected('phone-1', 30)
+    assert.deepEqual(getDeviceMeta('phone-1'), { lastConnectedMs: 30 })
+    renameDevice('phone-1', 'Desk')
+    assert.deepEqual(getDeviceMeta('phone-1'), { name: 'Desk', lastConnectedMs: 30 })
+    markDeviceConnected('phone-1', Number.NaN)
+    markDeviceConnected('phone-1', Number.POSITIVE_INFINITY)
+    assert.equal(getDeviceMeta('phone-1').lastConnectedMs, 30)
+    globalThis.localStorage.setItem(DEVICE_META_KEY, JSON.stringify({
+      v: 1,
+      devices: { a: { name: 'Ok', lastConnectedMs: 'soon' }, b: { lastConnectedMs: null } },
+    }))
+    assert.deepEqual(getDeviceMeta('a'), { name: 'Ok' })
+    assert.deepEqual(getDeviceMeta('b'), {})
+    const future = JSON.stringify({ v: 2, devices: { a: { name: 'Z' } } })
+    globalThis.localStorage.setItem(DEVICE_META_KEY, future)
+    markDeviceConnected('a', 99)
+    assert.equal(globalThis.localStorage.getItem(DEVICE_META_KEY), future)
+  })
+
   it('caps and trims without keeping surrounding whitespace', () => {
     assert.equal(normalizeDeviceName('   '), '')
     assert.equal(normalizeDeviceName(12), '')
@@ -264,5 +285,22 @@ describe('sortFavouritesFirst', () => {
       sortFavouritesFirst(tied, () => false).map((item) => item.id),
       ['new', 'same', 'old'],
     )
+  })
+
+  it('sorts stored lastConnectedMs with favourites first and keeps a missing time in place', () => {
+    const items = [
+      { id: 'a' },
+      { id: 'b' },
+      { id: 'c' },
+      { id: 'd' },
+    ]
+    const fav = new Set(['a', 'c'])
+    const connected = new Map<string, number>([['a', 10], ['b', 40], ['c', 25]])
+    const sorted = sortFavouritesFirst(
+      items,
+      (item) => fav.has(item.id),
+      (item) => connected.get(item.id) ?? null,
+    )
+    assert.deepEqual(sorted.map((item) => item.id), ['c', 'a', 'b', 'd'])
   })
 })
