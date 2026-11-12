@@ -204,6 +204,75 @@ describe('keep-awake visibility listener', () => {
     }
   })
 
+  it('opens picture-in-picture on the first click, after play()', async () => {
+    const order: string[] = []
+    const prevDoc = globalThis.document
+    const nav = globalThis.navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<unknown> } | null }
+    const prevLock = nav.wakeLock
+    const video = {
+      paused: true,
+      style: {} as { cssText?: string },
+      src: '',
+      srcObject: null as MediaStream | null,
+      setAttribute() {},
+      addEventListener() {},
+      removeAttribute() {},
+      pause() { video.paused = true },
+      play() { order.push('play'); video.paused = false; return Promise.resolve() },
+      requestPictureInPicture() { order.push('pip'); return Promise.resolve() },
+      remove() {},
+    }
+    const doc = {
+      hidden: false,
+      pictureInPictureEnabled: true,
+      pictureInPictureElement: null as typeof video | null,
+      body: { appendChild() {} },
+      createElement() { return video },
+      addEventListener() {},
+      removeEventListener() {},
+      exitPictureInPicture() { order.push('exit'); return Promise.resolve() },
+    }
+    Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: doc })
+    nav.wakeLock = {
+      request: async () => ({ release: async () => {}, addEventListener() {} }),
+    }
+    try {
+      const awake = createBrowserKeepAwake({
+        helperConnected: () => false,
+        sendHelper() {},
+        publish() {},
+      })
+      await awake.start('1m')
+      assert.deepEqual(order, [])
+      await awake.pip()
+      assert.deepEqual(order, ['play', 'pip'])
+
+      order.length = 0
+      doc.pictureInPictureElement = video
+      await awake.pip()
+      assert.deepEqual(order, ['exit'])
+
+      order.length = 0
+      doc.pictureInPictureElement = null
+      doc.pictureInPictureEnabled = false
+      await awake.pip()
+      assert.deepEqual(order, [])
+
+      doc.pictureInPictureEnabled = true
+      const request = video.requestPictureInPicture
+      delete (video as { requestPictureInPicture?: () => Promise<void> }).requestPictureInPicture
+      await awake.pip()
+      assert.deepEqual(order, [])
+      video.requestPictureInPicture = () => { order.push('pip'); return Promise.reject(new Error('refused')) }
+      await awake.pip()
+      assert.deepEqual(order, ['play', 'pip'])
+      video.requestPictureInPicture = request
+    } finally {
+      Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: prevDoc })
+      try { nav.wakeLock = prevLock } catch { Object.defineProperty(nav, 'wakeLock', { configurable: true, value: prevLock }) }
+    }
+  })
+
   it('plays video only when the wake lock is missing, fails, or is released', async () => {
     const prevDoc = globalThis.document
     const nav = globalThis.navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<unknown> } | null }

@@ -507,13 +507,21 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   }
 
   async function pip() {
-    if (typeof document === 'undefined' || document.pictureInPictureEnabled !== true) return
-    if (!video && session.requested) video = buildVideo(document, videoGen)
-    if (!video) return
+    let enabled = false
+    try { enabled = typeof document !== 'undefined' && document.pictureInPictureEnabled === true } catch { enabled = false }
+    if (!enabled) return
     try {
-      if (document.pictureInPictureElement === video) await document.exitPictureInPicture()
-      else await video.requestPictureInPicture()
-    } catch { /* needs a laptop gesture, or the browser refused */ }
+      if (!video && session.requested) video = buildVideo(document, videoGen)
+      if (!video || typeof video.requestPictureInPicture !== 'function') return
+      if (document.pictureInPictureElement === video) {
+        await document.exitPictureInPicture()
+        return
+      }
+      // play() and requestPictureInPicture() stay in this click's gesture.
+      // The first click used to start playback and return before PiP could open.
+      await video.play()
+      await video.requestPictureInPicture()
+    } catch { /* no Picture-in-Picture here, or the browser refused the gesture */ }
   }
 
   publish()
