@@ -1,0 +1,107 @@
+{
+  "name": "phonepair-helper-app",
+  "private": true,
+  "version": "0.1.2",
+  "description": "PhonePair Helper. A small desktop app that runs the local PhonePair control server.",
+  "author": "Shailesh200",
+  "homepage": "https://github.com/Shailesh200/phonepair",
+  "main": "./out/main.cjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "npm run build && electron .",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "postinstall": "electron-builder install-app-deps",
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "dist:win": "npm run build && electron-builder --win --x64 --publish never",
+    "dist:linux": "npm run build && electron-builder --linux dir --publish never"
+  },
+  "build": {
+    "appId": "com.shailesh200.phonepair.helper",
+    "productName": "PhonePair Helper",
+    "asar": true,
+    "npmRebuild": false,
+    "beforePack": "./scripts/before-pack.cjs",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "package.json",
+      "!**/*.map",
+      "!**/*.{ts,tsx}",
+      "!**/*.md",
+      "!**/test/**",
+      "!**/tests/**",
+      "!**/__tests__/**",
+      "!**/docs/**"
+    ],
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "deleteAppDataOnUninstall": true
+    },
+    "dmg": {
+      "sign": true
+    },
+    "linux": {
+      "target": [
+        "dir"
+      ],
+      "icon": "build/icon.png",
+      "category": "Utility"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Shailesh200",
+      "repo": "phonepair"
+    }
+  },
+  "dependencies": {
+    "@nut-tree-fork/nut-js": "4.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.0",
+    "electron": "40.10.6",
+    "electron-builder": "^26.17.0",
+    "esbuild": "^0.25.11",
+    "typescript": "5.6.3"
+  }
+}
