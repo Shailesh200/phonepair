@@ -83,6 +83,49 @@ export function connProbeRetryDelayMs(
   return wait > 0 ? wait : 0
 }
 
+/** True when this tick already sent an app {t:'ping'} as a formal liveness probe. */
+export function connProbeSentOnTick(probeAt: number | null, tickNow: number): boolean {
+  return probeAt != null && probeAt === tickNow
+}
+
+/** Plain keepalive ping so the remote lastSeen watchdog does not drop healthy conns. */
+export function shouldSendTickConnKeepalivePing(opts: {
+  connOpen: boolean
+  probeSentThisTick: boolean
+}): boolean {
+  return opts.connOpen && !opts.probeSentThisTick
+}
+
+export type TickOpenConnTraffic = 'probe' | 'keepalive-ping' | 'none'
+
+/** Open data conn must emit probe or keepalive each tick — never neither. */
+export function planTickOpenConnTraffic(opts: {
+  connOpen: boolean
+  probeWouldRun: boolean
+}): TickOpenConnTraffic {
+  if (!opts.connOpen) return 'none'
+  if (opts.probeWouldRun) return 'probe'
+  return 'keepalive-ping'
+}
+
+/** At most one probe-fail abandon per conn generation and per restore signal. */
+export function connProbeMayAbandonAfterFail(opts: {
+  restoreSignalAt: number | null
+  connGen: number
+  lastAbandonRestoreAt: number | null
+  lastAbandonConnGen: number | null
+}): boolean {
+  if (opts.lastAbandonConnGen != null && opts.lastAbandonConnGen === opts.connGen) return false
+  if (
+    opts.restoreSignalAt != null
+    && opts.lastAbandonRestoreAt != null
+    && opts.lastAbandonRestoreAt === opts.restoreSignalAt
+  ) {
+    return false
+  }
+  return true
+}
+
 /** Fresh data after probeAt (lastSeen strictly past probeAt) means the conn is alive. */
 export function dataConnProbeSucceeded(lastSeen: number, probeAt: number | null): boolean {
   if (probeAt == null) return false

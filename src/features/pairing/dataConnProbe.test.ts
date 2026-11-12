@@ -1,12 +1,16 @@
-import { describe, it } from 'node:test'
+import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   DATA_CONN_PROBE_POST_RESTORE_MS,
   DATA_CONN_PROBE_SKIP_RECENT_MS,
   DATA_CONN_PROBE_TIMEOUT_MS,
   buildLinkHelloMessage,
+  connProbeMayAbandonAfterFail,
   connProbeRetryDelayMs,
+  connProbeSentOnTick,
   dataConnProbeSucceeded,
+  planTickOpenConnTraffic,
+  shouldSendTickConnKeepalivePing,
   freshRemotePongCap,
   helloCapsIncludePong,
   recordRemoteHelloPongCap,
@@ -320,6 +324,105 @@ describe('shouldMarkConnProbeEligible remember sessions', () => {
         everConnected: true,
         sessionPaired: true,
         rememberGuestAuth: true,
+      }),
+      true,
+    )
+  })
+})
+
+describe('tick keepalive vs probe', () => {
+  it('old peer without pong cap gets keepalive ping every tick, never a probe', () => {
+    assert.equal(
+      shouldRunDataConnProbe({
+        connOpen: true,
+        localOffersPong: true,
+        remoteSupportsPong: false,
+        probePending: false,
+        lastSeen: 0,
+        now: 10_000,
+      }),
+      false,
+    )
+    assert.equal(
+      planTickOpenConnTraffic({ connOpen: true, probeWouldRun: false }),
+      'keepalive-ping',
+    )
+    assert.equal(shouldSendTickConnKeepalivePing({ connOpen: true, probeSentThisTick: false }), true)
+  })
+
+  it('probe-eligible session sends a probe or keepalive, never neither', () => {
+    assert.equal(planTickOpenConnTraffic({ connOpen: true, probeWouldRun: true }), 'probe')
+    assert.equal(planTickOpenConnTraffic({ connOpen: true, probeWouldRun: false }), 'keepalive-ping')
+    assert.equal(shouldSendTickConnKeepalivePing({ connOpen: true, probeSentThisTick: true }), false)
+    assert.equal(connProbeSentOnTick(5000, 5000), true)
+    assert.equal(connProbeSentOnTick(4999, 5000), false)
+  })
+})
+
+describe('connProbeMayAbandonAfterFail', () => {
+  it('with fake clock, slow post-restore link abandons at most once before connGen bumps', () => {
+    mock.timers.enable({ apis: ['Date'] })
+    const restoreAt = 0
+    let lastAbandonRestoreAt: number | null = null
+    let lastAbandonConnGen: number | null = null
+    const connGen = 1
+    let abandonCount = 0
+    const tickMs = [0, 2500, 4000, 8000, 12_000, 20_000, 25_500]
+    for (const now of tickMs) {
+      mock.timers.setTime(now)
+      if (
+        now - restoreAt <= DATA_CONN_PROBE_POST_RESTORE_MS
+        && connProbeMayAbandonAfterFail({
+          restoreSignalAt: restoreAt,
+          connGen,
+          lastAbandonRestoreAt,
+          lastAbandonConnGen,
+        })
+      ) {
+        abandonCount += 1
+        lastAbandonRestoreAt = restoreAt
+        lastAbandonConnGen = connGen
+      }
+    }
+    assert.equal(abandonCount, 1)
+    mock.timers.reset()
+  })
+
+  it('allows one abandon per restore and per connGen', () => {
+    const restore = 1_000
+    assert.equal(
+      connProbeMayAbandonAfterFail({
+        restoreSignalAt: restore,
+        connGen: 1,
+        lastAbandonRestoreAt: null,
+        lastAbandonConnGen: null,
+      }),
+      true,
+    )
+    assert.equal(
+      connProbeMayAbandonAfterFail({
+        restoreSignalAt: restore,
+        connGen: 1,
+        lastAbandonRestoreAt: restore,
+        lastAbandonConnGen: 1,
+      }),
+      false,
+    )
+    assert.equal(
+      connProbeMayAbandonAfterFail({
+        restoreSignalAt: restore,
+        connGen: 2,
+        lastAbandonRestoreAt: restore,
+        lastAbandonConnGen: 1,
+      }),
+      true,
+    )
+    assert.equal(
+      connProbeMayAbandonAfterFail({
+        restoreSignalAt: restore + 1,
+        connGen: 1,
+        lastAbandonRestoreAt: restore,
+        lastAbandonConnGen: 1,
       }),
       true,
     )
