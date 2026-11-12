@@ -461,8 +461,8 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
     <MoverControl
       connected={helperOn}
       state={mover}
-      onToggle={() => { if (helperOn) sendHelper(moverToggleCommand(mover)) }}
-      onInterval={(interval) => { if (helperOn && mover.on) sendHelper(moverIntervalCommand(interval)) }}
+      onToggle={() => { if (helperOn) sendHelper({ t: 'mover', ...moverToggleCommand(mover) }) }}
+      onInterval={(interval) => { if (helperOn && mover.on) sendHelper({ t: 'mover', ...moverIntervalCommand(interval) }) }}
     />
     <textarea data-testid="remote-text" className="clip" rows={2} onChange={(e) => setText(e.target.value)} placeholder="Open Remote on your phone and type. Text lands here, or in the field the pointer focuses." />
     <div className="full-laptop" data-testid="full-laptop">
