@@ -57,6 +57,7 @@ export function MoverControl({ state, qa = false, showPip = false, onToggle, onI
             type="button"
             aria-pressed={state.autoStop === preset}
             data-testid={`mover-autostop-${preset}`}
+            disabled={!on}
             onClick={() => onAutoStop(preset)}
           >{AUTO_STOP_LABEL[preset]}</button>
         ))}
