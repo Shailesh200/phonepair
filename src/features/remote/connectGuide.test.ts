@@ -352,7 +352,7 @@ describe('connect guide platform', () => {
   it('renders exactly one body paragraph on every Mac and Windows step', () => {
     for (const id of MAC_STEPS) assert.equal(connectStepBodies(id).length, 1, id)
     for (const id of WINDOWS_STEPS) assert.equal(connectStepBodies(id).length, 1, id)
-    assert.deepEqual(connectStepBodies('download'), ['generic'])
+    assert.deepEqual(connectStepBodies('download'), ['specific'])
     assert.deepEqual(connectStepBodies('open-mac'), ['specific'])
     assert.deepEqual(connectStepBodies('accessibility-mac'), ['specific'])
     assert.deepEqual(connectStepBodies('open-win'), ['specific'])
