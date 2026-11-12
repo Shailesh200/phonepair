@@ -7,10 +7,15 @@
 <link rel="stylesheet" href="mock-base.css">
 <link rel="stylesheet" href="espresso-additions.css">
 <style>
-.only-phone .pp-remote { padding-top: 8px; }
-.only-phone .pp-seg { margin-top: auto; }
-.mode-line { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
-.mode-line b { font-size: 15px; }
+.caps { list-style: none; display: flex; flex-direction: column; gap: 8px; margin: 10px 0 12px; }
+.caps li { display: flex; gap: 10px; align-items: baseline; font-size: 15px; }
+.caps b { width: 72px; flex: none; }
+.caps span { color: var(--muted); }
+.only-phone .pp-remote { min-height: 0; }
+.only-phone .pp-remote-pad { flex: 1 1 45%; height: auto; min-height: 0; }
+.btn.soft { background: var(--accent-soft); color: var(--accent); }
+.only-phone .two .btn { min-height: 48px; width: 100%; }
+.only-phone .kb { min-height: 48px; padding: 10px 14px; }
 </style>
 </head>
 <body>
@@ -28,19 +33,18 @@
           </div>
         </div>
         <div class="col">
-          <section class="card pad pp-remote" data-testid="remote-panel" style="flex:none">
-            <h3>Remote</h3>
-            <div class="pp-seg" role="tablist" aria-label="Remote mode">
-              <button type="button" class="pp-seg-btn" role="tab" aria-selected="true" data-testid="rtab-trackpad">Trackpad</button>
-              <button type="button" class="pp-seg-btn" role="tab" aria-selected="false" data-testid="rtab-clicker">Clicker</button>
-              <button type="button" class="pp-seg-btn" role="tab" aria-selected="false" data-testid="rtab-pointer">Pointer</button>
-            </div>
-            <div class="mode-line">
-              <b>Trackpad</b>
+          <section class="card pad" data-testid="remote-panel">
+            <h3 class="h-row" style="display:flex;justify-content:space-between;align-items:center">
+              <span>Remote</span>
               <span class="tag ok" data-testid="full-laptop-badge">Full laptop</span>
-            </div>
+            </h3>
             <p class="mut small" data-testid="helper-status">Connected</p>
-            <label class="mut small" for="remote-text" style="display:block;margin-top:12px">Keyboard</label>
+            <ul class="caps">
+              <li><b>Trackpad</b><span>Swipe, click, and scroll</span></li>
+              <li><b>Clicker</b><span>Prev and Next for slides</span></li>
+              <li><b>Pointer</b><span>Hold to show the laser</span></li>
+            </ul>
+            <label class="mut small" for="remote-text">Keyboard</label>
             <textarea id="remote-text" class="clip" data-testid="remote-text" rows="2" placeholder="Open Remote on your phone and type. Text lands here, or in the field the pointer focuses."></textarea>
           </section>
         </div>
@@ -51,25 +55,22 @@
     <header class="top">
       <a class="logo" href="/">PhonePair<i>.</i></a>
       <span class="ttl">Remote</span>
-      <span class="pill">iPhone</span>
     </header>
     <div class="pp-remote">
-      <span class="tag ok" data-testid="full-laptop-badge">Full laptop</span>
       <div class="pp-remote-pad" id="pp-trackpad" data-testid="trackpad">
         <p>Swipe to move · tap to click<br>two fingers to scroll</p>
         <div class="pad-scroll" data-testid="scroll-strip" role="scrollbar" aria-orientation="vertical" aria-label="Scroll" aria-controls="pp-trackpad">↕</div>
       </div>
       <div class="two">
-        <button type="button" class="btn ghost big" data-testid="lclick">Left click</button>
-        <button type="button" class="btn ghost big" data-testid="rclick">Right click</button>
+        <button type="button" class="btn ghost" data-testid="lclick">Left click</button>
+        <button type="button" class="btn ghost" data-testid="rclick">Right click</button>
       </div>
-      <button type="button" class="btn ghost big" data-testid="kb-toggle">Keyboard</button>
+      <div class="pp-remote-clicker">
+        <button type="button" class="btn soft" data-testid="prev">Prev</button>
+        <button type="button" class="btn" data-testid="next">Next</button>
+      </div>
+      <button type="button" class="pp-remote-laser" data-testid="pointer">Pointer · hold to point</button>
       <input class="kb" data-testid="kb-input" placeholder="Type here, it appears on the laptop">
-      <div class="pp-seg" role="tablist" aria-label="Remote mode">
-        <button type="button" class="pp-seg-btn" role="tab" aria-selected="true" data-testid="rtab-trackpad">Trackpad</button>
-        <button type="button" class="pp-seg-btn" role="tab" aria-selected="false" data-testid="rtab-clicker">Clicker</button>
-        <button type="button" class="pp-seg-btn" role="tab" aria-selected="false" data-testid="rtab-pointer">Pointer</button>
-      </div>
     </div>
   </div>
 </body>

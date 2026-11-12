@@ -46,15 +46,15 @@ Keep: `connect-laptop`, `helper-steps`, `helper-hint`, `helper-status`, `helper-
 
 ## C — One remote
 
-Phone (`.pp-remote`) and the laptop card share one segmented control. Last mode is `localStorage["pp-remote-mode"]` = `trackpad` | `clicker` | `pointer`.
+No mode tabs. Drop `.pp-seg` for the remote. Trackpad, clicker, and pointer sit on one phone screen, top to bottom, with no scroll at 390×844.
 
-Tabs: `.pp-seg` > `.pp-seg-btn` with `aria-selected`. Test ids stay `rtab-trackpad`, `rtab-clicker`, `rtab-pointer`. On the phone the tabs sit at the bottom (thumb), min-height 52px.
+1. `.pp-remote-pad` about 45% of the height, `data-testid="trackpad"`, scroll strip `scroll-strip`. Hint: Swipe to move · tap to click, two fingers to scroll.
+2. Left / Right under the pad: `lclick`, `rclick`.
+3. `.pp-remote-clicker`: big Prev / Next (`prev`, `next`). They send arrow and page keys so a slideshow can flip.
+4. `.pp-remote-laser`: press and hold to show the laser, release to hide. Label **Pointer**. `data-testid="pointer"`.
+5. Keyboard field `kb-input`. Placeholder: **Type here, it appears on the laptop**.
 
-- Trackpad: `.pp-remote-pad` `data-testid="trackpad"`, scroll strip `scroll-strip`, Left/Right `lclick` / `rclick`. Hint: Swipe to move · tap to click, two fingers to scroll.
-- Clicker: hide the pad and click row. Prev/Next (`prev`, `next`) are the large targets. Hint: Prev and Next send arrow and page keys to the laptop, so a slideshow open in this tab can flip.
-- Pointer: same pad. Hint: Swipe to move the pointer, tap to click, two fingers to scroll. Keep `data-testid="pointer"` on the laptop cursor overlay.
-
-Keyboard: `kb-toggle` (**Keyboard**) reveals `kb-input`, placeholder **Type here, it appears on the laptop**. On the laptop card the field is the existing `remote-text` textarea under the mode control: **Open Remote on your phone and type. Text lands here, or in the field the pointer focuses.** Laptop card also shows the current mode label and `helper-status`.
+Laptop card `data-testid="remote-panel"`, title **Remote**. One summary: `helper-status` (**Connected**) and the three capabilities (trackpad, clicker, pointer). No segmented control. Keyboard placement is `remote-text`: **Open Remote on your phone and type. Text lands here, or in the field the pointer focuses.**
 
 Keep `full-laptop-badge` (**Full laptop**) when the helper is connected.
 

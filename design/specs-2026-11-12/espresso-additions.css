@@ -103,30 +103,9 @@
 .pp-remote {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   min-height: 0;
   flex: 1;
-}
-.pp-seg {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  padding: 4px;
-}
-.pp-seg-btn {
-  min-height: 52px;
-  border-radius: var(--r-md);
-  font-weight: 600;
-  font-size: 15px;
-  color: var(--muted);
-  background: transparent;
-}
-.pp-seg-btn[aria-selected="true"] {
-  background: var(--surface);
-  color: var(--text);
 }
 .pp-remote-pad {
   position: relative;
@@ -156,6 +135,30 @@
   display: grid;
   place-items: center;
   color: var(--muted);
+}
+.pp-remote-clicker { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pp-remote-clicker .btn { width: 100%; min-height: 64px; font-size: 17px; font-weight: 700; }
+.pp-remote-laser {
+  width: 100%;
+  min-height: 52px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.pp-remote-laser::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--spark);
+  box-shadow: 0 0 0 4px rgba(196, 160, 106, .28);
 }
 
 .pp-device-row { width: 100%; }
