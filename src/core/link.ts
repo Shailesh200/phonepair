@@ -127,6 +127,7 @@ import {
 import {
   listenReclaimRecycleSkipsOpenSocket,
   shouldClearStaleRememberMainConnForRecovery,
+  shouldListenReclaimRecyclePeer,
 } from '../remember/rememberRecoveryConn'
 import { shouldDeferListenForceRecycle } from '../remember/listenForceRecycleDefer'
 import {
@@ -538,11 +539,19 @@ export class Link {
   private recycleListenPeerForServerReclaim() {
     const lp = this.listenPeer
     const dropAt = this.listenRecoveryDropAt
-    const serverOpenAt = lp && !lp.destroyed
-      ? peerAsForceSignal(lp, 'listen').signalPeerOpenAt?.() ?? null
-      : null
-    if (lp && !lp.destroyed
-      && listenReclaimRecycleSkipsOpenSocket(!!lp.open, !!lp.disconnected, dropAt, serverOpenAt)) {
+    const now = Date.now()
+    const wrapped = lp && !lp.destroyed ? peerAsForceSignal(lp, 'listen') : null
+    const serverOpenAt = wrapped?.signalPeerOpenAt?.() ?? null
+    const connectStartedAt = wrapped?.signalConnectStartedAt?.() ?? null
+    if (!shouldListenReclaimRecyclePeer({
+      deferRecycle: this.shouldDeferListenForceRecycle(),
+      listenOpen: !!lp?.open,
+      listenDisconnected: !!lp?.disconnected,
+      recoveryDropAt: dropAt,
+      serverOpenAt,
+      connectStartedAt,
+      now,
+    })) {
       return
     }
     if (lp && !lp.destroyed) {
@@ -585,6 +594,7 @@ export class Link {
   private shouldDeferListenForceRecycle(): boolean {
     return shouldDeferListenForceRecycle({
       hostRememberAuthPending: !!this.rememberHostAuth.authPending,
+      hostAuthPendingStartedAt: this.rememberHostAuth.authPendingStartedAt,
       guestDialInFlight: this.inFlightDial != null,
       pendingDataConn: this.pending != null,
     })
@@ -1124,7 +1134,10 @@ export class Link {
           this.listenRecoveryReclaimUntil,
         )
         if (plan.endUnverifiedForcing) {
-          this.ensureListenForceRunner().endUnverifiedForcing(true)
+          this.ensureListenForceRunner().endUnverifiedForcing(
+            true,
+            this.listenRecoveryReclaimUntil,
+          )
         }
         if (plan.settleUntil != null) {
           this.listenForceSettleUntil = plan.settleUntil

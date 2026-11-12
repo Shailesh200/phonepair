@@ -196,14 +196,19 @@ export class RememberHostAuth {
       const hostProof = await this.deps.signHostProof(phone.key, nonce, phoneNonce)
       if (!authConnStillPending(this.authPending, conn, this.promoted)) return
       if (this.promoted) return
+      if (!pending.phoneId) {
+        this.clear()
+        return
+      }
       this.promoted = true
       if (this.timer) clearTimeout(this.timer)
       this.timer = null
-      if (!pending.phoneId) return
-      try { conn.send({ t: 'remember:ok', hostProof: bytesToB64(hostProof) }) } catch {}
-      cb.onPromote(conn, name, pending.phoneId)
-      this.authPending = null
-      this.authPendingStartedAt = null
+      try {
+        try { conn.send({ t: 'remember:ok', hostProof: bytesToB64(hostProof) }) } catch {}
+        cb.onPromote(conn, name, pending.phoneId)
+      } finally {
+        this.clear()
+      }
     }
   }
 }

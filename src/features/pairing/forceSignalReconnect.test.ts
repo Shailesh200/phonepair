@@ -350,6 +350,53 @@ describe('forceSignalRunner stuck socket', () => {
     runner.stop()
   })
 
+  it('post-settle silent watch stops after one verified-live cadence check', () => {
+    const dropAt = 0
+    const t = { value: dropAt }
+    const runner = makeRunner(t)
+    runner.onSignalingDrop()
+    runner.endUnverifiedForcing(true, 500_000)
+    assert.equal(runner.hasPostSettleSilentOpenWatch(), true)
+    t.value = dropAt + FORCE_SIGNAL_VERIFY_CADENCE_MS
+    let forced = false
+    const peer = {
+      destroyed: false,
+      disconnected: false,
+      open: true,
+      disconnect: () => {},
+      reconnect: () => { forced = true },
+      signalReadyState: () => WS_OPEN,
+      signalPeerOpenAt: () => t.value - 2000,
+    }
+    runner.tick(peer, true, false, true, false)
+    assert.equal(forced, false)
+    assert.equal(runner.hasPostSettleSilentOpenWatch(), false)
+    runner.tick(peer, true, false, false, false)
+    assert.equal(forced, false)
+    runner.stop()
+  })
+
+  it('post-settle silent watch stops at reclaim max deadline', () => {
+    const dropAt = 0
+    const until = dropAt + 120_000
+    const t = { value: until }
+    const runner = makeRunner(t)
+    runner.onSignalingDrop()
+    runner.endUnverifiedForcing(true, until)
+    const peer = {
+      destroyed: false,
+      disconnected: false,
+      open: true,
+      disconnect: () => {},
+      reconnect: () => {},
+      signalReadyState: () => WS_OPEN,
+      signalPeerOpenAt: () => dropAt,
+    }
+    runner.tick(peer, true, false, false, false)
+    assert.equal(runner.hasPostSettleSilentOpenWatch(), false)
+    runner.stop()
+  })
+
   it('defers post-settle cadence while incoming remember auth is pending', () => {
     const t = { value: 0 }
     const peer = makeMockPeer()

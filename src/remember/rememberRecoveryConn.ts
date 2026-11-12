@@ -1,4 +1,5 @@
 import { shouldAbandonOpenDataConn, type AbandonOpenDataConnInput } from '../features/pairing/iceRecovery.ts'
+import { FORCE_SOCKET_MIN_OPEN_MS } from '../features/pairing/forceSignalPeerState.ts'
 import { LISTEN_RECOVERY_ID_BACKOFF_MS } from './listenIdRecovery.ts'
 
 export function shouldClearStaleRememberMainConnForRecovery(
@@ -25,6 +26,49 @@ export function listenReclaimRecycleSkipsOpenSocket(
   if (recoveryDropAt == null) return true
   if (serverOpenAt == null) return false
   return serverOpenAt > recoveryDropAt
+}
+
+/** Fresh listen peer still handshaking after recovery — give it up to 8s before reclaim recycle. */
+export function listenReclaimRecycleSkipsConnectingPeer(
+  recoveryDropAt: number | null,
+  connectStartedAt: number | null,
+  peerOpen: boolean,
+  now: number,
+  minOpenMs = FORCE_SOCKET_MIN_OPEN_MS,
+): boolean {
+  if (recoveryDropAt == null || peerOpen) return false
+  if (connectStartedAt == null || connectStartedAt <= recoveryDropAt) return false
+  return now - connectStartedAt < minOpenMs
+}
+
+export function shouldListenReclaimRecyclePeer(opts: {
+  deferRecycle: boolean
+  listenOpen: boolean
+  listenDisconnected: boolean
+  recoveryDropAt: number | null
+  serverOpenAt: number | null
+  connectStartedAt: number | null
+  now: number
+}): boolean {
+  if (opts.deferRecycle) return false
+  if (opts.listenOpen
+    && listenReclaimRecycleSkipsOpenSocket(
+      opts.listenOpen,
+      opts.listenDisconnected,
+      opts.recoveryDropAt,
+      opts.serverOpenAt,
+    )) {
+    return false
+  }
+  if (listenReclaimRecycleSkipsConnectingPeer(
+    opts.recoveryDropAt,
+    opts.connectStartedAt,
+    opts.listenOpen,
+    opts.now,
+  )) {
+    return false
+  }
+  return true
 }
 
 export function listenRecoveryReclaimIntervalMs(): number {

@@ -5,8 +5,10 @@ import {
   listenForceTickBlockedByRecoveryMode,
   listenRecoveryReclaimIntervalMs,
   listenRecoveryStaleOpenNeedsImmediateRecycle,
+  listenReclaimRecycleSkipsConnectingPeer,
   listenReclaimRecycleSkipsOpenSocket,
   shouldBeginListenIdRecoveryOnDataConnClose,
+  shouldListenReclaimRecyclePeer,
   shouldClearStaleRememberMainConnForRecovery,
 } from './rememberRecoveryConn.ts'
 
@@ -55,6 +57,46 @@ describe('remember recovery conn hygiene', () => {
     assert.equal(listenRecoveryStaleOpenNeedsImmediateRecycle(true, dropAt, dropAt + 100), false)
     assert.equal(listenRecoveryReclaimIntervalMs(), 2500)
     assert.ok(listenRecoveryReclaimIntervalMs() <= 3000)
+  })
+
+  it('reclaim re-arm: fresh connecting peer younger than 8s survives; aged peer is recycled', () => {
+    const dropAt = 10_000
+    const connectAt = dropAt + 100
+    const at25Rearm = connectAt + 2500
+    const at9s = connectAt + 9000
+    assert.equal(listenReclaimRecycleSkipsConnectingPeer(dropAt, connectAt, false, at25Rearm), true)
+    assert.equal(listenReclaimRecycleSkipsConnectingPeer(dropAt, connectAt, false, at9s), false)
+    assert.equal(shouldListenReclaimRecyclePeer({
+      deferRecycle: false,
+      listenOpen: false,
+      listenDisconnected: false,
+      recoveryDropAt: dropAt,
+      serverOpenAt: null,
+      connectStartedAt: connectAt,
+      now: at25Rearm,
+    }), false)
+    assert.equal(shouldListenReclaimRecyclePeer({
+      deferRecycle: false,
+      listenOpen: false,
+      listenDisconnected: false,
+      recoveryDropAt: dropAt,
+      serverOpenAt: null,
+      connectStartedAt: connectAt,
+      now: at9s,
+    }), true)
+  })
+
+  it('reclaim recycle defers while remember dial or auth is in flight', () => {
+    const dropAt = 10_000
+    assert.equal(shouldListenReclaimRecyclePeer({
+      deferRecycle: true,
+      listenOpen: false,
+      listenDisconnected: false,
+      recoveryDropAt: dropAt,
+      serverOpenAt: null,
+      connectStartedAt: null,
+      now: dropAt + 5000,
+    }), false)
   })
 
   it('reclaim recycle: stale open (OPEN before drop) is recycled; fresh open is kept', () => {

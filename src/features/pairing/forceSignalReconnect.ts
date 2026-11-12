@@ -1,6 +1,7 @@
 import {
   forceSignalWatchdogDelayMs,
   mayForceRecycleOpenSignalSocket,
+  WS_OPEN,
   type ForceSignalPeerStateExt,
 } from './forceSignalPeerState.ts'
 
@@ -120,6 +121,7 @@ export class ForceSignalRunner {
   private reclaimStartedAt: number | null = null
   private dropStartedAt: number | null = null
   private lastCadenceAt: number | null = null
+  private silentOpenWatchUntil: number | null = null
   private unverifiedAfterDrop = false
   private stopped = false
   private timers: ForceSignalTimers
@@ -176,13 +178,20 @@ export class ForceSignalRunner {
     this.reclaimStartedAt = null
   }
 
-  endUnverifiedForcing(preserveSilentOpenWatch = false) {
+  endUnverifiedForcing(preserveSilentOpenWatch = false, silentWatchUntil: number | null = null) {
     this.unverifiedAfterDrop = false
     if (!preserveSilentOpenWatch) {
       this.dropStartedAt = null
       this.lastCadenceAt = null
+      this.silentOpenWatchUntil = null
+    } else {
+      this.silentOpenWatchUntil = silentWatchUntil
     }
     this.clearTimers()
+  }
+
+  hasPostSettleSilentOpenWatch(): boolean {
+    return !this.unverifiedAfterDrop && this.dropStartedAt != null
   }
 
   onOpen() {
@@ -231,13 +240,26 @@ export class ForceSignalRunner {
     const now = this.timers.now()
     if (!unverified && peer.open && !peer.disconnected && this.dropStartedAt != null) {
       if (deferForce?.()) return
+      if (this.silentOpenWatchUntil != null && now >= this.silentOpenWatchUntil) {
+        this.dropStartedAt = null
+        this.lastCadenceAt = null
+        this.silentOpenWatchUntil = null
+        return
+      }
       if (this.watchdogId != null || this.retryId != null) this.clearTimers()
       if (
         forceSignalCadenceDue(this.dropStartedAt, this.lastCadenceAt, now)
         && this.watchdogId == null
         && this.retryId == null
-        && mayForceRecycleOpenSignalSocket(peer, now, this.socketReplaceOpts('cadence'))
       ) {
+        const rs = peer.signalReadyState?.() ?? null
+        const verifiedLive = peerHealthy && rs === WS_OPEN
+        if (verifiedLive || !mayForceRecycleOpenSignalSocket(peer, now, this.socketReplaceOpts('cadence'))) {
+          this.dropStartedAt = null
+          this.lastCadenceAt = null
+          this.silentOpenWatchUntil = null
+          return
+        }
         this.lastCadenceAt = now
         this.runForce(peer, idReclaimCap, 'cadence')
       }

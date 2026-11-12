@@ -87,4 +87,72 @@ describe('remember host promotion', () => {
     assert.ok(phoneConn.sent.some((m: any) => m?.t === 'clip:reply'))
   })
 
+  it('clears auth pending on early return when phoneId is missing after proof', async () => {
+    const phoneConn = mockConn('phone-peer')
+    const hostAuth = new RememberHostAuth()
+    const key = randomBytes(32)
+    const phones = new Map([['phone-a', { key, name: 'Pixel' }]])
+    const cb = {
+      onPromote: () => {},
+      onFail: () => {},
+      onDispatch: () => {},
+      onTimeout: () => {},
+    }
+    hostAuth.beginAuth(phoneConn as never, null, cb)
+    const phoneNonceB64 = bytesToB64(randomBytes(32))
+    await hostAuth.handleData(
+      phoneConn as never,
+      { t: 'remember:hello', phoneId: 'phone-a', phoneNonce: phoneNonceB64 },
+      phones,
+      null,
+      cb,
+    )
+    assert.ok(hostAuth.authPending)
+    hostAuth.authPending!.phoneId = null
+    const challenge = (phoneConn.sent as { t?: string; nonce?: string }[]).find((m) => m.t === 'remember:challenge')
+    const hostNonce = bytesFromB64(challenge!.nonce!)
+    const proof = await signPhoneProof(key, bytesFromB64(phoneNonceB64), hostNonce)
+    await hostAuth.handleData(
+      phoneConn as never,
+      { t: 'remember:proof', proof: bytesToB64(proof) },
+      phones,
+      null,
+      cb,
+    )
+    assert.equal(hostAuth.authPending, null)
+  })
+
+  it('clears auth pending when onPromote throws', async () => {
+    const phoneConn = mockConn('phone-peer')
+    const hostAuth = new RememberHostAuth()
+    const key = randomBytes(32)
+    const phones = new Map([['phone-a', { key, name: 'Pixel' }]])
+    const cb = {
+      onPromote: () => { throw new Error('promote failed') },
+      onFail: () => {},
+      onDispatch: () => {},
+      onTimeout: () => {},
+    }
+    hostAuth.beginAuth(phoneConn as never, null, cb)
+    const phoneNonceB64 = bytesToB64(randomBytes(32))
+    await hostAuth.handleData(
+      phoneConn as never,
+      { t: 'remember:hello', phoneId: 'phone-a', phoneNonce: phoneNonceB64 },
+      phones,
+      null,
+      cb,
+    )
+    const challenge = (phoneConn.sent as { t?: string; nonce?: string }[]).find((m) => m.t === 'remember:challenge')
+    const hostNonce = bytesFromB64(challenge!.nonce!)
+    const proof = await signPhoneProof(key, bytesFromB64(phoneNonceB64), hostNonce)
+    await assert.rejects(async () => hostAuth.handleData(
+      phoneConn as never,
+      { t: 'remember:proof', proof: bytesToB64(proof) },
+      phones,
+      null,
+      cb,
+    ))
+    assert.equal(hostAuth.authPending, null)
+  })
+
 })
