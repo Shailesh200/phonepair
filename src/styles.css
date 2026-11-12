@@ -68,12 +68,12 @@
   --ease:cubic-bezier(.2,.7,.2,1);--dur:180ms;
   --a:var(--accent);--a-d:var(--accent-strong);--a2:var(--accent-soft);--a3:var(--accent-tint);
   --mut:var(--muted);--red:var(--danger);
-  --layout-max:min(80vw, 1440px);
+  --layout-max:none;
 }
-@media (max-width:430px){:root{--layout-max:none}}
+@media (min-width:1200px){:root{--layout-max:min(80vw, 1440px)}}
 .laptop,.phone-wrap{width:100%;max-width:var(--layout-max);margin-inline:auto}
 .hero-fit{container-type:inline-size}
-@container (max-width:1200px){.art{transform:scale(.75);transform-origin:left bottom}}
+@media (min-width:1200px){@container (max-width:1200px){.art{transform:scale(.75);transform-origin:left bottom}}}
 
 html,body,#root{min-height:100vh;min-height:100dvh}
 html{background:var(--bg)}
