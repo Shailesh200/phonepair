@@ -88,6 +88,7 @@ import {
   ppDebugRecordListenFirstServerOpenAfterDrop,
 } from '../features/pairing/ppDebugListenSocket'
 import {
+  ppDebugFinalizeListenPeerGen,
   ppDebugListenPeerDestroyedBeforeCreate,
   ppDebugListenPeerReconnect,
   ppDebugListenPeerRotation,
@@ -1520,6 +1521,7 @@ export class Link {
       return
     }
     if (prev && !prev.destroyed) {
+      ppDebugFinalizeListenPeerGen()
       ppDebugListenPeerDestroyedBeforeCreate()
       this.ensureListenForceRunner().rebindPeer()
       try { prev.destroy() } catch {}

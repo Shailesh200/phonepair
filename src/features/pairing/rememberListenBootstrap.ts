@@ -10,3 +10,8 @@ export function planListenBootstrapPeer(
   if (prev.open && !prev.disconnected) return 'skip-open'
   return 'reconnect-existing'
 }
+
+/** New Peer construction must run only after any live previous instance is destroyed. */
+export function listenMustDestroyBeforeNewPeer(plan: ListenBootstrapPeerPlan): boolean {
+  return plan === 'create-new'
+}

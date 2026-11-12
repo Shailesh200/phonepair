@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { planListenBootstrapPeer } from './rememberListenBootstrap.ts'
+import { listenMustDestroyBeforeNewPeer, planListenBootstrapPeer } from './rememberListenBootstrap.ts'
 
 describe('planListenBootstrapPeer', () => {
   it('reconnects an existing disconnected listen peer instead of rotating', () => {
@@ -27,5 +27,13 @@ describe('planListenBootstrapPeer', () => {
       planListenBootstrapPeer({ destroyed: true, open: false, disconnected: false }),
       'create-new',
     )
+  })
+
+  it('requires destroying a live previous peer before constructing a new one', () => {
+    const live = planListenBootstrapPeer({ destroyed: false, open: false, disconnected: true })
+    assert.equal(live, 'reconnect-existing')
+    assert.equal(listenMustDestroyBeforeNewPeer(live), false)
+    const create = planListenBootstrapPeer(null)
+    assert.equal(listenMustDestroyBeforeNewPeer(create), true)
   })
 })
