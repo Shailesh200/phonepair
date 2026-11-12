@@ -9,6 +9,7 @@ import {
   WINDOWS_STEPS,
   applyConnectFocus,
   codeSubmitEnabled,
+  connectStepBodies,
   connectStepStates,
   detectConnectPlatform,
   initialConnectGuide,
@@ -346,6 +347,17 @@ describe('connect guide platform', () => {
     assert.equal(detectConnectPlatform({ platform: 'Win32' }), 'windows')
     assert.equal(detectConnectPlatform({ platform: 'MacIntel' }), 'mac')
     assert.equal(detectConnectPlatform({}), 'mac')
+  })
+
+  it('renders exactly one body paragraph on every Mac and Windows step', () => {
+    for (const id of MAC_STEPS) assert.equal(connectStepBodies(id).length, 1, id)
+    for (const id of WINDOWS_STEPS) assert.equal(connectStepBodies(id).length, 1, id)
+    assert.deepEqual(connectStepBodies('download'), ['generic'])
+    assert.deepEqual(connectStepBodies('open-mac'), ['specific'])
+    assert.deepEqual(connectStepBodies('accessibility-mac'), ['specific'])
+    assert.deepEqual(connectStepBodies('open-win'), ['specific'])
+    assert.deepEqual(connectStepBodies('access-win'), ['specific'])
+    assert.deepEqual(connectStepBodies('code'), ['generic'])
   })
 
   it('enables the code arrow only when six digits are entered and the helper is not connecting', () => {

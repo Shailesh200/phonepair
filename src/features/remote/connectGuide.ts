@@ -84,6 +84,12 @@ export function stepsFor(platform: ConnectPlatform): readonly ConnectStep[] {
   return platform === 'windows' ? WINDOWS_STEPS : MAC_STEPS
 }
 
+/** One instructional paragraph per step. OS-specific copy replaces the generic line. */
+export function connectStepBodies(id: ConnectStep): Array<'generic' | 'specific'> {
+  if (id === 'open-mac' || id === 'open-win' || id === 'accessibility-mac' || id === 'access-win') return ['specific']
+  return ['generic']
+}
+
 export function openStepFor(platform: ConnectPlatform): 'open-mac' | 'open-win' {
   return platform === 'windows' ? 'open-win' : 'open-mac'
 }
