@@ -1,3 +1,4 @@
+// esbuild is provided by vite (transitive dependency — not listed in package.json).
 import * as esbuild from 'esbuild'
 import { spawn } from 'node:child_process'
 import { mkdirSync, readdirSync, statSync } from 'node:fs'
@@ -56,8 +57,7 @@ const tsFiles = all.filter((f) => f.endsWith('.test.ts'))
 const tsxFiles = all.filter((f) => f.endsWith('.test.tsx'))
 
 const clipboardTest = join(src, 'features/clipboard/clipboard.test.tsx')
-const remoteTest = join(src, 'features/remote/remote.test.tsx')
-const tsxForBundle = tsxFiles.filter((f) => f !== clipboardTest && f !== remoteTest)
+const tsxForBundle = tsxFiles.filter((f) => f !== clipboardTest)
 
 const bundled = []
 for (const entry of tsxForBundle) {
@@ -69,9 +69,6 @@ if (code !== 0) process.exit(code)
 
 if (tsxFiles.includes(clipboardTest)) {
   code = await runScript(join(src, 'features/clipboard/run-tests.mjs'))
-}
-if (code === 0 && tsxFiles.includes(remoteTest)) {
-  code = await runScript(join(src, 'features/remote/run-tests.mjs'))
 }
 
 process.exit(code ?? 0)

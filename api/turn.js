@@ -10,5 +10,10 @@ module.exports = (req, res) => {
   const username = `${Math.floor(Date.now() / 1000) + ttl}:phonepair`;
   const credential = crypto.createHmac('sha1', secret).update(username).digest('base64');
   res.statusCode = 200;
-  res.end(JSON.stringify({ ttl, iceServers: [...stun, { urls: [`turn:${host}:3478?transport=udp`, `turn:${host}:3478?transport=tcp`], username, credential }] }));
+  const turnUrls = [
+    `turn:${host}:3478?transport=udp`,
+    `turn:${host}:3478?transport=tcp`,
+    'turns:turn.167.233.223.123.sslip.io:443?transport=tcp',
+  ];
+  res.end(JSON.stringify({ ttl, iceServers: [...stun, { urls: turnUrls, username, credential }] }));
 };

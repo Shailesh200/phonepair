@@ -95,6 +95,8 @@ describe('dial guard', () => {
   it('uses longer dial timeout in relay mode', () => {
     assert.equal(dialOpenTimeoutMs(false), 12_000)
     assert.equal(dialOpenTimeoutMs(true), 25_000)
+    assert.equal(dialOpenTimeoutMs(false, true), 8_000)
+    assert.equal(dialOpenTimeoutMs(true, true), 25_000)
   })
 
   it('does not redial from the watchdog while a dial is still in flight at 15s', () => {
@@ -110,6 +112,10 @@ describe('redial backoff', () => {
     assert.equal(redialDelayMs(0, false), 0)
     assert.equal(redialDelayMs(1, false), 0)
     assert.ok(redialDelayMs(2, false) > 0)
+  })
+
+  it('caps post-pair guest redial at 3s', () => {
+    assert.ok(redialDelayMs(12, true) <= 3_000)
   })
 })
 

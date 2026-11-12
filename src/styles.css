@@ -68,7 +68,12 @@
   --ease:cubic-bezier(.2,.7,.2,1);--dur:180ms;
   --a:var(--accent);--a-d:var(--accent-strong);--a2:var(--accent-soft);--a3:var(--accent-tint);
   --mut:var(--muted);--red:var(--danger);
+  --layout-max:none;
 }
+@media (min-width:1200px){:root{--layout-max:min(80vw, 1440px)}}
+.laptop,.phone-wrap{width:100%;max-width:var(--layout-max);margin-inline:auto}
+@media (min-width:1200px){.laptop,.phone-wrap{padding-inline:clamp(16px, 4vw, 48px)}}
+@media (min-width:1200px) and (max-width:1500px){.art{transform:scale(.75);transform-origin:left bottom}}
 
 html,body,#root{min-height:100vh;min-height:100dvh}
 html{background:var(--bg)}
@@ -191,7 +196,7 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
   column-gap:32px;
   align-content:center;
 }
-.nav{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:22px 40px;max-width:1240px;margin:0 auto}
+.nav{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:22px 40px;margin:0 auto}
 .hero-fit>.nav{grid-column:1 / -1;padding:0;max-width:none;margin:0;height:48px}
 .nav nav{display:flex;gap:26px;align-items:center;font-size:16px;font-weight:500;flex-wrap:wrap;justify-content:flex-end}
 .nav nav a{color:var(--muted);text-decoration:none;min-height:44px;display:inline-flex;align-items:center}
@@ -224,6 +229,7 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
 .art-file-img{height:80px;background:radial-gradient(circle at 30% 40%,#F2C14E 0%,transparent 40%),radial-gradient(circle at 80% 70%,#E05A3A 0%,transparent 45%),linear-gradient(160deg,#F4A27A,#C94B3A 40%,#5B2A4A 80%)}
 .art-file-cap{padding:8px 10px;font-size:12px;font-weight:500;letter-spacing:-.01em;color:#E8E8E4}
 .art-phone{position:absolute;left:500px;top:0;z-index:2;width:124px;height:252px;background:linear-gradient(180deg,#2C2C32,#161618);border-radius:26px;padding:8px;transform:rotate(-8deg);box-shadow:0 0 0 1px rgba(255,255,255,.12),0 30px 50px rgba(0,0,0,.55)}
+@media (min-width:1200px) and (max-width:1500px){.art-phone{transform:translateX(-136px) rotate(-8deg)}}
 .art-island{position:absolute;top:14px;left:50%;width:48px;height:10px;margin-left:-24px;background:#0A0A0C;border-radius:8px;z-index:2}
 .art-ph-screen{height:100%;border-radius:20px;overflow:hidden;background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.25)),radial-gradient(circle at 40% 30%,#F6D58A,transparent 50%),linear-gradient(165deg,#F3B17A,#D45B4A 45%,#6B3A6A);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
 .how{padding:64px 56px 0;max-width:1360px;margin:0 auto}
@@ -245,7 +251,7 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
 .qr img,.qr-ph{width:100%;height:100%;display:block;background:var(--tile);object-fit:contain;border-radius:0}
 .qr-card .code{display:flex;justify-content:center;align-items:baseline;gap:0;margin:12px 0 0;max-width:none;font-family:var(--mono);font-size:26px;font-weight:600;letter-spacing:.12em;color:var(--tile-ink);padding-left:.12em}
 .qr-card .code span{flex:none;width:auto;max-width:none;height:auto;border:0;background:transparent;box-shadow:none;font:inherit;letter-spacing:inherit;color:inherit;display:inline;margin:0;border-radius:0}
-.qr-card .code-sep{letter-spacing:0;margin:0 .35em;padding-left:0}
+.qr-card .code span.code-mid::after{content:'·';margin:0 .35em;font-weight:500;pointer-events:none}
 .qr-card .code-click{cursor:pointer}
 .qr-card .code-click:hover{opacity:.8}
 .qr-card .wait{display:flex;align-items:center;justify-content:center;gap:10px;color:var(--wait);font-weight:500;font-size:16px;line-height:1.3;margin:10px 0 0}
@@ -272,7 +278,7 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
 .banner.warn{background:var(--warn-soft);border-color:var(--warn-ring);color:var(--warn)}
 .banner.ok{background:var(--ok-soft);border-color:var(--ok-ring);color:var(--ok)}
 .banner.err,.banner.error{background:var(--danger-soft);border-color:var(--danger-ring);color:var(--danger)}
-.grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:22px;max-width:1240px;margin:0 auto;padding:4px 32px 40px}
+.grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:22px;margin:0 auto;padding:4px 32px 40px}
 .col{display:flex;flex-direction:column;gap:22px;min-width:0}
 .drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:220px;border:1px dashed rgba(42,28,22,.3);border-radius:var(--r-xl);background:var(--surface);cursor:pointer;text-align:center;padding:24px;color:var(--text)}
 .drop.on,.drop:hover{border-color:var(--accent);background:var(--drop-hot)}
@@ -318,6 +324,7 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
 .phone-page{width:100%;max-width:480px;min-height:100vh;min-height:100dvh;padding-bottom:calc(24px + env(safe-area-inset-bottom));overflow-x:clip}
 .phone-page .top{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:calc(14px + env(safe-area-inset-top)) 20px 8px;position:sticky;top:0;z-index:20;background:var(--bg)}
 .ttl{font-size:16px;font-weight:600;flex:1;text-align:center;letter-spacing:-.02em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-strip-actions{display:flex;align-items:center;gap:8px;flex:none}
 .phone-page.center{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:32px 24px;gap:12px}
 .phone-page.center h2{font-size:28px;line-height:1.15;margin-top:4px;font-weight:600}
 .phone-page.center .btn.big{margin-top:8px;max-width:320px}
@@ -416,6 +423,29 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
 .pp-icon-toggle svg{width:20px;height:20px}
 .pp-icon-toggle.on{color:var(--accent)}
 .pp-icon-toggle:hover{background:rgba(42,28,22,.04)}
+.pp-device-row{width:100%;min-width:0;max-width:100%}
+.remember-panel,
+.remember-saved,
+.pp-list{min-width:0;max-width:100%}
+.pp-device-name,
+.pp-device-name b{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.pp-device-name{flex:1 1 auto}
+.pp-device-row>button,
+.pp-device-row .pp-icon-toggle,
+.pp-device-row .btn,
+.pp-device-row .linkbtn{flex-shrink:0}
+.pp-device-row:hover,
+.pp-device-row.is-hover{background:var(--surface-soft);border-color:var(--line-strong)}
+.pp-device-row.is-editing{background:var(--tile);border-color:var(--accent)}
+.pp-star[aria-pressed="true"]{color:var(--spark)}
+.pp-star[aria-pressed="true"] svg{fill:var(--spark);stroke:var(--spark)}
+.pp-rename-input{flex:1;min-width:0;height:40px;max-width:100%;border:1px solid var(--accent);border-radius:var(--r-md);background:var(--tile);color:var(--text);padding:0 12px;font:inherit;font-size:15px;box-shadow:0 0 0 3px var(--accent-soft)}
+.pp-rename-input:focus{outline:none}
 .pp-prompt{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:24px;background:rgba(42,28,22,.4)}
 .pp-prompt-card{width:min(420px,100%);background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:var(--r-xl);padding:24px;box-shadow:0 16px 40px rgba(42,28,22,.12)}
 .pp-prompt-card h2{font-size:22px;font-weight:600;letter-spacing:-.03em;line-height:1.2}
@@ -479,6 +509,15 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
   .btn:active,.iconbtn:active,.send-hero:active,.home-card:active{transform:none}
 }
 
+.remember-overlay{position:fixed;inset:0;background:rgba(8,12,20,.45);display:grid;place-items:center;z-index:50;padding:20px}
+.remember-modal{max-width:380px;padding:24px;display:flex;flex-direction:column;gap:14px}
+.remember-actions{display:flex;gap:10px;justify-content:flex-end}
+.remember-panel{margin:0 24px 16px;padding:16px 18px}
+.remember-panel h4{margin:0 0 10px;font-size:var(--fs-14)}
+.remember-list{list-style:none;margin:0;padding:0}
+.remember-list .linkbtn{margin-top:0}
+.remember-saved{margin-bottom:16px}
+.remember-saved .saved-h{margin:0 0 8px}
 /* Remote shell fits one viewport, padding included (border-box). */
 html:has(.pg.remote),
 body:has(.pg.remote){

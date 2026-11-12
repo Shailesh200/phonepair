@@ -1,0 +1,181 @@
+/* Connect guide hooks from the design sheet, scoped to this feature. */
+
+.pp-connect { width: 100%; }
+
+.pp-steps {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+}
+.pp-step {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.pp-step > div { flex: 1; min-width: 0; }
+.pp-step .step-n {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  font-size: 15px;
+  flex: none;
+}
+.pp-step b { display: block; font-size: 15px; letter-spacing: -.02em; }
+.pp-step p { margin-top: 4px; }
+.pp-step--active { border-color: var(--accent); background: var(--tile); }
+.pp-step--done .step-n { background: var(--ok); }
+[data-os="mac"] .for-win,
+[data-os="windows"] .for-mac { display: none; }
+
+[data-state="idle"] .pp-steps,
+[data-state="connected"] .pp-steps,
+[data-state="idle"] .connect-guide,
+[data-state="connected"] .connect-guide { display: none; }
+[data-state="steps"] .pp-connect,
+[data-state="waiting"] .pp-connect,
+[data-state="connected"] .pp-connect,
+[data-state="error"] .pp-connect { display: none; }
+
+.pp-os-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 200px;
+  gap: 4px;
+  padding: 3px;
+  margin-bottom: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.pp-os-toggle button {
+  min-height: 36px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.pp-os-toggle button[aria-checked="true"],
+[data-os="mac"] .pp-os-toggle [data-os-choice="mac"],
+[data-os="windows"] .pp-os-toggle [data-os-choice="windows"] {
+  background: var(--surface);
+  color: var(--text);
+}
+.full-laptop .pp-step > .helper-downloads {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: nowrap;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+}
+.full-laptop .helper-downloads .pp-os-btn {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 4px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+@media (max-width: 340px) {
+  .full-laptop .helper-downloads { flex-wrap: wrap; }
+  .full-laptop .helper-downloads .pp-os-btn { flex: 1 1 100%; }
+}
+.pp-os-btn { min-height: 44px; }
+.pp-os-btn.on,
+[data-os="mac"] [data-testid="download-mac"],
+[data-os="windows"] [data-testid="download-win"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+
+.pp-code { display: flex; align-items: center; gap: 8px; margin-top: 8px; width: 100%; min-width: 0; }
+.pp-step > form.pp-code { flex: 1 0 100%; margin-top: 0; }
+.full-laptop form.pp-code.helper-code {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  letter-spacing: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+}
+.full-laptop form.pp-code.helper-code:focus { border: 0; box-shadow: none; }
+.pp-code-go {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border-radius: var(--r-md);
+  background: var(--accent);
+  color: var(--accent-ink);
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+.pp-code-go svg { width: 18px; height: 18px; }
+.pp-code-go:disabled {
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  cursor: default;
+}
+.pp-code-input {
+  width: 34px;
+  height: 44px;
+  flex: 0 0 34px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 600;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+  padding: 0;
+}
+.pp-code-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: none;
+}
+@media (max-width: 960px) {
+  .pp-code { gap: 4px; }
+  .pp-code-input {
+    width: auto;
+    height: 44px;
+    flex: 1 1 30px;
+    min-width: 30px;
+    max-width: 34px;
+  }
+}
+
+.pp-dev-link {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 15px;
+  background: none;
+  min-height: 44px;
+  padding: 8px 0;
+  cursor: pointer;
+  list-style: none;
+}
+.pp-dev-link::-webkit-details-marker { display: none; }
+.pp-dev-link:hover { color: var(--text); }

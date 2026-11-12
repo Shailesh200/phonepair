@@ -7,8 +7,17 @@ import { pointerOffBeforeDestroy } from './features/remote/send'
 import { Laptop } from './Laptop'
 import { Phone, PhoneEntry } from './Phone'
 import './features'
+import { forgetGuestLaptopLocal, type SavedLaptop } from './remember'
+import { rememberEntryError } from './remember/entryError'
+import { MSG_REMEMBER_DENIED } from './features/pairing/errors'
 
-function routeInfo(): { role: Role | null; code: string } {
+type AppRoute =
+  | { role: null; code: '' }
+  | { role: 'host'; code: '' }
+  | { role: 'guest'; code: string; remember?: undefined }
+  | { role: 'guest'; code: ''; remember: SavedLaptop }
+
+function routeInfo(): AppRoute {
   syncRelayFromUrl()
   const m = location.pathname.match(/^\/j\/([A-Za-z0-9]{6})/)
   const q = new URLSearchParams(location.search)
@@ -34,7 +43,9 @@ export default function App() {
     if (!route.role) return
     let code = route.code
     if (route.role === 'host') { code = sessionStorage.getItem('pp-code') || newCode(); sessionStorage.setItem('pp-code', code) }
-    const l = new Link(route.role, code)
+    const l = route.role === 'guest' && route.remember
+      ? new Link('guest', '', { rememberGuest: route.remember })
+      : new Link(route.role, code)
     setLink(l)
     const unsub = l.subscribe(force)
     l.start()
@@ -43,6 +54,25 @@ export default function App() {
     window.addEventListener('pagehide', bye)
     return () => { unsub(); window.removeEventListener('pagehide', bye); bye() }
   }, [route])
+
+  useEffect(() => {
+    if (!link) return
+    const remember = 'remember' in route && route.remember
+    if (!remember) return
+    let sentHome = false
+    const goHome = () => {
+      if (sentHome) return
+      if (link.status !== 'error' || !link.error) return
+      sentHome = true
+      rememberEntryError.set({ message: link.error, listenId: link.rememberListenId })
+      link.destroy()
+      history.pushState(null, '', entryPath())
+      setRoute({ role: null, code: '' })
+      setLink(null)
+    }
+    goHome()
+    return link.subscribe(goHome)
+  }, [link, route])
 
   const ctx = useMemo<CoreCtx | null>(() => link && route.role ? {
     role: route.role, link, toast,
@@ -61,7 +91,54 @@ export default function App() {
   }, [ctx])
 
   const toastsEl = <div className="toasts" aria-live="polite">{toasts.map((t) => <div key={t.id} className="toast">{t.t}</div>)}</div>
-  if (!route.role) return <><PhoneEntry onCode={(c) => { const path = joinPath(c); syncRelayFromUrl(); history.pushState(null, '', path); setRoute({ role: 'guest', code: cleanCode(c) }) }} onHost={() => { syncRelayFromUrl(); history.pushState(null, '', hostEntryPath()); setRoute({ role: 'host', code: '' }) }} />{toastsEl}</>
+  if (!route.role) {
+    const entryErr = rememberEntryError.get()
+    return (
+      <>
+        <PhoneEntry
+          error={entryErr?.message}
+          onForgetDenied={
+            entryErr?.message === MSG_REMEMBER_DENIED && entryErr.listenId
+              ? () => {
+                forgetGuestLaptopLocal(entryErr.listenId!)
+                rememberEntryError.set(null)
+              }
+              : undefined
+          }
+          onClearRememberError={() => rememberEntryError.set(null)}
+          onCode={(c) => {
+            rememberEntryError.set(null)
+            const path = joinPath(c)
+            syncRelayFromUrl()
+            history.pushState(null, '', path)
+            setRoute({ role: 'guest', code: cleanCode(c) })
+          }}
+          onHost={() => { syncRelayFromUrl(); history.pushState(null, '', hostEntryPath()); setRoute({ role: 'host', code: '' }) }}
+          onRemember={(lap) => { syncRelayFromUrl(); history.pushState(null, '', entryPath()); setRoute({ role: 'guest', code: '', remember: lap }) }}
+        />
+        {toastsEl}
+      </>
+    )
+  }
   if (!ctx) return null
-  return <>{route.role === 'host' ? <Laptop ctx={ctx} /> : <Phone ctx={ctx} page={page} setPage={setPage} onLeave={() => { ctx.link.disconnect(); history.pushState(null, '', entryPath()); setRoute({ role: null, code: '' }) }} />}{toastsEl}</>
+  const leavePhone = () => { ctx?.link.disconnect(); history.pushState(null, '', entryPath()); setRoute({ role: null, code: '' }) }
+  const rememberLaptop = (lap: SavedLaptop) => {
+    history.pushState(null, '', entryPath())
+    setRoute({ role: 'guest', code: '', remember: lap })
+  }
+  return (
+    <>
+      {route.role === 'host' ? <Laptop ctx={ctx} /> : (
+        <Phone
+          ctx={ctx}
+          page={page}
+          setPage={setPage}
+          rememberMode={!!route.remember}
+          onRemember={rememberLaptop}
+          onLeave={leavePhone}
+        />
+      )}
+      {toastsEl}
+    </>
+  )
 }
