@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connected devices</title>
+<link rel="stylesheet" href="mock-base.css">
+<link rel="stylesheet" href="espresso-additions.css">
+</head>
+<body>
+  <div class="pp-shell" style="padding-top:8px">
+    <header class="nav">
+      <a class="logo" href="/">PhonePair<i>.</i></a>
+      <span class="pill" data-testid="status">Connected to Studio Mac</span>
+    </header>
+    <div class="grid">
+      <div class="col">
+        <section class="card pad">
+          <h3>Connected devices</h3>
+          <p class="mut small" style="margin:-6px 0 12px">Favourites first, then last connected. Saved in this browser only.</p>
+          <div class="pp-list" data-testid="device-list">
+            <div class="pp-list-row pp-device-row">
+              <div class="grow"><b>Studio Mac</b><small>Connected 2 min ago</small></div>
+              <button type="button" class="pp-icon-toggle" aria-label="Rename Studio Mac" data-testid="device-rename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h4l10-10-4-4L4 16v4z"/><path d="m13 7 4 4"/></svg></button>
+              <button type="button" class="pp-icon-toggle pp-star" aria-pressed="true" aria-label="Favourite Studio Mac" data-testid="device-fav"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.8"><path d="m12 3 2.6 5.6L21 9.3l-4.5 4.2 1.2 6.2L12 16.8 6.3 19.7l1.2-6.2L3 9.3l6.4-.7L12 3z"/></svg></button>
+            </div>
+            <div class="pp-list-row pp-device-row is-hover">
+              <div class="grow"><b>Office Windows</b><small>Connected 1 hour ago</small></div>
+              <button type="button" class="pp-icon-toggle" aria-label="Rename Office Windows" data-testid="device-rename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h4l10-10-4-4L4 16v4z"/><path d="m13 7 4 4"/></svg></button>
+              <button type="button" class="pp-icon-toggle pp-star" aria-pressed="false" aria-label="Favourite Office Windows" data-testid="device-fav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 2.6 5.6L21 9.3l-4.5 4.2 1.2 6.2L12 16.8 6.3 19.7l1.2-6.2L3 9.3l6.4-.7L12 3z"/></svg></button>
+            </div>
+            <div class="pp-list-row pp-device-row is-editing">
+              <input class="pp-rename-input" data-testid="device-rename-input" maxlength="32" value="Kitchen iPad" aria-label="Device name">
+              <button type="button" class="pp-icon-toggle pp-star" aria-pressed="false" aria-label="Favourite Kitchen iPad" data-testid="device-fav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 2.6 5.6L21 9.3l-4.5 4.2 1.2 6.2L12 16.8 6.3 19.7l1.2-6.2L3 9.3l6.4-.7L12 3z"/></svg></button>
+            </div>
+            <div class="pp-list-row pp-device-row">
+              <div class="grow"><b>Pixel 8</b><small>Connected 3 days ago</small></div>
+              <button type="button" class="pp-icon-toggle" aria-label="Rename Pixel 8" data-testid="device-rename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h4l10-10-4-4L4 16v4z"/><path d="m13 7 4 4"/></svg></button>
+              <button type="button" class="pp-icon-toggle pp-star" aria-pressed="false" aria-label="Favourite Pixel 8" data-testid="device-fav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 2.6 5.6L21 9.3l-4.5 4.2 1.2 6.2L12 16.8 6.3 19.7l1.2-6.2L3 9.3l6.4-.7L12 3z"/></svg></button>
+            </div>
+          </div>
+        </section>
+      </div>
+      <div class="col">
+        <div class="card pad">
+          <h3>Send files</h3>
+          <div class="drop"><b>Drop files</b><small>or click to browse</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
