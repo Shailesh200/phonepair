@@ -3,6 +3,7 @@ import {
   applyConnectFocus,
   codeSubmitEnabled,
   connectCardState,
+  connectStepBodies,
   connectStepStates,
   detectConnectPlatform,
   editConnectCode,
@@ -153,7 +154,7 @@ export function ConnectGuide({
             <span className="step-n">{index + 1}</span>
             <div>
               <b>{COPY[step.id].title}</b>
-              <p className="mut small">{COPY[step.id].body}</p>
+              {connectStepBodies(step.id).includes('generic') ? <p className="mut small">{COPY[step.id].body}</p> : null}
               {step.id === 'download' ? <>
                 <p className="mut small" data-testid="helper-hint">Download the PhonePair Helper, open it, and type the 6-digit code it shows.</p>
                 <p className="mut small">

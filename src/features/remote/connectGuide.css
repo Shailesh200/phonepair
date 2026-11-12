@@ -90,9 +90,18 @@
   font-size: 13px;
   white-space: nowrap;
 }
-@media (max-width: 340px) {
-  .full-laptop .helper-downloads { flex-wrap: wrap; }
-  .full-laptop .helper-downloads .pp-os-btn { flex: 1 1 100%; }
+@media (max-width: 400px) {
+  .full-laptop .helper-downloads {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .full-laptop .helper-downloads .pp-os-btn {
+    width: 100%;
+    flex: 1 1 auto;
+    white-space: normal;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
 }
 .pp-os-btn { min-height: 44px; }
 .pp-os-btn.on,
