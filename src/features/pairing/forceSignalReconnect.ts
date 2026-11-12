@@ -178,7 +178,11 @@ export class ForceSignalRunner {
     this.reclaimStartedAt = null
   }
 
-  endUnverifiedForcing(preserveSilentOpenWatch = false, silentWatchUntil: number | null = null) {
+  endUnverifiedForcing(
+    preserveSilentOpenWatch = false,
+    silentWatchUntil: number | null = null,
+    cadenceAnchorAt: number | null = null,
+  ) {
     this.unverifiedAfterDrop = false
     if (!preserveSilentOpenWatch) {
       this.dropStartedAt = null
@@ -186,6 +190,10 @@ export class ForceSignalRunner {
       this.silentOpenWatchUntil = null
     } else {
       this.silentOpenWatchUntil = silentWatchUntil
+      if (cadenceAnchorAt != null) {
+        this.dropStartedAt = cadenceAnchorAt
+        this.lastCadenceAt = null
+      }
     }
     this.clearTimers()
   }

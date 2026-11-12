@@ -75,6 +75,16 @@ export function listenRecoveryReclaimIntervalMs(): number {
   return LISTEN_RECOVERY_ID_BACKOFF_MS
 }
 
+/** Reclaim polling stops when recovery mode is off and the 120s window has ended. */
+export function listenRecoveryReclaimSchedulingActive(
+  recoveryMode: boolean,
+  reclaimUntil: number | null,
+  now: number,
+): boolean {
+  if (recoveryMode) return true
+  return reclaimUntil != null && now < reclaimUntil
+}
+
 /** Stale half-open during recovery: recycle now, next reclaim check within ~3s. */
 export function listenRecoveryStaleOpenNeedsImmediateRecycle(
   listenOpen: boolean,

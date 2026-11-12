@@ -350,6 +350,35 @@ describe('forceSignalRunner stuck socket', () => {
     runner.stop()
   })
 
+  it('post-settle cadence anchors to server OPEN: no recycle within 12s after a 30s outage', () => {
+    const dropAt = 0
+    const openAt = 30_000
+    const settleEnd = openAt + 8_000
+    const checkAt = openAt + FORCE_SIGNAL_VERIFY_CADENCE_MS - 1
+    assert.equal(forceSignalCadenceDue(dropAt, null, settleEnd), true, 'drop-anchored cadence fires as soon as ticks resume')
+    assert.equal(forceSignalCadenceDue(openAt, null, checkAt), false, 'open-anchored cadence must wait')
+    const t = { value: openAt }
+    const runner = makeRunner(t)
+    runner.onSignalingDrop()
+    t.value = openAt
+    runner.endUnverifiedForcing(true, openAt + 120_000, openAt)
+    let forced = false
+    const peer = {
+      destroyed: false,
+      disconnected: false,
+      open: true,
+      disconnect: () => {},
+      reconnect: () => { forced = true },
+      signalReadyState: () => WS_OPEN,
+      signalPeerOpenAt: () => openAt,
+    }
+    t.value = checkAt
+    runner.tick(peer, true, false, true, false)
+    assert.equal(forced, false)
+    assert.equal(runner.hasPostSettleSilentOpenWatch(), true)
+    runner.stop()
+  })
+
   it('post-settle silent watch stops after one verified-live cadence check', () => {
     const dropAt = 0
     const t = { value: dropAt }

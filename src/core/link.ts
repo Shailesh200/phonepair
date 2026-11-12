@@ -434,7 +434,6 @@ export class Link {
   private listenRecoveryActive(): boolean {
     return this.listenReclaimRecoveryWindowActive()
       || this.listenRecoveryMode
-      || !!this.listenForceRunner?.isUnverifiedAfterDrop()
   }
 
   private clearListenRecoveryModeClearTimer() {
@@ -460,7 +459,9 @@ export class Link {
       this.listenRecoveryModeClearTimer = null
       if (this.destroyed) return
       this.listenRecoveryMode = false
+      this.listenRecoveryDropAt = null
       this.listenRecoveryReclaimUntil = null
+      this.clearListenRecoveryReclaimTimer()
       const lp = this.listenPeer
       if (lp && !lp.destroyed) this.tickListenSignalForce(lp)
     }, delay)
@@ -1137,6 +1138,7 @@ export class Link {
           this.ensureListenForceRunner().endUnverifiedForcing(
             true,
             this.listenRecoveryReclaimUntil,
+            now,
           )
         }
         if (plan.settleUntil != null) {

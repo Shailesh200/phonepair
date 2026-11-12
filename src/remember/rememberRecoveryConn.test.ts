@@ -4,6 +4,7 @@ import {
   listenForceResumesAfterRecoverySettle,
   listenForceTickBlockedByRecoveryMode,
   listenRecoveryReclaimIntervalMs,
+  listenRecoveryReclaimSchedulingActive,
   listenRecoveryStaleOpenNeedsImmediateRecycle,
   listenReclaimRecycleSkipsConnectingPeer,
   listenReclaimRecycleSkipsOpenSocket,
@@ -49,6 +50,14 @@ describe('remember recovery conn hygiene', () => {
       }),
       false,
     )
+  })
+
+  it('stops reclaim polling after the 120s cap when OPEN never arrives', () => {
+    const dropAt = 0
+    const until = dropAt + 120_000
+    assert.equal(listenRecoveryReclaimSchedulingActive(true, until, until - 1), true)
+    assert.equal(listenRecoveryReclaimSchedulingActive(false, until, until), false)
+    assert.equal(listenRecoveryReclaimSchedulingActive(false, until, until + 1), false)
   })
 
   it('stale open with no server OPEN recycles immediately; reclaim polls within ~3s', () => {
