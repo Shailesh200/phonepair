@@ -5,7 +5,7 @@ import type { CoreCtx } from './bus'
 import type { Link } from './link'
 
 export function Logo({ small }: { small?: boolean }) {
-  return <a className={'logo' + (small ? ' sm' : '')} href="/"><span className="mark"><span /><span /></span><span>Phone<em>Pair</em></span></a>
+  return <a className={'logo' + (small ? ' sm' : '')} href="/">PhonePair<i>.</i></a>
 }
 export function Linkified({ text }: { text: string }) {
   return <>{linkify(text).map((p, i) => typeof p === 'string' ? <React.Fragment key={i}>{p}</React.Fragment> : <a key={i} href={p.href} target="_blank" rel="noopener noreferrer">{p.href}</a>)}</>
