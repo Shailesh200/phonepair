@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remote</title>
+<link rel="stylesheet" href="mock-base.css">
+<link rel="stylesheet" href="espresso-additions.css">
+<style>
+.only-phone .pp-remote { padding-top: 8px; }
+.only-phone .pp-seg { margin-top: auto; }
+.mode-line { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+.mode-line b { font-size: 15px; }
+</style>
+</head>
+<body>
+  <div class="only-laptop">
+    <div class="pp-shell" style="padding-top:8px">
+      <header class="nav">
+        <a class="logo" href="/">PhonePair<i>.</i></a>
+        <span class="pill" data-testid="status">Connected to Shailesh's iPhone</span>
+      </header>
+      <div class="grid">
+        <div class="col">
+          <div class="card pad">
+            <h3>Send files</h3>
+            <div class="drop"><b>Drop files</b><small>or click to browse</small></div>
+          </div>
+        </div>
+        <div class="col">
+          <section class="card pad pp-remote" data-testid="remote-panel" style="flex:none">
+            <h3>Remote</h3>
+            <div class="pp-seg" role="tablist" aria-label="Remote mode">
+              <button type="button" class="pp-seg-btn" role="tab" aria-selected="true" data-testid="rtab-trackpad">Trackpad</button>
+              <button type="button" class="pp-seg-btn" role="tab" aria-selected="false" data-testid="rtab-clicker">Clicker</button>
+              <button type="button" class="pp-seg-btn" role="tab" aria-selected="false" data-testid="rtab-pointer">Pointer</button>
+            </div>
+            <div class="mode-line">
+              <b>Trackpad</b>
+              <span class="tag ok" data-testid="full-laptop-badge">Full laptop</span>
+            </div>
+            <p class="mut small" data-testid="helper-status">Connected</p>
+            <label class="mut small" for="remote-text" style="display:block;margin-top:12px">Keyboard</label>
+            <textarea id="remote-text" class="clip" data-testid="remote-text" rows="2" placeholder="Open Remote on your phone and type. Text lands here, or in the field the pointer focuses."></textarea>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="only-phone phone">
+    <header class="top">
+      <a class="logo" href="/">PhonePair<i>.</i></a>
+      <span class="ttl">Remote</span>
+      <span class="pill">iPhone</span>
+    </header>
+    <div class="pp-remote">
+      <span class="tag ok" data-testid="full-laptop-badge">Full laptop</span>
+      <div class="pp-remote-pad" id="pp-trackpad" data-testid="trackpad">
+        <p>Swipe to move · tap to click<br>two fingers to scroll</p>
+        <div class="pad-scroll" data-testid="scroll-strip" role="scrollbar" aria-orientation="vertical" aria-label="Scroll" aria-controls="pp-trackpad">↕</div>
+      </div>
+      <div class="two">
+        <button type="button" class="btn ghost big" data-testid="lclick">Left click</button>
+        <button type="button" class="btn ghost big" data-testid="rclick">Right click</button>
+      </div>
+      <button type="button" class="btn ghost big" data-testid="kb-toggle">Keyboard</button>
+      <input class="kb" data-testid="kb-input" placeholder="Type here, it appears on the laptop">
+      <div class="pp-seg" role="tablist" aria-label="Remote mode">
+        <button type="button" class="pp-seg-btn" role="tab" aria-selected="true" data-testid="rtab-trackpad">Trackpad</button>
+        <button type="button" class="pp-seg-btn" role="tab" aria-selected="false" data-testid="rtab-clicker">Clicker</button>
+        <button type="button" class="pp-seg-btn" role="tab" aria-selected="false" data-testid="rtab-pointer">Pointer</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
