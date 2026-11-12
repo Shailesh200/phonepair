@@ -190,6 +190,7 @@ export function toggleFavourite(id: string): boolean {
 
 /** Record that a saved device connected. Invalid times and a future store are ignored. */
 export function markDeviceConnected(id: string, nowMs: number): void {
+  if (typeof id !== 'string' || id.trim() === '') return
   if (!safeId(id) || finiteMs(nowMs) == null) return
   mutate((store) => {
     const prev = store.devices[id]

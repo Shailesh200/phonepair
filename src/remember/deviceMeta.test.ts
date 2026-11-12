@@ -239,6 +239,27 @@ describe('device meta store', { concurrency: false }, () => {
     assert.equal(globalThis.localStorage.getItem(DEVICE_META_KEY), future)
   })
 
+  it('does not touch storage for an empty or whitespace id', () => {
+    const raw = JSON.stringify({ v: 1, devices: { a: { name: 'Kept' } } })
+    globalThis.localStorage.setItem(DEVICE_META_KEY, raw)
+    markDeviceConnected('', 50)
+    markDeviceConnected('   ', 50)
+    assert.equal(globalThis.localStorage.getItem(DEVICE_META_KEY), raw)
+    const throwing: Storage = {
+      getItem() { throw new Error('read') },
+      setItem() { throw new Error('write') },
+      removeItem() { throw new Error('write') },
+      clear() { throw new Error('write') },
+      key() { throw new Error('read') },
+      get length() { throw new Error('read') },
+    }
+    install(throwing)
+    assert.doesNotThrow(() => {
+      markDeviceConnected('', 50)
+      markDeviceConnected('   ', 50)
+    })
+  })
+
   it('caps and trims without keeping surrounding whitespace', () => {
     assert.equal(normalizeDeviceName('   '), '')
     assert.equal(normalizeDeviceName(12), '')
