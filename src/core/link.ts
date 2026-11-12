@@ -149,7 +149,6 @@ import {
   listenRecoveryAwaitingServerOpenSinceDrop,
   listenReclaimRecycleSkipsOpenSocket,
   shouldClearStaleRememberMainConnForRecovery,
-  shouldForceHookOnRecoveryRearm,
   shouldListenReclaimRecyclePeer,
   shouldOneShotRecoveryRearm,
   shouldRearmListenAfterServerReopen,
@@ -808,7 +807,6 @@ export class Link {
     const lp = peer ?? this.listenPeer
     const wrapped = lp && !lp.destroyed ? peerAsForceSignal(lp, 'listen') : null
     const serverOpenAt = wrapped?.signalPeerOpenAt?.() ?? null
-    if (!shouldOneShotRecoveryRearm(serverOpenAt, this.listenRecoveryRearmedOpenAt)) return
     if (!lp || lp.destroyed) {
       if (!this.listenBootstrapInFlight && Date.now() >= this.listenBackoffUntil) {
         void this.bootstrapRememberListen()
@@ -816,9 +814,14 @@ export class Link {
       return
     }
     if (this.isRememberConnOnListenPeer()) return
-    this.reloadRememberPhonesMap()
+    if (lp.open && !lp.disconnected) {
+      if (!shouldOneShotRecoveryRearm(serverOpenAt, this.listenRecoveryRearmedOpenAt)) return
+      this.reloadRememberPhonesMap()
+      if (serverOpenAt != null) this.listenRecoveryRearmedOpenAt = serverOpenAt
+      return
+    }
+    if (!shouldOneShotRecoveryRearm(serverOpenAt, this.listenRecoveryRearmedOpenAt)) return
     if (serverOpenAt != null) this.listenRecoveryRearmedOpenAt = serverOpenAt
-    if (!shouldForceHookOnRecoveryRearm(!!lp.open, !!lp.disconnected)) return
     if (!this.ensureListenForceRunner().runnerBusy()) {
       this.ensureListenForceRunner().hook(peerAsForceSignal(lp, 'listen'), false)
     }
@@ -907,14 +910,14 @@ export class Link {
       this.reloadRememberPhonesMap()
       return
     }
-    if (!this.listenSignalUnverified()) {
-      const lpHealthy = this.listenPeer
-      if (lpHealthy?.open && !lpHealthy.disconnected) {
-        if (this.listenRecoveryMode && !this.isRememberConnOnListenPeer()) {
-          this.reloadRememberPhonesMap()
-        }
+    const lpEarly = this.listenPeer
+    if (lpEarly && !lpEarly.destroyed && lpEarly.open && !lpEarly.disconnected) {
+      if (this.listenRecoveryMode) {
+        this.rearmListenForRecoveryAccept(lpEarly)
         return
       }
+      this.reloadRememberPhonesMap()
+      return
     }
     if (this.listenGaveUp) {
       if (this.listenOwnedBefore) this.clearRememberListenGiveUp()
