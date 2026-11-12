@@ -1461,6 +1461,7 @@ export class Link {
     if (fromListenPeer && rememberPhoneId) this.authenticatedRememberPhoneId = rememberPhoneId
     if (this.role === 'host') {
       notifyHostPhoneConnected(this.listenForceRunner, this.hostSignalRunner)
+      if (fromListenPeer) this.listenForceSettleUntil = null
     }
     this.sessionPaired = true
     this.rememberGuestFailCount = 0
