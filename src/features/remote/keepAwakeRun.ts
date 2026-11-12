@@ -6,6 +6,7 @@ import {
   createAutoStopClock,
   currentTimeScale,
   deriveStatus,
+  keepAwakeSwitchOn,
   type AutoStop,
   type KeepAwakeViewState,
 } from './keepAwake.ts'
@@ -31,6 +32,7 @@ type Session = {
   videoPlaying: boolean
   pipActive: boolean
   tabHidden: boolean
+  helperStopped: boolean
   wakeLockApi: boolean
   videoApi: boolean
 }
@@ -68,6 +70,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     videoPlaying: false,
     pipActive: false,
     tabHidden: tabHidden(),
+    helperStopped: false,
     wakeLockApi: caps.wakeLockApi,
     videoApi: caps.videoApi,
   }
@@ -87,7 +90,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   function view(): KeepAwakeViewState {
     const helperConnected = host.helperConnected()
     const holding = session.wakeLockHeld || session.videoPlaying || session.pipActive
-    const failed = session.settled && session.requested && !holding && !session.tabHidden && !session.helperOn
+    const failed = session.helperStopped || (session.settled && session.requested && !holding && !session.tabHidden && !session.helperOn)
     const mode = activeMode({
       helperConnected,
       wakeLockHeld: session.wakeLockHeld,
@@ -108,10 +111,11 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
       settled: session.settled,
       reacquiring,
       lastGood,
+      helperStopped: session.helperStopped,
     })
     if (status === 'On (screen awake)') lastGood = 'On (screen awake)'
     return {
-      on: status != null,
+      on: keepAwakeSwitchOn(status),
       interval: session.interval,
       status,
       mode,
@@ -337,6 +341,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   async function start(interval: MoverInterval) {
     const mine = ++epoch
     reacquiring = false
+    session.helperStopped = false
     session.interval = interval
     session.requested = true
     session.localEngaged = true
@@ -374,6 +379,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     epoch += 1
     reacquiring = false
     lastGood = null
+    session.helperStopped = false
     session.requested = false
     session.helperOn = false
     session.localEngaged = false
@@ -408,6 +414,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
 
   function noteHelperReport(state: MoverState) {
     reacquiring = false
+    session.helperStopped = false
     if (state.interval) session.interval = state.interval
     if (state.on) {
       epoch += 1
@@ -435,6 +442,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
 
   function onHelperDisconnected() {
     reacquiring = false
+    const helperWasOn = session.helperOn
     session.helperOn = false
     if (session.localEngaged && session.requested) {
       publish()
@@ -442,6 +450,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     }
     epoch += 1
     lastGood = null
+    session.helperStopped = helperWasOn
     session.requested = false
     session.pending = false
     session.settled = false
@@ -451,6 +460,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   }
 
   function onHelperConnected() {
+    session.helperStopped = false
     if (session.requested && session.localEngaged && !session.helperOn) {
       host.sendHelper({ t: 'mover', on: true, interval: session.interval })
     }

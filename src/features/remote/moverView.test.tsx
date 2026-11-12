@@ -115,6 +115,15 @@ describe('mouse mover control', () => {
     assert.match(paused, /Paused, tab hidden/)
     assert.match(paused, /data-testid="mover-pip"/)
 
+    const quit = markup(React.createElement(MoverControl, {
+      ...hands,
+      state: { on: false, interval: '1m', status: 'Helper not running', mode: 'none', autoStop: 'never' },
+    }))
+    assert.match(quit, /data-state="unsupported"/)
+    assert.match(quit, /aria-checked="false"/)
+    assert.match(quit, /data-testid="mover-status"[^>]*>Helper not running</)
+    assert.match(quit, /class="pp-mover-badge"/)
+
     const unsupported = markup(React.createElement(MoverControl, {
       ...hands,
       state: { on: true, interval: '1m', status: 'Not supported', mode: 'none', autoStop: '15m' },

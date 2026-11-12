@@ -204,6 +204,31 @@ describe('keep-awake visibility listener', () => {
     }
   })
 
+  it('shows Helper not running when the helper quits, and stays blank if it was already off', () => {
+    let connected = true
+    const awake = createBrowserKeepAwake({
+      helperConnected: () => connected,
+      sendHelper() {},
+      publish() {},
+    })
+    awake.noteHelperReport({ on: true, interval: '1m' })
+    assert.equal(awake.view().status, 'On (real mouse)')
+    assert.equal(awake.view().on, true)
+    connected = false
+    awake.onHelperDisconnected()
+    assert.equal(awake.view().status, 'Helper not running')
+    assert.equal(awake.view().on, false)
+    assert.equal(awake.view().mode, 'none')
+
+    awake.stop()
+    assert.equal(awake.view().status, null)
+    awake.noteHelperReport({ on: true, interval: '30s' })
+    awake.stop()
+    connected = false
+    awake.onHelperDisconnected()
+    assert.equal(awake.view().status, null)
+  })
+
   it('opens picture-in-picture on the first click, after play()', async () => {
     const order: string[] = []
     const prevDoc = globalThis.document

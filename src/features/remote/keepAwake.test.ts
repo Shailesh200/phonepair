@@ -4,8 +4,10 @@ import {
   activeMode,
   autoStopDelayMs,
   createAutoStopClock,
+  dataState,
   deriveStatus,
   createKeepAwakeLinkWatch,
+  keepAwakeSwitchOn,
   KEEPAWAKE_LINK_GRACE_MS,
   keepAwakeLinkEffect,
   qaDebugText,
@@ -81,6 +83,32 @@ describe('keep-awake status', () => {
     assert.equal(deriveStatus({ ...again, lastGood: 'On (real mouse)' }), 'Not supported')
     assert.equal(deriveStatus({ ...again, lastGood: null, settled: false }), null)
     assert.equal(deriveStatus({ ...holdBase(), reacquiring: true }), 'Not supported')
+  })
+
+  it('says the helper is not running after it quits', () => {
+    assert.equal(deriveStatus({ ...holdBase(), requested: false, helperStopped: true }), 'Helper not running')
+    assert.equal(deriveStatus({ ...holdBase(), helperStopped: true, helperConnected: true, helperReportedOn: true }), 'Helper not running')
+    assert.equal(deriveStatus({ ...holdBase(), requested: false }), null)
+    assert.equal(dataState('Helper not running'), 'unsupported')
+    assert.equal(keepAwakeSwitchOn('Helper not running'), false)
+    assert.equal(keepAwakeSwitchOn('On (screen awake)'), true)
+    assert.equal(keepAwakeSwitchOn(null), false)
+    const quit = relayReport({
+      on: false,
+      interval: null,
+      status: 'Helper not running',
+      mode: 'none',
+      autoStop: 'never',
+    })
+    assert.equal(quit.on, false)
+    assert.equal(quit.status, 'Helper not running')
+    assert.deepEqual(readRelayReport(quit), {
+      on: false,
+      interval: null,
+      status: 'Helper not running',
+      mode: 'none',
+      autoStop: 'never',
+    })
   })
 })
 
