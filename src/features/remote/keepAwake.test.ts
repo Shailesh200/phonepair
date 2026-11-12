@@ -5,6 +5,7 @@ import {
   autoStopDelayMs,
   createAutoStopClock,
   deriveStatus,
+  keepAwakeLinkEffect,
   qaDebugText,
   qaHooksEnabled,
   qaModeAttribute,
@@ -57,11 +58,27 @@ describe('keep-awake status', () => {
     assert.equal(deriveStatus({ ...holdBase(), helperConnected: false, helperReportedOn: true, wakeLockHeld: true }), 'On (screen awake)')
     assert.equal(deriveStatus({ ...holdBase(), helperConnected: false, helperReportedOn: true }), 'Not supported')
     assert.equal(deriveStatus({ ...holdBase(), wakeLockHeld: true }), 'On (screen awake)')
-    assert.equal(deriveStatus({ ...holdBase(), videoPlaying: true, tabHidden: true }), 'On (screen awake)')
-    assert.equal(deriveStatus({ ...holdBase(), pipActive: true, tabHidden: true }), 'On (screen awake)')
+    assert.equal(deriveStatus({ ...holdBase(), videoPlaying: true, tabHidden: true, pipActive: false }), 'Paused, tab hidden')
+    assert.equal(deriveStatus({ ...holdBase(), pipActive: true, tabHidden: true, videoPlaying: true }), 'On (screen awake)')
     assert.equal(deriveStatus({ ...holdBase(), tabHidden: true }), 'Paused, tab hidden')
     assert.equal(deriveStatus({ ...holdBase(), settled: false }), null)
     assert.equal(deriveStatus(holdBase()), 'Not supported')
+  })
+
+  it('pauses a hidden tab even if the fallback video is playing, unless PiP is up', () => {
+    assert.equal(deriveStatus({ ...holdBase(), tabHidden: true, videoPlaying: true, pipActive: false, wakeLockHeld: true }), 'Paused, tab hidden')
+    assert.equal(deriveStatus({ ...holdBase(), tabHidden: true, videoPlaying: true, pipActive: true }), 'On (screen awake)')
+  })
+})
+
+describe('keep-awake link drops', () => {
+  it('does not stop while reconnecting, and resends state once the link is back', () => {
+    assert.equal(keepAwakeLinkEffect('reconnecting'), 'keep')
+    assert.equal(keepAwakeLinkEffect('waiting'), 'keep')
+    assert.equal(keepAwakeLinkEffect('connecting'), 'keep')
+    assert.equal(keepAwakeLinkEffect('closed'), 'stop')
+    assert.equal(keepAwakeLinkEffect('error'), 'stop')
+    assert.equal(keepAwakeLinkEffect('connected'), 'resync')
   })
 })
 

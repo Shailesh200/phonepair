@@ -14,7 +14,7 @@ import {
   moverToggleCommand,
   readMoverState,
 } from '../screen/mover'
-import { KEEP_AWAKE_IDLE, browserSearch, pictureInPictureEnabled, qaHooksEnabled, readRelayCommand, relayReport, type KeepAwakeViewState } from './keepAwake'
+import { KEEP_AWAKE_IDLE, browserSearch, keepAwakeLinkEffect, pictureInPictureEnabled, qaHooksEnabled, readRelayCommand, relayReport, type KeepAwakeViewState } from './keepAwake'
 import { createBrowserKeepAwake } from './keepAwakeRun'
 import { navKey, showPointerLaser } from './send'
 import type { HelperAttempt } from './connectGuide.ts'
@@ -608,7 +608,9 @@ registerFeature({
     }
     moverRelay = relay
     const offLink = ctx.link.subscribe(() => {
-      if (!ctx.link.connected && moverStopsOn('disconnect')) stopMouseMover()
+      const effect = keepAwakeLinkEffect(ctx.link.status)
+      if (effect === 'stop' && moverStopsOn('disconnect')) stopMouseMover()
+      if (effect === 'resync') ctx.send(relayReport(awake.view()))
     })
     return () => {
       offs.forEach((off) => off())

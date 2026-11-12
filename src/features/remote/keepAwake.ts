@@ -101,14 +101,23 @@ export type HoldSignals = {
   settled: boolean
 }
 
-/** One honest line. Null means off (or still waiting on the helper). */
+/** One honest line. Null means off (or still waiting on the helper).
+ * A hidden tab is paused unless Picture-in-Picture is actually up. A playing
+ * fallback video does not keep the screen awake while the tab is hidden. */
 export function deriveStatus(s: HoldSignals): KeepAwakeStatus | null {
   if (!s.requested) return null
   if (s.helperConnected && s.helperReportedOn) return 'On (real mouse)'
+  if (s.tabHidden && !s.pipActive) return 'Paused, tab hidden'
   if (s.wakeLockHeld || s.videoPlaying || s.pipActive) return 'On (screen awake)'
-  if (s.tabHidden) return 'Paused, tab hidden'
   if (!s.settled) return null
   return 'Not supported'
+}
+
+/** Brief reconnects keep the timer. Closed and error stop it. Connected resyncs the phone. */
+export function keepAwakeLinkEffect(status: string): 'stop' | 'resync' | 'keep' {
+  if (status === 'closed' || status === 'error') return 'stop'
+  if (status === 'connected') return 'resync'
+  return 'keep'
 }
 
 export function dataState(status: KeepAwakeStatus | null): 'on' | 'off' | 'paused' | 'unsupported' {
