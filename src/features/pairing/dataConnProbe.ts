@@ -4,6 +4,15 @@ export const DATA_CONN_PROBE_SKIP_RECENT_MS = 2000
 export const HELLO_CAP_PONG = 'pong' as const
 export const LINK_HELLO_CAPS: readonly string[] = [HELLO_CAP_PONG]
 
+export function buildLinkHelloMessage(localDeviceName: string) {
+  return { t: 'hello' as const, name: localDeviceName, caps: [...LINK_HELLO_CAPS] }
+}
+
+/** Clears stale remote pong capability when the data conn is dropped or replaced. */
+export function freshRemotePongCap(): false {
+  return false
+}
+
 export function helloCapsIncludePong(caps: unknown): boolean {
   return Array.isArray(caps) && caps.includes(HELLO_CAP_PONG)
 }
@@ -33,4 +42,16 @@ export function dataConnProbeSucceeded(lastSeen: number, probeAt: number | null)
 
 export function isConnProbeControlType(t: unknown): boolean {
   return t === 'ping' || t === 'pong'
+}
+
+/** Conn keepalive (ping/pong, lastSeen) runs on an open data conn even while remember-guest is reconnecting. */
+export function shouldDispatchConnKeepalive(opts: {
+  connOpen: boolean
+  rememberGuestAuth: boolean
+  status: string
+  t: unknown
+}): boolean {
+  if (!opts.connOpen) return false
+  if (isConnProbeControlType(opts.t)) return true
+  return !opts.rememberGuestAuth || opts.status === 'connected'
 }
