@@ -132,6 +132,78 @@ describe('keep-awake visibility listener', () => {
     }
   })
 
+  it('keeps On (screen awake) while a visible tab re-acquires the wake lock', async () => {
+    const statuses: (string | null)[] = []
+    const listeners = new Set<() => void>()
+    const prevDoc = globalThis.document
+    const nav = globalThis.navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<unknown> } | null }
+    const prevLock = nav.wakeLock
+    let requests = 0
+    let release: (() => void) | null = null
+    let resolveAgain: ((sentinel: unknown) => void) | null = null
+    const doc = {
+      hidden: false,
+      body: { appendChild() {} },
+      pictureInPictureElement: null as HTMLVideoElement | null,
+      createElement() {
+        return {
+          paused: true,
+          style: {} as { cssText?: string },
+          src: '',
+          srcObject: null as MediaStream | null,
+          setAttribute() {},
+          addEventListener() {},
+          removeAttribute() {},
+          pause() {},
+          play() { return new Promise(() => {}) },
+          remove() {},
+        }
+      },
+      addEventListener(_type: string, fn: () => void) { listeners.add(fn) },
+      removeEventListener(_type: string, fn: () => void) { listeners.delete(fn) },
+    }
+    Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: doc })
+    nav.wakeLock = {
+      request: () => {
+        requests += 1
+        if (requests === 1) {
+          return Promise.resolve({
+            release: async () => {},
+            addEventListener(_type: string, fn: () => void) { release = fn },
+          })
+        }
+        return new Promise((resolve) => { resolveAgain = resolve })
+      },
+    }
+    try {
+      const awake = createBrowserKeepAwake({
+        helperConnected: () => false,
+        sendHelper() {},
+        publish(state) { statuses.push(state.status) },
+      })
+      awake.attach()
+      await awake.start('1m')
+      assert.equal(statuses.at(-1), 'On (screen awake)')
+      doc.hidden = true
+      for (const fn of listeners) fn()
+      release?.()
+      assert.equal(statuses.at(-1), 'Paused, tab hidden')
+      const during = statuses.length
+      doc.hidden = false
+      for (const fn of listeners) fn()
+      assert.equal(statuses.at(-1), 'On (screen awake)')
+      assert.equal(statuses.slice(during).includes('Not supported'), false)
+      resolveAgain?.({ release: async () => {}, addEventListener() {} })
+      await flush()
+      await flush()
+      assert.equal(statuses.at(-1), 'On (screen awake)')
+      assert.equal(statuses.includes('Not supported'), false)
+    } finally {
+      Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: prevDoc })
+      try { nav.wakeLock = prevLock } catch { Object.defineProperty(nav, 'wakeLock', { configurable: true, value: prevLock }) }
+    }
+  })
+
   it('plays video only when the wake lock is missing, fails, or is released', async () => {
     const prevDoc = globalThis.document
     const nav = globalThis.navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<unknown> } | null }

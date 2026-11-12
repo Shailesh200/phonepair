@@ -74,6 +74,8 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
 
   let epoch = 0
   let quiet = false
+  let reacquiring = false
+  let lastGood: 'On (screen awake)' | null = null
   let videoGen = 0
   let sentinel: WakeLockSentinel | null = null
   let video: HTMLVideoElement | null = null
@@ -104,7 +106,10 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
       pipActive: session.pipActive,
       tabHidden: session.tabHidden,
       settled: session.settled,
+      reacquiring,
+      lastGood,
     })
+    if (status === 'On (screen awake)') lastGood = 'On (screen awake)'
     return {
       on: status != null,
       interval: session.interval,
@@ -301,12 +306,17 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
         if (sentinel !== next) return
         sentinel = null
         session.wakeLockHeld = false
+        const recover = session.requested && !session.helperOn && !host.helperConnected() && !tabHidden()
+        if (recover) reacquiring = true
         publish()
-        if (!session.requested || session.helperOn || host.helperConnected() || tabHidden()) return
+        if (!recover) return
         const held = epoch
         void ensureVideo(held).then((playing) => {
-          if (held !== epoch || session.wakeLockHeld || tabHidden()) {
+          if (held !== epoch) return
+          reacquiring = false
+          if (session.wakeLockHeld || tabHidden()) {
             if (session.wakeLockHeld) stopVideo()
+            publish()
             return
           }
           session.videoPlaying = playing
@@ -326,6 +336,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
 
   async function start(interval: MoverInterval) {
     const mine = ++epoch
+    reacquiring = false
     session.interval = interval
     session.requested = true
     session.localEngaged = true
@@ -361,6 +372,8 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
 
   function stop(opts?: { tellHelper?: boolean }) {
     epoch += 1
+    reacquiring = false
+    lastGood = null
     session.requested = false
     session.helperOn = false
     session.localEngaged = false
@@ -394,6 +407,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   }
 
   function noteHelperReport(state: MoverState) {
+    reacquiring = false
     if (state.interval) session.interval = state.interval
     if (state.on) {
       epoch += 1
@@ -408,6 +422,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
       return
     }
     epoch += 1
+    lastGood = null
     session.helperOn = false
     session.requested = false
     session.localEngaged = false
@@ -419,12 +434,14 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   }
 
   function onHelperDisconnected() {
+    reacquiring = false
     session.helperOn = false
     if (session.localEngaged && session.requested) {
       publish()
       return
     }
     epoch += 1
+    lastGood = null
     session.requested = false
     session.pending = false
     session.settled = false
@@ -442,21 +459,32 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
 
   function onVisibility() {
     session.tabHidden = tabHidden()
+    const again = session.requested && !session.helperOn && !host.helperConnected() && !session.tabHidden
+    reacquiring = again
     publish()
-    if (!session.requested || session.helperOn || host.helperConnected() || session.tabHidden) return
+    if (!again) return
     const mine = epoch
     void acquireWakeLock(mine).then((locked) => {
-      if (mine !== epoch || tabHidden()) return
+      if (mine !== epoch) return
+      if (tabHidden()) {
+        reacquiring = false
+        publish()
+        return
+      }
       session.wakeLockHeld = locked
       if (locked) {
+        reacquiring = false
         stopVideo()
         publish()
         return
       }
       publish()
       void ensureVideo(mine).then((playing) => {
-        if (mine !== epoch || tabHidden() || session.wakeLockHeld) {
+        if (mine !== epoch) return
+        reacquiring = false
+        if (tabHidden() || session.wakeLockHeld) {
           if (session.wakeLockHeld) stopVideo()
+          publish()
           return
         }
         session.videoPlaying = playing

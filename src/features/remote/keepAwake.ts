@@ -99,16 +99,23 @@ export type HoldSignals = {
   pipActive: boolean
   tabHidden: boolean
   settled: boolean
+  /** True while a released wake lock is being requested again. */
+  reacquiring?: boolean
+  /** Last status that meant the screen was actually awake. */
+  lastGood?: KeepAwakeStatus | null
 }
 
 /** One honest line. Null means off (or still waiting on the helper).
  * A hidden tab is paused unless Picture-in-Picture is actually up. A playing
- * fallback video does not keep the screen awake while the tab is hidden. */
+ * fallback video does not keep the screen awake while the tab is hidden.
+ * Re-acquiring a wake lock keeps the last "On (screen awake)" instead of
+ * flashing "Not supported" for the gap before request() resolves. */
 export function deriveStatus(s: HoldSignals): KeepAwakeStatus | null {
   if (!s.requested) return null
   if (s.helperConnected && s.helperReportedOn) return 'On (real mouse)'
   if (s.tabHidden && !s.pipActive) return 'Paused, tab hidden'
   if (s.wakeLockHeld || s.videoPlaying || s.pipActive) return 'On (screen awake)'
+  if (s.reacquiring && s.lastGood === 'On (screen awake)') return 'On (screen awake)'
   if (!s.settled) return null
   return 'Not supported'
 }

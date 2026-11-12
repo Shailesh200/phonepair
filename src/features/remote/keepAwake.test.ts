@@ -71,6 +71,17 @@ describe('keep-awake status', () => {
     assert.equal(deriveStatus({ ...holdBase(), tabHidden: true, videoPlaying: true, pipActive: false, wakeLockHeld: true }), 'Paused, tab hidden')
     assert.equal(deriveStatus({ ...holdBase(), tabHidden: true, videoPlaying: true, pipActive: true }), 'On (screen awake)')
   })
+
+  it('holds On (screen awake) while a wake lock is re-acquired', () => {
+    const again = { ...holdBase(), wakeLockHeld: false, reacquiring: true, lastGood: 'On (screen awake)' as const }
+    assert.equal(deriveStatus(again), 'On (screen awake)')
+    assert.equal(deriveStatus({ ...again, wakeLockHeld: true }), 'On (screen awake)')
+    assert.equal(deriveStatus({ ...again, reacquiring: false }), 'Not supported')
+    assert.equal(deriveStatus({ ...again, lastGood: 'Paused, tab hidden' }), 'Not supported')
+    assert.equal(deriveStatus({ ...again, lastGood: 'On (real mouse)' }), 'Not supported')
+    assert.equal(deriveStatus({ ...again, lastGood: null, settled: false }), null)
+    assert.equal(deriveStatus({ ...holdBase(), reacquiring: true }), 'Not supported')
+  })
 })
 
 describe('keep-awake link drops', () => {
