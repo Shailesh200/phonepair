@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { CoreCtx } from '../../core/bus'
+import { Laptop } from '../../Laptop'
+import '../../features'
 import { clearPadGesture, Remote } from './Remote'
 import { createRemoteSend, navKey, pointerOffBeforeDestroy, remoteChannelsCreated, showPointerLaser } from './send'
 
@@ -33,6 +35,28 @@ function expect(cond: unknown, msg: string) {
 
 function count(hay: string, needle: string) {
   return hay.split(needle).length - 1
+}
+
+function pairedLaptop(): CoreCtx {
+  const link = {
+    role: 'host',
+    status: 'connected',
+    hadGuest: true,
+    remoteName: 'Phone',
+    code: 'ABCDEF',
+    error: '',
+    subscribe: () => () => {},
+    disconnect() {},
+    send() {},
+  } as unknown as CoreCtx['link']
+  return {
+    role: 'host',
+    link,
+    send() {},
+    toast() {},
+    call: (() => { throw new Error('unused') }) as CoreCtx['call'],
+    openPage() {},
+  }
 }
 
 function ctx(): CoreCtx {
@@ -138,6 +162,15 @@ export async function runRemoteTests() {
   const gridAt = laptopSrc.indexOf('className="grid"')
   const grid = laptopSrc.slice(gridAt)
   expect(grid.indexOf('dash-remote') >= 0 && grid.indexOf('dash-remote') < grid.indexOf('data-testid="send-files"'), 'remote column comes before the send-files card in the grid')
+  const wide = renderToStaticMarkup(React.createElement(Laptop, { ctx: pairedLaptop() }))
+  const remoteAt = wide.indexOf('data-testid="remote-panel"')
+  const filesAt = wide.indexOf('data-testid="send-files"')
+  expect(remoteAt >= 0 && filesAt > remoteAt, 'rendered remote-panel comes before send-files')
+  const remoteCol = wide.lastIndexOf('<div class="col dash-remote">', remoteAt)
+  expect(remoteCol >= 0 && remoteCol < remoteAt, 'remote-panel renders inside the dash-remote column')
+  const wideRule = cssSrc.split('@media (max-width:960px)')[0]
+  expect(/\.dash-remote\s*\{[^}]*grid-column:\s*1/.test(wideRule) && /\.dash-remote\s*\{[^}]*grid-row:\s*1\s*\/\s*span\s*2/.test(wideRule), 'wide layout places Remote in column 1 spanning both rows')
+  expect(/\.dash-files\s*\{[^}]*align-self:\s*start/.test(wideRule) && /\.dash-side\s*\{[^}]*align-self:\s*start/.test(wideRule) && /\.dash \.grid\s*\{[^}]*align-content:\s*start/.test(wideRule), 'column 2 stacks without a forced gap')
   expect(cssSrc.includes('.dash-remote { grid-column: 1') && cssSrc.includes('.dash-files { grid-column: 2'), 'two-column layout puts Remote on the left and Send files on the right')
   expect(/max-width:\s*960px[\s\S]*\.dash-files\{order:1/.test(cssSrc) && /max-width:\s*960px[\s\S]*\.dash-remote\{order:2/.test(cssSrc), 'stacked layout keeps Send files before Remote')
 

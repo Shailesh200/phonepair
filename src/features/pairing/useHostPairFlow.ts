@@ -3,8 +3,12 @@ import type { Link } from '../../core/link'
 
 export type QrCardPhase = 'idle' | 'found' | 'paired'
 
+function dashboardOpen(link: Link) {
+  return link.role === 'host' && (link.status === 'connected' || (link.status === 'reconnecting' && link.hadGuest))
+}
+
 export function useHostPairFlow(link: Link) {
-  const [showDashboard, setShowDashboard] = useState(false)
+  const [showDashboard, setShowDashboard] = useState(() => dashboardOpen(link))
   const [cardPhase, setCardPhase] = useState<QrCardPhase>('idle')
   const celebrateTimer = useRef<number>()
   const celebrated = useRef(false)

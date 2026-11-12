@@ -435,9 +435,10 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
   .steps,.feat-row{grid-template-columns:1fr 1fr}
   .how{padding-top:28px}
 }
-.dash-remote { grid-column: 1; grid-row: 1; }
-.dash-files { grid-column: 2; grid-row: 1; }
-.dash-side { grid-column: 2; grid-row: 2; }
+.dash .grid { align-content: start; }
+.dash-remote { grid-column: 1; grid-row: 1 / span 2; align-self: start; }
+.dash-files { grid-column: 2; grid-row: 1; align-self: start; }
+.dash-side { grid-column: 2; grid-row: 2; align-self: start; }
 @media (max-width:960px){
   .dash .nav{padding:14px 16px}
   .grid{grid-template-columns:1fr;padding:4px 16px 40px}
