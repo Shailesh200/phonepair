@@ -29,13 +29,7 @@ export function ConnRelayNote({ link }: { link: Link }) {
   return <span className="mut sm conn-relay-note" data-testid="conn-relay">Connected via relay</span>
 }
 
-export function StatusRow({ link }: { link: Link }) {
-  const [, bump] = useReducer((x: number) => x + 1, 0)
-  useEffect(() => link.subscribe(bump), [link])
-  return (
-    <div className="row-g status-row">
-      <StatusPill link={link} />
-      <ConnRelayNote link={link} />
-    </div>
-  )
+/** Renders the relay footnote when the active data path uses TURN (testid conn-relay). */
+export function connRelayNoteVisible(connViaRelay: boolean | null): boolean {
+  return connViaRelay === true
 }

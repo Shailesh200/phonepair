@@ -207,10 +207,13 @@ export function Phone({
           <div className="home-strip">
             <div className="home-strip-l">
               <span className={'pulse' + (s === 'connected' ? '' : ' off')} aria-hidden="true"><span className="pulse-ring" /><span className="pulse-dot" /></span>
-              <p className="strip-meta">
-                <b data-testid="status">{hostLabel}</b>
-                <span>{detail}</span>
-              </p>
+              <div className="row-g strip-meta-wrap">
+                <p className="strip-meta">
+                  <b data-testid="status">{hostLabel}</b>
+                  <span>{detail}</span>
+                </p>
+                <ConnRelayNote link={ctx.link} />
+              </div>
             </div>
             <div className="home-strip-actions">
               <button
