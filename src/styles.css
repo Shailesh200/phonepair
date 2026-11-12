@@ -71,9 +71,8 @@
   --layout-max:none;
 }
 @media (min-width:1200px){:root{--layout-max:min(80vw, 1440px)}}
-.laptop,.phone-wrap{width:100%;max-width:var(--layout-max);margin-inline:auto}
-.hero-fit{container-type:inline-size}
-@media (min-width:1200px){@container (max-width:1200px){.art{transform:scale(.75);transform-origin:left bottom}}}
+.laptop,.phone-wrap{width:100%;max-width:var(--layout-max);margin-inline:auto;padding-inline:clamp(16px, 4vw, 48px)}
+@media (min-width:1200px) and (max-width:1500px){.art{transform:scale(.75)}}
 
 html,body,#root{min-height:100vh;min-height:100dvh}
 html{background:var(--bg)}
@@ -196,7 +195,7 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
   column-gap:32px;
   align-content:center;
 }
-.nav{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:22px 40px;max-width:1240px;margin:0 auto}
+.nav{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:22px 40px;margin:0 auto}
 .hero-fit>.nav{grid-column:1 / -1;padding:0;max-width:none;margin:0;height:48px}
 .nav nav{display:flex;gap:26px;align-items:center;font-size:16px;font-weight:500;flex-wrap:wrap;justify-content:flex-end}
 .nav nav a{color:var(--muted);text-decoration:none;min-height:44px;display:inline-flex;align-items:center}
@@ -277,7 +276,7 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
 .banner.warn{background:var(--warn-soft);border-color:var(--warn-ring);color:var(--warn)}
 .banner.ok{background:var(--ok-soft);border-color:var(--ok-ring);color:var(--ok)}
 .banner.err,.banner.error{background:var(--danger-soft);border-color:var(--danger-ring);color:var(--danger)}
-.grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:22px;max-width:1240px;margin:0 auto;padding:4px 32px 40px}
+.grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:22px;margin:0 auto;padding:4px 32px 40px}
 .col{display:flex;flex-direction:column;gap:22px;min-width:0}
 .drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:220px;border:1px dashed rgba(42,28,22,.3);border-radius:var(--r-xl);background:var(--surface);cursor:pointer;text-align:center;padding:24px;color:var(--text)}
 .drop.on,.drop:hover{border-color:var(--accent);background:var(--drop-hot)}
