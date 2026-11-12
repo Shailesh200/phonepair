@@ -558,6 +558,7 @@ export class Link {
         everConnected: this.everConnected,
         dataConnOpen: true,
         iceState: pc?.iceConnectionState ?? null,
+        connectionState: pc?.connectionState ?? null,
         lastSeen: this.lastSeen,
         now,
       })
@@ -1090,6 +1091,7 @@ export class Link {
         everConnected: this.everConnected,
         dataConnOpen: true,
         iceState: pc?.iceConnectionState ?? null,
+        connectionState: pc?.connectionState ?? null,
         lastSeen: this.lastSeen,
         now: Date.now(),
       })

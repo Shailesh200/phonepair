@@ -52,6 +52,7 @@ export type AbandonOpenDataConnInput = {
   everConnected: boolean
   dataConnOpen: boolean
   iceState: RTCIceConnectionState | null
+  connectionState?: RTCPeerConnectionState | null
   lastSeen: number
   now: number
   lastSeenTimeoutMs?: number
@@ -60,6 +61,8 @@ export type AbandonOpenDataConnInput = {
 /** Only drop an open data channel when ICE is dead or the session is stale — not on signal `disconnected` alone. */
 export function shouldAbandonOpenDataConn(opts: AbandonOpenDataConnInput): boolean {
   if (!opts.everConnected || !opts.dataConnOpen) return false
+  const conn = opts.connectionState
+  if (conn === 'disconnected' || conn === 'failed' || conn === 'closed') return true
   const ice = opts.iceState
   if (ice === 'disconnected' || ice === 'failed' || ice === 'closed') return true
   const timeout = opts.lastSeenTimeoutMs ?? DATA_CONN_LAST_SEEN_TIMEOUT_MS

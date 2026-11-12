@@ -154,10 +154,22 @@ describe('abandon open data conn', () => {
         everConnected: true,
         dataConnOpen: true,
         iceState: 'connected',
+        connectionState: 'connected',
         lastSeen: now - 1000,
         now,
       }),
       false,
+    )
+    assert.equal(
+      shouldAbandonOpenDataConn({
+        everConnected: true,
+        dataConnOpen: true,
+        iceState: 'connected',
+        connectionState: 'closed',
+        lastSeen: now - 1000,
+        now,
+      }),
+      true,
     )
   })
 
