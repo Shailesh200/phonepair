@@ -157,6 +157,11 @@ export function ConnectGuide({
               {connectStepBodies(step.id).includes('generic') ? <p className="mut small">{COPY[step.id].body}</p> : null}
               {step.id === 'download' ? <>
                 <p className="mut small" data-testid="helper-hint">Download the PhonePair Helper, open it, and type the 6-digit code it shows.</p>
+                <p className="helper-downloads">
+                  {guide.platform === 'windows'
+                    ? <a className="btn ghost pp-os-btn" href="https://github.com/Shailesh200/phonepair/releases/latest/download/PhonePair-Helper-win.exe" target="_blank" rel="noreferrer" data-testid="download-win">Download for Windows</a>
+                    : <a className="btn ghost pp-os-btn" href="https://github.com/Shailesh200/phonepair/releases/latest/download/PhonePair-Helper-mac.dmg" target="_blank" rel="noreferrer" data-testid="download-mac">Download for Mac</a>}
+                </p>
                 <p className="mut small">
                   <a className="mut" href="https://github.com/Shailesh200/phonepair/releases/latest/download/PhonePair-Helper-mac.zip" target="_blank" rel="noreferrer" data-testid="download-mac-zip">Mac .zip</a>
                   {' · '}
@@ -198,10 +203,6 @@ export function ConnectGuide({
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></svg>
               </button>
             </form> : null}
-            {step.id === 'download' ? <p className="helper-downloads">
-              <a className="btn ghost pp-os-btn" href="https://github.com/Shailesh200/phonepair/releases/latest/download/PhonePair-Helper-mac.dmg" target="_blank" rel="noreferrer" data-testid="download-mac">Download for Mac</a>
-              <a className="btn ghost pp-os-btn" href="https://github.com/Shailesh200/phonepair/releases/latest/download/PhonePair-Helper-win.exe" target="_blank" rel="noreferrer" data-testid="download-win">Download for Windows</a>
-            </p> : null}
           </li>
         })}
       </ol>
