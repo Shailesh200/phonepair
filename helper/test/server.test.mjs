@@ -381,3 +381,37 @@ test('mover reports on connect, rejects a bad interval, and stops on unpair', as
   clock.tick(300_000)
   assert.equal(inject.calls.filter((call) => call[0] === 'nudge').length, nudges)
 })
+
+test('sc:stop leaves the mover on, and unpair stops it', async (t) => {
+  const clock = moverClock()
+  const inject = injector()
+  const logs = []
+  const helper = await startHelper({
+    code: '042817',
+    inject,
+    ports: [0],
+    log: (line) => logs.push(line),
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+  })
+  t.after(() => helper.close())
+  const ws = connect(helper.port)
+  const next = takeMessages(ws)
+  await opened(ws)
+  ws.send(JSON.stringify({ t: 'pair', code: '042817' }))
+  assert.deepEqual(await next(), { t: 'paired' })
+  assert.deepEqual(await next(), { t: 'mover', on: false, interval: null })
+  ws.send(JSON.stringify({ t: 'mover', on: true, interval: '30s' }))
+  assert.deepEqual(await next(), { t: 'mover', on: true, interval: '30s' })
+  ws.send(JSON.stringify({ t: 'sc:stop' }))
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  clock.tick(30_000)
+  assert.equal(inject.calls.filter((call) => call[0] === 'nudge').length, 1)
+  clock.tick(30_000)
+  assert.equal(inject.calls.filter((call) => call[0] === 'nudge').length, 2)
+  ws.close()
+  await waitFor(() => logs.includes('CONTROL OFF'))
+  const nudges = inject.calls.filter((call) => call[0] === 'nudge').length
+  clock.tick(300_000)
+  assert.equal(inject.calls.filter((call) => call[0] === 'nudge').length, nudges)
+})

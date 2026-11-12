@@ -61,6 +61,11 @@ export function moverIntervalCommand(interval: MoverInterval): MoverCommand {
   return { on: true, interval }
 }
 
+/** Screen control ending does not stop keep-awake. Unpair, disconnect, socket close, the toggle, and helper quit do. */
+export function moverStopsOn(reason: 'sc:stop' | 'endControl' | 'unpair' | 'disconnect' | 'socket-close' | 'toggle' | 'quit'): boolean {
+  return reason !== 'sc:stop' && reason !== 'endControl'
+}
+
 /** Phone command the laptop may forward. Anything else is dropped. */
 export function moverCommandFrom(value: unknown): MoverCommand | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null

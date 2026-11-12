@@ -27,6 +27,20 @@ export function nudgeTargets(pos: { x: number; y: number }): { away: { x: number
   return { away: { x: x + 1, y: y + 2 }, home: { x, y } }
 }
 
+/** Move away, then back only while the cursor is still on that away point.
+ * If the user moved it, leave it where they put it. */
+export async function performNudge(mouse: {
+  getPosition(): Promise<{ x: number; y: number }>
+  setPosition(x: number, y: number): Promise<void>
+}): Promise<void> {
+  const pos = await mouse.getPosition()
+  const step = nudgeTargets(pos)
+  await mouse.setPosition(step.away.x, step.away.y)
+  const after = await mouse.getPosition()
+  if (Math.round(after.x) !== step.away.x || Math.round(after.y) !== step.away.y) return
+  await mouse.setPosition(step.home.x, step.home.y)
+}
+
 export type Mover = {
   state(): MoverState
   /** Start or restart the single timer. Null when `interval` is not 30s, 1m, or 5m. */

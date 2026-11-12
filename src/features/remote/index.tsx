@@ -11,6 +11,7 @@ import {
   moverBadgeText,
   moverCommandFrom,
   moverIntervalCommand,
+  moverStopsOn,
   moverToggleCommand,
   moverView,
   readMoverState,
@@ -600,7 +601,6 @@ registerFeature({
         if (!cmd) return
         sendHelper({ t: 'mover', ...cmd })
       }),
-      onMessage('sc:stop', () => { stopMouseMover() }),
     ]
     const relay = {
       send: (msg: { t: 'mover'; on: boolean; interval: MoverState['interval'] }) => ctx.send(msg),
@@ -608,7 +608,7 @@ registerFeature({
     }
     moverRelay = relay
     const offLink = ctx.link.subscribe(() => {
-      if (!ctx.link.connected) stopMouseMover()
+      if (!ctx.link.connected && moverStopsOn('disconnect')) stopMouseMover()
     })
     return () => {
       offs.forEach((off) => off())

@@ -11,6 +11,7 @@ import {
   moverBadgeText,
   moverCommandFrom,
   moverIntervalCommand,
+  moverStopsOn,
   moverToggleCommand,
   moverView,
   readMoverState,
@@ -113,5 +114,20 @@ describe('mouse mover control', () => {
     assert.match(src, /useMessage\('mover'/)
     assert.match(src, /readMoverState/)
     assert.equal(src.includes('setMover(true)'), false)
+  })
+
+  it('leaves keep-awake on when screen control ends, and stops it on unpair', () => {
+    assert.equal(moverStopsOn('sc:stop'), false)
+    assert.equal(moverStopsOn('endControl'), false)
+    assert.equal(moverStopsOn('unpair'), true)
+    assert.equal(moverStopsOn('disconnect'), true)
+    assert.equal(moverStopsOn('socket-close'), true)
+    assert.equal(moverStopsOn('toggle'), true)
+    assert.equal(moverStopsOn('quit'), true)
+    const remote = readFileSync(join(process.cwd(), 'src/features/remote/index.tsx'), 'utf8')
+    const screen = readFileSync(join(process.cwd(), 'src/features/screen/index.tsx'), 'utf8')
+    assert.equal(screen.includes('stopMouseMover'), false)
+    assert.equal(/onMessage\('sc:stop'[\s\S]{0,120}stopMouseMover/.test(remote), false)
+    assert.match(remote, /moverStopsOn\('disconnect'\)[\s\S]*stopMouseMover\(\)/)
   })
 })

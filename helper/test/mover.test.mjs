@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { createMover, nudgeTargets } from '../dist/mover.js'
+import { createMover, nudgeTargets, performNudge } from '../dist/mover.js'
 
 function fakeClock() {
   /** @type {{ fn: () => void, ms: number, left: number }[]} */
@@ -50,6 +50,30 @@ test('nudge reads the point, steps +1/+2, and names the original point', () => {
   assert.deepEqual(nudgeTargets({ x: 10, y: 20 }), { away: { x: 11, y: 22 }, home: { x: 10, y: 20 } })
   assert.deepEqual(nudgeTargets({ x: 10.4, y: 4.6 }), { away: { x: 11, y: 7 }, home: { x: 10, y: 5 } })
   assert.deepEqual(nudgeTargets({ x: -1.2, y: 0 }), { away: { x: 0, y: 2 }, home: { x: -1, y: 0 } })
+})
+
+test('a nudge returns home, and skips the return when the user moved the cursor', async () => {
+  const still = []
+  let pos = { x: 10, y: 20 }
+  await performNudge({
+    async getPosition() { return { ...pos } },
+    async setPosition(x, y) {
+      still.push([x, y])
+      pos = { x, y }
+    },
+  })
+  assert.deepEqual(still, [[11, 22], [10, 20]])
+
+  const moved = []
+  let reads = 0
+  await performNudge({
+    async getPosition() {
+      reads += 1
+      return reads === 1 ? { x: 10, y: 20 } : { x: 80, y: 90 }
+    },
+    async setPosition(x, y) { moved.push([x, y]) },
+  })
+  assert.deepEqual(moved, [[11, 22]])
 })
 
 test('fake timers: 30s, 1m, and 5m nudge on that interval and nothing else is accepted', () => {

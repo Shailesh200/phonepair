@@ -18,7 +18,7 @@ import {
   type Finger,
   type GestureEvent,
 } from './map'
-import { forwardHelper, helperConnected, stopMouseMover, subscribeHelper } from '../remote'
+import { forwardHelper, helperConnected, subscribeHelper } from '../remote'
 import { availability, helperCommands, initialControlGate, readDisplaySurface, stepControl, type ControlGate } from './control'
 import { SC_EMPTY_HINT, SC_REASON_EMPTY, SC_REASON_HELPER, SC_REASON_SURFACE, SC_SURFACE_HINT, type ScAvailMsg } from './sc'
 import './screen.css'
@@ -59,7 +59,6 @@ function endControl(ctx: CoreCtx) {
   releaseDrag()
   if (ctx.link.connected) ctx.send({ t: 'sc:stop' })
   else pendingStop = true
-  stopMouseMover()
 }
 
 function publishAvail(ctx: CoreCtx, force = false) {
@@ -693,7 +692,6 @@ registerFeature({
         if (pendingStop) {
           pendingStop = false
           ctx.send({ t: 'sc:stop' })
-          stopMouseMover()
         }
         publishAvail(ctx, true)
       }
