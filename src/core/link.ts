@@ -129,6 +129,11 @@ import {
   shouldClearStaleRememberMainConnForRecovery,
   shouldListenReclaimRecyclePeer,
 } from '../remember/rememberRecoveryConn'
+import {
+  shouldDeferListenBootstrapWhileOffline,
+  shouldHostArmListenIdRecovery,
+  shouldHostRememberSignalWork,
+} from '../remember/rememberListenRecoveryGate'
 import { shouldDeferListenForceRecycle } from '../remember/listenForceRecycleDefer'
 import {
   LISTEN_RECOVERY_ID_BACKOFF_MS,
@@ -277,9 +282,27 @@ export class Link {
     return !!(this.conn?.open && this.listenPeer && this.connPeer === this.listenPeer)
   }
 
+  private hostRememberListenRecoveryArmed(): boolean {
+    return shouldHostArmListenIdRecovery({
+      hasRememberPhones: this.hostHasRememberPhones(),
+      listenOwnedBefore: this.listenOwnedBefore,
+      listenGaveUp: this.listenGaveUp,
+    })
+  }
+
   private markListenGaveUp() {
     if (this.listenGaveUp) return
     this.listenGaveUp = true
+    this.clearListenRecoveryState()
+    this.clearListenRecoveryReclaimTimer()
+    const lp = this.listenPeer
+    if (lp && !lp.destroyed) {
+      this.listenForceRunner?.stop()
+      try { lp.destroy() } catch {}
+      this.listenPeer = null
+    }
+    this.listenForceRunner = null
+    this.ensureHostSignalRunner().clearTimers()
     this.listeners.forEach((l) => l())
   }
 
@@ -308,6 +331,7 @@ export class Link {
     if (this.role !== 'host') return
     if (!this.visibilityListener) {
       const onVis = () => {
+        if (this.listenGaveUp) return
         if (document.visibilityState === 'hidden') {
           this.listenDocumentHiddenAt = Date.now()
           return
@@ -337,10 +361,15 @@ export class Link {
     }
     if (!this.networkListener) {
       const onOnline = () => {
+        if (this.listenGaveUp) return
         const lp = this.listenPeer
+        if ((!lp || lp.destroyed) && this.hostHasRememberPhones()) {
+          if (Date.now() >= this.listenBackoffUntil) void this.bootstrapRememberListen()
+        }
         if (!lp || lp.destroyed || !this.listenPeerEverOpen) return
         const run = () => {
           if (lp !== this.listenPeer || lp.destroyed) return
+          if (!this.hostRememberListenRecoveryArmed()) return
           if (this.listenRecoveryActive()) {
             this.scheduleListenRecoveryReclaim(0)
             return
@@ -393,11 +422,15 @@ export class Link {
     ppDebugIncSignalDropExternal(side)
     this.abandonOpenDataConnForFreshPc()
     const now = Date.now()
-    if (side === 'listen' || (side === 'code' && hostHasPhones(loadHostStore()))) {
+    const hasPhones = hostHasPhones(loadHostStore())
+    const armListenRecovery = this.hostRememberListenRecoveryArmed()
+    if (armListenRecovery && (side === 'listen' || (side === 'code' && hasPhones))) {
       this.beginListenIdRecovery(now)
     }
-    if (side === 'listen' || (side === 'code' && hostHasPhones(loadHostStore()))) {
-      this.ensureListenForceRunner().onSignalingDrop()
+    if (side === 'listen' || (side === 'code' && hasPhones)) {
+      if (armListenRecovery) {
+        this.ensureListenForceRunner().onSignalingDrop()
+      }
       this.ensureHostSignalRunner().onSignalingDrop()
       this.hostListenStaggerUntil = hostListenStaggerUntil(now)
     } else if (side === 'code') {
@@ -468,6 +501,7 @@ export class Link {
   }
 
   private beginListenIdRecovery(at: number) {
+    if (!this.hostRememberListenRecoveryArmed()) return
     this.listenRecoveryMode = true
     this.listenRecoveryDropAt = at
     this.listenRecoveryReclaimUntil = listenRecoveryReclaimUntilFromDrop(at)
@@ -523,7 +557,7 @@ export class Link {
   }
 
   private scheduleListenRecoveryReclaim(delayMs: number) {
-    if (this.destroyed || !this.listenRecoveryActive()) return
+    if (this.destroyed || !this.listenRecoveryActive() || !this.hostRememberListenRecoveryArmed()) return
     if (this.isRememberConnOnListenPeer()) return
     this.clearListenRecoveryReclaimTimer()
     this.listenRecoveryReclaimTimer = window.setTimeout(() => {
@@ -564,7 +598,8 @@ export class Link {
   }
 
   private tickListenSignalForce(lp: Peer) {
-    if (!this.hostHasRememberPhones() || lp.destroyed) return
+    if (!this.hostHasRememberPhones() || lp.destroyed || this.listenGaveUp) return
+    if (!shouldHostRememberSignalWork(typeof navigator !== 'undefined' && navigator.onLine, this.listenGaveUp)) return
     if (this.listenRecoveryMode) return
     if (!listenForceTickAllowed(this.listenPeerEverOpen, this.listenSignalUnverified())) return
     const now = Date.now()
@@ -665,12 +700,14 @@ export class Link {
           this.ensureHostSignalRunner().hookOnline(peerAsForceSignal(peer, 'code'), false)
         }
       }
-      if (this.role === 'host' && this.listenSignalUnverified()) {
-        if (this.listenRecoveryActive()) {
-          this.scheduleListenRecoveryReclaim(0)
-        } else {
-          const lp = this.listenPeer
-          if (lp && !lp.destroyed) {
+      if (this.role === 'host' && !this.listenGaveUp && this.hostHasRememberPhones()) {
+        const lp = this.listenPeer
+        if ((!lp || lp.destroyed) && Date.now() >= this.listenBackoffUntil) {
+          void this.bootstrapRememberListen()
+        } else if (this.listenSignalUnverified()) {
+          if (this.listenRecoveryActive()) {
+            if (this.hostRememberListenRecoveryArmed()) this.scheduleListenRecoveryReclaim(0)
+          } else if (lp && !lp.destroyed) {
             this.ensureListenForceRunner().hookOnline(peerAsForceSignal(lp, 'listen'), false)
           }
         }
@@ -738,6 +775,8 @@ export class Link {
   }
 
   private tickHostCodeSignalForce(peer: Peer) {
+    if (this.listenGaveUp && this.hostHasRememberPhones()) return
+    if (!shouldHostRememberSignalWork(typeof navigator !== 'undefined' && navigator.onLine, this.listenGaveUp)) return
     const unverified = this.hostCodeSignalUnverified()
     const peerLooksHealthy = peer.open && !peer.disconnected && !unverified
     const wrapped = peerAsForceSignal(peer, 'code')
@@ -1072,6 +1111,7 @@ export class Link {
     const store = loadHostStore()
     if (!hostHasPhones(store) || !store) return
     if (this.listenGaveUp || this.listenBootstrapInFlight) return
+    if (shouldDeferListenBootstrapWhileOffline(typeof navigator !== 'undefined' && navigator.onLine)) return
     if (Date.now() < this.listenBackoffUntil) return
     if (this.listenPeer && !this.listenPeer.destroyed && this.listenPeer.open) {
       this.listenBootstrapInFlight = false

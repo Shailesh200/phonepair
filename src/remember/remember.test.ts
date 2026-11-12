@@ -12,6 +12,7 @@ import { shouldRestartListenPeer } from './allowListen.ts'
 import { rememberStorageEpoch, notifyRememberStorageChanged } from './storageNotify.ts'
 import { shouldTickBootstrapListen } from './listenGiveUp.ts'
 import { hostRememberListenOtherTab } from './rememberOtherTab.ts'
+import { shouldHostArmListenIdRecovery } from './rememberListenRecoveryGate.ts'
 import { guestForgetMatchesSavedLaptop } from './guestForgetMatch.ts'
 import { shouldFailRememberGuestHome } from './guestHomeWatchdog.ts'
 import { rememberGuestDeadlineArm, rememberGuestDeadlineApplies, REMEMBER_GUEST_HOME_MS } from './rememberGuestDeadline.ts'
@@ -85,6 +86,17 @@ describe('remember listen give up', () => {
 
 describe('remember other tab', () => {
   const store: HostStore = { listenId: 'l', phones: [{ id: 'p', name: 'Phone', key: 'k' }] }
+  it('does not arm listen-id recovery on a tab that never owned the id', () => {
+    assert.equal(
+      shouldHostArmListenIdRecovery({
+        hasRememberPhones: true,
+        listenOwnedBefore: false,
+        listenGaveUp: false,
+      }),
+      false,
+    )
+  })
+
   it('shows only after listen give-up with saved phones', () => {
     assert.equal(hostRememberListenOtherTab(false, store), false)
     assert.equal(hostRememberListenOtherTab(true, store), true)
