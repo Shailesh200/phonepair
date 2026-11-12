@@ -178,9 +178,11 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
     }
     const onHide = () => { if (document.visibilityState === 'hidden') leavePage() }
     document.addEventListener('visibilitychange', onHide)
+    document.addEventListener('freeze', leavePage)
     window.addEventListener('pagehide', leavePage)
     return () => {
       document.removeEventListener('visibilitychange', onHide)
+      document.removeEventListener('freeze', leavePage)
       window.removeEventListener('pagehide', leavePage)
     }
   }, [send])

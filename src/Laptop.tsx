@@ -128,11 +128,9 @@ function Dashboard({ ctx, waitingPhone }: { ctx: CoreCtx; waitingPhone: boolean 
     <header className="nav"><Logo /><div className="row-g"><StatusPill link={ctx.link} /><button className="btn ghost" data-testid="disconnect" onClick={() => ctx.link.disconnect()}>Disconnect</button></div></header>
     {waitingPhone && <div className="banner warn dash-wait">Phone disconnected, waiting to reconnect</div>}
     <div className="grid">
-      <div className="col">
-        {Files ? <Files ctx={ctx}>{Screen ? <Screen ctx={ctx} /> : null}</Files> : null}
-        {rest.filter((f) => f.laptopColumn === 'left').map(panel)}
-      </div>
-      <div className="col">{rest.filter((f) => (f.laptopColumn ?? 'right') === 'right').map(panel)}</div>
+      <div className="col dash-remote">{rest.filter((f) => f.laptopColumn === 'left').map(panel)}</div>
+      <div className="col dash-files" data-testid="send-files">{Files ? <Files ctx={ctx}>{Screen ? <Screen ctx={ctx} /> : null}</Files> : null}</div>
+      <div className="col dash-side">{rest.filter((f) => (f.laptopColumn ?? 'right') === 'right').map(panel)}</div>
     </div>
   </div>
 }

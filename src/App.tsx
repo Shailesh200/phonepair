@@ -3,6 +3,7 @@ import { Link, newCode, cleanCode, isPhoneUA } from './core/link'
 import { entryPath, hostEntryPath, joinPath, syncRelayFromUrl } from './features/pairing/relay'
 import { CoreCtx, Role, dispatch, dispatchCall, getFeatures } from './core/bus'
 import { uid } from './core/util'
+import { pointerOffBeforeDestroy } from './features/remote/send'
 import { Laptop } from './Laptop'
 import { Phone, PhoneEntry } from './Phone'
 import './features'
@@ -38,9 +39,9 @@ export default function App() {
     const unsub = l.subscribe(force)
     l.start()
     ;(window as any).__pp = l
-    const bye = () => l.destroy()
+    const bye = () => pointerOffBeforeDestroy((m) => l.send(m), () => l.destroy())
     window.addEventListener('pagehide', bye)
-    return () => { unsub(); window.removeEventListener('pagehide', bye); l.destroy() }
+    return () => { unsub(); window.removeEventListener('pagehide', bye); bye() }
   }, [route])
 
   const ctx = useMemo<CoreCtx | null>(() => link && route.role ? {

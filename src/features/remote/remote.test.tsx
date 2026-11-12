@@ -5,15 +5,22 @@ import { describe, it } from 'node:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { CoreCtx } from '../../core/bus'
 import { clearPadGesture, Remote } from './Remote'
-import { createRemoteSend, remoteChannelsCreated } from './send'
+import { createRemoteSend, navKey, pointerOffBeforeDestroy, remoteChannelsCreated, showPointerLaser } from './send'
 
 declare const __REMOTE_SRC__: string
 declare const __INDEX_SRC__: string
 declare const __SEND_SRC__: string
 
+function repoCwd() {
+  return (globalThis as { process?: { cwd?: () => string } }).process?.cwd?.() ?? ''
+}
+
 function repoFile(name: string) {
-  const cwd = (globalThis as { process?: { cwd?: () => string } }).process?.cwd?.() ?? ''
-  return readFileSync(join(cwd, 'src/features/remote', name), 'utf8')
+  return readFileSync(join(repoCwd(), 'src/features/remote', name), 'utf8')
+}
+
+function repoFileRoot(rel: string) {
+  return readFileSync(join(repoCwd(), rel), 'utf8')
 }
 
 function injected(value: unknown, file: string) {
@@ -117,6 +124,22 @@ export async function runRemoteTests() {
   expect(remoteSrc.includes("document.visibilityState === 'hidden'"), 'a hidden page releases the laser')
   expect(remoteSrc.includes("document.addEventListener('visibilitychange'") && remoteSrc.includes("document.removeEventListener('visibilitychange'"), 'the visibility listener is removed on unmount')
   expect(remoteSrc.includes("window.addEventListener('pagehide'") && remoteSrc.includes("window.removeEventListener('pagehide'"), 'the pagehide listener is removed on unmount')
+  expect(remoteSrc.includes("document.addEventListener('freeze', leavePage)") && remoteSrc.includes("document.removeEventListener('freeze', leavePage)"), 'freeze uses leavePage and is removed on unmount')
+  const torn: string[] = []
+  pointerOffBeforeDestroy((m) => { torn.push(JSON.stringify(m)) }, () => { torn.push('destroy') })
+  expect(torn.join('|') === '{"t":"remote:pointer","on":false}|destroy', 'pointer off is sent before the link is destroyed')
+  const appSrc = repoFileRoot('src/App.tsx')
+  expect(appSrc.includes('pointerOffBeforeDestroy((m) => l.send(m), () => l.destroy())'), 'page teardown sends pointer off before destroy')
+  expect(showPointerLaser('connected') === true, 'laser can show while the phone is connected')
+  expect(!showPointerLaser('reconnecting') && !showPointerLaser('closed') && !showPointerLaser('waiting') && !showPointerLaser(''), 'laser hides when the phone link drops or closes')
+  expect(indexSrc.includes('showPointerLaser(ctx.link.status)') && indexSrc.includes('ctx.link.subscribe(syncLaser)') && indexSrc.includes('suppressOverlay()'), 'the laptop hides the laser when the phone link drops')
+  const laptopSrc = repoFileRoot('src/Laptop.tsx')
+  const cssSrc = repoFileRoot('src/styles.css')
+  const gridAt = laptopSrc.indexOf('className="grid"')
+  const grid = laptopSrc.slice(gridAt)
+  expect(grid.indexOf('dash-remote') >= 0 && grid.indexOf('dash-remote') < grid.indexOf('data-testid="send-files"'), 'remote column comes before the send-files card in the grid')
+  expect(cssSrc.includes('.dash-remote { grid-column: 1') && cssSrc.includes('.dash-files { grid-column: 2'), 'two-column layout puts Remote on the left and Send files on the right')
+  expect(/max-width:\s*960px[\s\S]*\.dash-files\{order:1/.test(cssSrc) && /max-width:\s*960px[\s\S]*\.dash-remote\{order:2/.test(cssSrc), 'stacked layout keeps Send files before Remote')
 
   expect(count(remoteSrc, 'createRemoteSend(') === 1, 'one send path is created')
   expect(count(remoteSrc, 'ctxRef.current.send') === 1, 'that path uses the shared connection')
@@ -125,6 +148,11 @@ export async function runRemoteTests() {
     expect(remoteSrc.includes(call) || sendSrc.includes(call.replace('send.', '').replace('(', '')), 'shared path covers ' + call)
   }
   expect(count(sendSrc, 'emit(') >= 8, 'every payload is emitted once')
+  expect(navKey('next') === 'ArrowRight' && navKey('prev') === 'ArrowLeft', 'one Prev/Next press is one arrow')
+  const navFn = indexSrc.slice(indexSrc.indexOf('function nav('), indexSrc.indexOf('function LaptopOverlay'))
+  const navMsg = indexSrc.slice(indexSrc.indexOf("onMessage('remote:nav'"), indexSrc.indexOf("onMessage('remote:type'"))
+  expect(navFn.includes('pageKey(navKey(dir))') && !navFn.includes('PageUp') && !navFn.includes('PageDown'), 'in-tab nav sends one key')
+  expect(count(navMsg, 'sendHelper(') === 1 && !navMsg.includes('PageUp') && !navMsg.includes('PageDown'), 'one nav press sends the helper exactly one key')
   expect(indexSrc.includes('PhonePage: Remote'), 'the phone page is the merged Remote')
   expect(indexSrc.includes("laptopColumn: 'left'"), 'Full laptop sits on the left of the laptop layout')
   expect(!indexSrc.includes('function PhonePage'), 'there is no separate phone page')
