@@ -72,7 +72,7 @@
 }
 @media (min-width:1200px){:root{--layout-max:min(80vw, 1440px)}}
 .laptop,.phone-wrap{width:100%;max-width:var(--layout-max);margin-inline:auto}
-@media (min-width:431px){.laptop,.phone-wrap{padding-inline:clamp(16px, 4vw, 48px)}}
+@media (min-width:1200px){.laptop,.phone-wrap{padding-inline:clamp(16px, 4vw, 48px)}}
 @media (min-width:1200px) and (max-width:1500px){.art{transform:scale(.75);transform-origin:left bottom}}
 
 html,body,#root{min-height:100vh;min-height:100dvh}
@@ -229,6 +229,7 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
 .art-file-img{height:80px;background:radial-gradient(circle at 30% 40%,#F2C14E 0%,transparent 40%),radial-gradient(circle at 80% 70%,#E05A3A 0%,transparent 45%),linear-gradient(160deg,#F4A27A,#C94B3A 40%,#5B2A4A 80%)}
 .art-file-cap{padding:8px 10px;font-size:12px;font-weight:500;letter-spacing:-.01em;color:#E8E8E4}
 .art-phone{position:absolute;left:500px;top:0;z-index:2;width:124px;height:252px;background:linear-gradient(180deg,#2C2C32,#161618);border-radius:26px;padding:8px;transform:rotate(-8deg);box-shadow:0 0 0 1px rgba(255,255,255,.12),0 30px 50px rgba(0,0,0,.55)}
+@media (min-width:1200px) and (max-width:1500px){.art-phone{transform:translateX(-136px) rotate(-8deg)}}
 .art-island{position:absolute;top:14px;left:50%;width:48px;height:10px;margin-left:-24px;background:#0A0A0C;border-radius:8px;z-index:2}
 .art-ph-screen{height:100%;border-radius:20px;overflow:hidden;background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.25)),radial-gradient(circle at 40% 30%,#F6D58A,transparent 50%),linear-gradient(165deg,#F3B17A,#D45B4A 45%,#6B3A6A);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
 .how{padding:64px 56px 0;max-width:1360px;margin:0 auto}
