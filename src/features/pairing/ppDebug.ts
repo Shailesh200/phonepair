@@ -41,8 +41,11 @@ export type PpDebugForceDrops = import('./ppDebugForceDrops.ts').PpDebugForceDro
 
 export type PpDebugListenSocket = import('./ppDebugListenSocket.ts').PpDebugListenSocket
 
+export type PpDebugConnProbe = import('./ppDebugConnProbe.ts').PpDebugConnProbe
+
 export type PpDebugState = {
   listenRejects: PpDebugListenRejects
+  connProbe?: PpDebugConnProbe
   listenHost?: PpDebugListenHost
   listenSocket?: PpDebugListenSocket
   forceDrops?: { listen: PpDebugForceDrops; code: PpDebugForceDrops }

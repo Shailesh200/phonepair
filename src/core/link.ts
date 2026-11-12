@@ -40,7 +40,26 @@ import {
 import { notifyHostPhoneConnected } from '../features/pairing/hostDualForceRunner'
 import { hostListenStaggerUntil, shouldDeferListenForce } from '../features/pairing/hostSignalStagger'
 import { HOST_FORCE_HOOK_MIN_MS, mayHostForceHook } from '../features/pairing/hostForceHookThrottle'
-import { peerAsForceSignal, trackCodePeerSocketOpen, trackListenPeerSocketOpen } from '../features/pairing/peerForceAdapter'
+import {
+  markPeerSignalDrop,
+  peerAsForceSignal,
+  trackCodePeerSocketOpen,
+  trackListenPeerSocketOpen,
+} from '../features/pairing/peerForceAdapter'
+import {
+  DATA_CONN_PROBE_TIMEOUT_MS,
+  dataConnProbeSucceeded,
+  helloCapsIncludePong,
+  LINK_HELLO_CAPS,
+  shouldRunDataConnProbe,
+} from '../features/pairing/dataConnProbe'
+import {
+  ppDebugIncProbeSent,
+  ppDebugIncProbeTimeout,
+  ppDebugIncStalledWsKilled,
+  ppDebugRecordProbePong,
+} from '../features/pairing/ppDebugConnProbe'
+import { shouldKillStalledConnectingSocket } from '../features/pairing/signalStalledWs'
 import { takePeerForceDisconnect } from '../features/pairing/forceSignalSelf'
 import {
   ppDebugIncSignalDropExternal,
@@ -132,6 +151,8 @@ import {
   shouldListenReclaimRecyclePeer,
 } from '../remember/rememberRecoveryConn'
 import {
+  hostNavigatorOfflineTooLong,
+  hostStuckOfflineBootstrapDue,
   shouldDeferListenBootstrapWhileOffline,
   shouldHostArmListenIdRecovery,
   shouldHostRememberSignalWork,
@@ -235,6 +256,13 @@ export class Link {
   private lastListenForceHookAt = 0
   private listenForceSettleUntil: number | null = null
   private guestPeerUnavailableStreak = 0
+  private hostOfflineSince: number | null = null
+  private hostStuckOfflineBootstrapAt: number | null = null
+  private remotePongCap = false
+  private connProbeEligible = false
+  private connProbeAt: number | null = null
+  private connProbeTimer: number | null = null
+  private lastRestoreSignalAt: number | null = null
   private listenRecoveryMode = false
   private listenRecoveryDropAt: number | null = null
   private listenRecoveryReclaimUntil: number | null = null
@@ -330,6 +358,168 @@ export class Link {
     return !!this.listenForceRunner?.isUnverifiedAfterDrop()
   }
 
+  private navigatorOnLineNow(): boolean {
+    return typeof navigator !== 'undefined' && navigator.onLine
+  }
+
+  private syncHostOfflineSince(now = Date.now()) {
+    if (this.navigatorOnLineNow()) {
+      this.hostOfflineSince = null
+      return
+    }
+    if (this.hostOfflineSince == null) this.hostOfflineSince = now
+  }
+
+  private shouldDeferHostBootstrapOffline(now = Date.now()): boolean {
+    this.syncHostOfflineSince(now)
+    return shouldDeferListenBootstrapWhileOffline(
+      this.navigatorOnLineNow(),
+      this.hostOfflineSince,
+      now,
+    )
+  }
+
+  private shouldHostSignalWorkNow(now = Date.now()): boolean {
+    this.syncHostOfflineSince(now)
+    return shouldHostRememberSignalWork(
+      this.navigatorOnLineNow(),
+      this.listenGaveUp,
+      this.hostOfflineSince,
+      now,
+    )
+  }
+
+  private stuckOfflineBootstrapPaceOk(now = Date.now()): boolean {
+    if (this.navigatorOnLineNow()) return true
+    if (!hostNavigatorOfflineTooLong(this.navigatorOnLineNow(), this.hostOfflineSince, now)) {
+      return true
+    }
+    return hostStuckOfflineBootstrapDue(this.hostStuckOfflineBootstrapAt, now)
+  }
+
+  private maybeBootstrapMissingListenPeer(now = Date.now()) {
+    if (this.listenGaveUp || !this.hostHasRememberPhones()) return
+    const lp = this.listenPeer
+    if (lp && !lp.destroyed) return
+    if (this.listenBootstrapInFlight || now < this.listenBackoffUntil) return
+    if (!this.shouldHostSignalWorkNow(now)) return
+    if (!this.stuckOfflineBootstrapPaceOk(now)) return
+    if (!this.navigatorOnLineNow()
+      && hostNavigatorOfflineTooLong(this.navigatorOnLineNow(), this.hostOfflineSince, now)) {
+      this.hostStuckOfflineBootstrapAt = now
+    }
+    void this.bootstrapRememberListen()
+  }
+
+  private helloMessage(remoteName?: string) {
+    return { t: 'hello', name: remoteName ?? deviceName(), caps: [...LINK_HELLO_CAPS] }
+  }
+
+  private clearConnProbeTimer() {
+    if (this.connProbeTimer != null) {
+      clearTimeout(this.connProbeTimer)
+      this.connProbeTimer = null
+    }
+  }
+
+  private markConnProbeEligible() {
+    if (this.conn?.open) this.connProbeEligible = true
+  }
+
+  private syncRestoreSignalForForce(at: number) {
+    this.lastRestoreSignalAt = at
+    if (this.listenForceRunner) this.listenForceRunner.restoreSignalAt = at
+    if (this.hostSignalRunner) this.hostSignalRunner.restoreSignalAt = at
+  }
+
+  private maybeRecycleStalledSignaling(peer: Peer | null, side: 'listen' | 'code') {
+    if (!peer || peer.destroyed) return
+    const wrapped = peerAsForceSignal(peer, side)
+    if (!shouldKillStalledConnectingSocket(wrapped, Date.now())) return
+    ppDebugIncStalledWsKilled()
+    forceSignalReconnect(peer)
+  }
+
+  private noteRestoreSignal(at: number) {
+    this.syncRestoreSignalForForce(at)
+    if (this.role === 'host') {
+      this.maybeRecycleStalledSignaling(this.listenPeer, 'listen')
+      this.maybeRecycleStalledSignaling(this.peer, 'code')
+    } else {
+      this.maybeRecycleStalledSignaling(this.peer, 'code')
+    }
+    this.onDataConnBackSignal(at)
+  }
+
+  private onDataConnBackSignal(now = Date.now()) {
+    if (!this.conn?.open || !this.connProbeEligible) return
+    this.maybeRunConnProbe(now)
+  }
+
+  private maybeRunConnProbe(now = Date.now()) {
+    if (
+      !shouldRunDataConnProbe({
+        connOpen: !!this.conn?.open,
+        localOffersPong: true,
+        remoteSupportsPong: this.remotePongCap,
+        probePending: this.connProbeAt != null || this.connProbeTimer != null,
+        lastSeen: this.lastSeen,
+        now,
+      })
+    ) {
+      return
+    }
+    const c = this.conn
+    if (!c?.open) return
+    this.connProbeAt = now
+    ppDebugIncProbeSent()
+    try { c.send({ t: 'ping' }) } catch { this.connProbeAt = null; return }
+    this.clearConnProbeTimer()
+    this.connProbeTimer = window.setTimeout(() => this.onConnProbeDeadline(), DATA_CONN_PROBE_TIMEOUT_MS)
+  }
+
+  private completeConnProbeSuccess(ms: number) {
+    this.clearConnProbeTimer()
+    this.connProbeAt = null
+    this.connProbeEligible = false
+    ppDebugRecordProbePong(ms)
+  }
+
+  private onConnProbeDeadline() {
+    this.connProbeTimer = null
+    const probeAt = this.connProbeAt
+    if (probeAt == null) return
+    if (dataConnProbeSucceeded(this.lastSeen, probeAt)) {
+      this.completeConnProbeSuccess(this.lastSeen - probeAt)
+      return
+    }
+    ppDebugIncProbeTimeout()
+    this.abandonConnAfterProbeFail()
+  }
+
+  private abandonConnAfterProbeFail() {
+    const c = this.conn
+    this.clearConnProbeTimer()
+    this.connProbeAt = null
+    this.connProbeEligible = false
+    if (!c?.open) return
+    this.clearIceGraceTimer()
+    try { c.close() } catch {}
+    if (this.conn !== c) return
+    this.dropConn()
+    if (this.role === 'guest') {
+      this.retry = 0
+      this.releaseInFlightDial()
+      if (this.dialWait) { clearTimeout(this.dialWait); this.dialWait = null }
+      if (!this.hasInFlightDial()) {
+        ppDebugRecordGuestRedial(0)
+        this.dial()
+      }
+    } else if (this.role === 'host' && this.everConnected) {
+      this.set({ status: 'reconnecting' })
+    }
+  }
+
   private bindHostListenRearmWatchers() {
     if (this.role !== 'host') return
     if (!this.visibilityListener) {
@@ -339,6 +529,9 @@ export class Link {
           this.listenDocumentHiddenAt = Date.now()
           return
         }
+        this.syncHostOfflineSince()
+        this.maybeBootstrapMissingListenPeer()
+        this.noteRestoreSignal(Date.now())
         if (this.listenDocumentHiddenAt != null) {
           const hiddenMs = Date.now() - this.listenDocumentHiddenAt
           this.listenDocumentHiddenAt = null
@@ -365,10 +558,9 @@ export class Link {
     if (!this.networkListener) {
       const onOnline = () => {
         if (this.listenGaveUp) return
+        this.hostOfflineSince = null
+        this.maybeBootstrapMissingListenPeer()
         const lp = this.listenPeer
-        if ((!lp || lp.destroyed) && this.hostHasRememberPhones()) {
-          if (Date.now() >= this.listenBackoffUntil) void this.bootstrapRememberListen()
-        }
         if (!lp || lp.destroyed || !this.listenPeerEverOpen) return
         const run = () => {
           if (lp !== this.listenPeer || lp.destroyed) return
@@ -425,6 +617,8 @@ export class Link {
     ppDebugIncSignalDropExternal(side)
     this.abandonOpenDataConnForFreshPc()
     const now = Date.now()
+    markPeerSignalDrop(peer, now)
+    if (this.conn?.open) this.markConnProbeEligible()
     const hasPhones = hostHasPhones(loadHostStore())
     const armListenRecovery = this.hostRememberListenRecoveryArmed()
     if (armListenRecovery && (side === 'listen' || (side === 'code' && hasPhones))) {
@@ -445,6 +639,9 @@ export class Link {
   /** Data-channel loss: mark runners unverified only — do not start listen-id recovery. */
   private markHostDualSignalingDrop() {
     const now = Date.now()
+    if (this.listenPeer && !this.listenPeer.destroyed) markPeerSignalDrop(this.listenPeer, now)
+    if (this.peer && !this.peer.destroyed) markPeerSignalDrop(this.peer, now)
+    if (this.conn?.open) this.markConnProbeEligible()
     this.ensureListenForceRunner().onSignalingDrop()
     this.ensureHostSignalRunner().onSignalingDrop()
     this.hostListenStaggerUntil = hostListenStaggerUntil(now)
@@ -602,7 +799,8 @@ export class Link {
 
   private tickListenDuringRecovery(lp: Peer | null) {
     if (!this.hostRememberListenRecoveryArmed()) return
-    if (!shouldHostRememberSignalWork(typeof navigator !== 'undefined' && navigator.onLine, this.listenGaveUp)) return
+    if (!this.shouldHostSignalWorkNow()) return
+    this.noteRestoreSignal(Date.now())
     const dropAt = this.listenRecoveryDropAt
     const wrapped = lp && !lp.destroyed ? peerAsForceSignal(lp, 'listen') : null
     const serverOpenAt = wrapped?.signalPeerOpenAt?.() ?? null
@@ -629,7 +827,7 @@ export class Link {
 
   private tickListenSignalForce(lp: Peer) {
     if (!this.hostHasRememberPhones() || lp.destroyed || this.listenGaveUp) return
-    if (!shouldHostRememberSignalWork(typeof navigator !== 'undefined' && navigator.onLine, this.listenGaveUp)) return
+    if (!this.shouldHostSignalWorkNow()) return
     if (this.listenRecoveryMode) {
       this.tickListenDuringRecovery(lp)
       return
@@ -723,8 +921,15 @@ export class Link {
 
   private bindNetworkWatchers() {
     if (this.networkWatchersCleanup) return
+    const onOffline = () => {
+      if (this.hostOfflineSince == null) this.hostOfflineSince = Date.now()
+      if (this.conn?.open) this.markConnProbeEligible()
+    }
     const onOnline = () => {
-      if (this.role === 'guest' && !this.destroyed && !this.conn?.open && this.status !== 'error') {
+      this.hostOfflineSince = null
+      const now = Date.now()
+      this.noteRestoreSignal(now)
+      if (this.role === 'guest' && !this.destroyed && this.status !== 'error' && !this.conn?.open) {
         this.applyGuestSignalRecoveryRedial()
       }
       if (shouldHostReconnectOnOnline(this.role, this.destroyed)) {
@@ -734,10 +939,9 @@ export class Link {
         }
       }
       if (this.role === 'host' && !this.listenGaveUp && this.hostHasRememberPhones()) {
+        this.maybeBootstrapMissingListenPeer()
         const lp = this.listenPeer
-        if ((!lp || lp.destroyed) && Date.now() >= this.listenBackoffUntil) {
-          void this.bootstrapRememberListen()
-        } else if (this.listenSignalUnverified()) {
+        if (this.listenSignalUnverified()) {
           if (this.listenRecoveryActive()) {
             if (this.hostRememberListenRecoveryArmed()) this.scheduleListenRecoveryReclaim(0)
           } else if (lp && !lp.destroyed) {
@@ -752,6 +956,7 @@ export class Link {
         this.documentHiddenAt = Date.now()
         return
       }
+      this.noteRestoreSignal(Date.now())
       if (this.documentHiddenAt != null) {
         const hiddenMs = Date.now() - this.documentHiddenAt
         this.documentHiddenAt = null
@@ -763,6 +968,7 @@ export class Link {
         }
       }
     }
+    window.addEventListener('offline', onOffline)
     window.addEventListener('online', onOnline)
     document.addEventListener('visibilitychange', onVis)
     const nav = navigator as Navigator & { connection?: { addEventListener: (e: string, h: () => void) => void; removeEventListener: (e: string, h: () => void) => void } }
@@ -770,6 +976,7 @@ export class Link {
     const onNetChange = () => this.onIceNetworkChange()
     conn?.addEventListener?.('change', onNetChange)
     this.networkWatchersCleanup = () => {
+      window.removeEventListener('offline', onOffline)
       window.removeEventListener('online', onOnline)
       document.removeEventListener('visibilitychange', onVis)
       conn?.removeEventListener?.('change', onNetChange)
@@ -809,7 +1016,7 @@ export class Link {
 
   private tickHostCodeSignalForce(peer: Peer) {
     if (this.listenGaveUp && this.hostHasRememberPhones()) return
-    if (!shouldHostRememberSignalWork(typeof navigator !== 'undefined' && navigator.onLine, this.listenGaveUp)) return
+    if (!this.shouldHostSignalWorkNow()) return
     const unverified = this.hostCodeSignalUnverified()
     const peerLooksHealthy = peer.open && !peer.disconnected && !unverified
     const wrapped = peerAsForceSignal(peer, 'code')
@@ -868,7 +1075,12 @@ export class Link {
     if (!pc) return
     const state = pc.iceConnectionState
     if (!shouldActOnIceNetworkChange(state)) return
-    if (state === 'disconnected' && this.iceDisconnectedAt == null) this.iceDisconnectedAt = Date.now()
+    const now = Date.now()
+    if (state === 'disconnected' && this.iceDisconnectedAt == null) {
+      this.iceDisconnectedAt = now
+      if (this.conn?.open) this.markConnProbeEligible()
+    }
+    if (this.conn?.open && this.connProbeEligible) this.onDataConnBackSignal(now)
     if (shouldRedialImmediatelyOnIceFailed(state)) {
       this.clearIceGraceTimer()
       this.scheduleGuestIceRedial()
@@ -984,8 +1196,9 @@ export class Link {
         this.hostFails = 0
         const st = this.conn?.open ? 'connected' : 'waiting'
         this.set({ status: st, error: '' })
-      } else if (this.role === 'guest' && !this.conn?.open && this.status !== 'error') {
+      } else       if (this.role === 'guest' && !this.conn?.open && this.status !== 'error') {
         if (this.everConnected || guestShouldRedialOnPeerOpen(this.role, this.status, false)) {
+          this.noteRestoreSignal(Date.now())
           this.applyGuestSignalRecoveryRedial()
         }
       }
@@ -1013,6 +1226,8 @@ export class Link {
         }
         this.handleHostPeerSignalDisconnected(peer, 'code')
       } else {
+        markPeerSignalDrop(peer, Date.now())
+        if (this.conn?.open) this.markConnProbeEligible()
         this.abandonOpenDataConnForFreshPc()
       }
       const keepHostUi =
@@ -1145,8 +1360,15 @@ export class Link {
     const store = loadHostStore()
     if (!hostHasPhones(store) || !store) return
     if (this.listenGaveUp || this.listenBootstrapInFlight) return
-    if (shouldDeferListenBootstrapWhileOffline(typeof navigator !== 'undefined' && navigator.onLine)) return
-    if (Date.now() < this.listenBackoffUntil) return
+    const bootstrapNow = Date.now()
+    this.syncHostOfflineSince(bootstrapNow)
+    if (this.shouldDeferHostBootstrapOffline(bootstrapNow)) return
+    if (!this.stuckOfflineBootstrapPaceOk(bootstrapNow)) return
+    if (!this.navigatorOnLineNow()
+      && hostNavigatorOfflineTooLong(this.navigatorOnLineNow(), this.hostOfflineSince, bootstrapNow)) {
+      this.hostStuckOfflineBootstrapAt = bootstrapNow
+    }
+    if (bootstrapNow < this.listenBackoffUntil) return
     if (this.listenPeer && !this.listenPeer.destroyed && this.listenPeer.open) {
       this.listenBootstrapInFlight = false
       return
@@ -1194,15 +1416,15 @@ export class Link {
     this.listenPeerEverOpen = false
     this.listenBootstrapInFlight = false
     trackListenPeerSocketOpen(peer, () => {
+      const now = Date.now()
       this.listenPeerEverOpen = true
       this.listenOwnedBefore = true
       this.listenReclaimStartedAt = null
       this.listenUnavailableFailures = 0
       ppDebugIncListenServerOpen()
-      ppDebugRecordListenFirstServerOpenAfterDrop(Date.now())
+      ppDebugRecordListenFirstServerOpenAfterDrop(now)
       if (this.listenRecoveryMode) {
         this.clearListenRecoveryReclaimTimer()
-        const now = Date.now()
         const plan = planListenRecoveryOnServerOpen(
           true,
           now,
@@ -1222,8 +1444,9 @@ export class Link {
           this.scheduleListenRecoveryModeClearAt(plan.clearRecoveryModeAt)
         }
       } else if (this.listenForceRunner?.isUnverifiedAfterDrop()) {
-        this.listenForceSettleUntil = Date.now() + FORCE_LISTEN_SETTLE_MS
+        this.listenForceSettleUntil = now + FORCE_LISTEN_SETTLE_MS
       }
+      this.noteRestoreSignal(now)
       this.ensureListenForceRunner().onOpen()
     })
     peer.on('connection', (c) => {
@@ -1593,7 +1816,7 @@ export class Link {
       if (this.role === 'host') {
         notifyHostPhoneConnected(this.listenForceRunner, this.hostSignalRunner)
       }
-      c.send({ t: 'hello', name: deviceName() })
+      c.send(this.helloMessage())
       this.set({ status: 'connected', error: '' })
       if (this.role === 'host' && !this.rememberGuestAuth) this.clearRememberListenGiveUp()
       this.wireIceRecovery(c)
@@ -1617,12 +1840,20 @@ export class Link {
     if (!this.rememberGuestLive()) return
     this.lastSeen = Date.now()
     if (!m || typeof m !== 'object') return
-    if (m.t === 'ping') return
+    if (this.connProbeAt != null && c === this.conn && dataConnProbeSucceeded(this.lastSeen, this.connProbeAt)) {
+      this.completeConnProbeSuccess(this.lastSeen - this.connProbeAt)
+    }
+    if (m.t === 'ping') {
+      try { c.send({ t: 'pong' }) } catch {}
+      return
+    }
+    if (m.t === 'pong') return
     if (m.t === 'hello') {
+      this.remotePongCap = helloCapsIncludePong((m as { caps?: unknown }).caps)
       this.set({ remoteName: m.name })
       if (this.role === 'guest' && this.code) rememberLastLaptop(m.name, this.code)
       if (this.role === 'host' && c.open) {
-        try { c.send({ t: 'hello', name: deviceName() }) } catch {}
+        try { c.send(this.helloMessage()) } catch {}
       }
       return
     }
@@ -1767,7 +1998,7 @@ export class Link {
       this.rememberGuestDeadlineMs = 0
     }
     if (this.hostGrace) { clearTimeout(this.hostGrace); this.hostGrace = null }
-    try { c.send({ t: 'hello', name: deviceName() }) } catch {}
+    try { c.send(this.helloMessage(remoteHint)) } catch {}
     if (remoteHint) this.set({ remoteName: remoteHint })
     this.set({ status: 'connected', error: '' })
     if (this.role === 'guest') {
@@ -2004,6 +2235,7 @@ export class Link {
   }
 
   private tick() {
+    if (this.role === 'host') this.syncHostOfflineSince()
     this.tickGuestWatchdog()
     const peer = this.peer
     if (this.role === 'guest' && peer && peer.disconnected && !peer.destroyed && !this.destroyed) {
@@ -2084,6 +2316,7 @@ export class Link {
   }
 
   destroy() {
+    this.clearConnProbeTimer()
     this.visibilityListener?.()
     this.visibilityListener = null
     this.networkListener?.()

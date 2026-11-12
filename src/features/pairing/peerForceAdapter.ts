@@ -7,6 +7,11 @@ import { ppDebugIncForceSelfDisconnect, type PpDebugForceDropSide } from './ppDe
 
 const connectStarted = new WeakMap<Peer, number>()
 const peerOpenAt = new WeakMap<Peer, number>()
+const peerLastDropAt = new WeakMap<Peer, number>()
+
+export function markPeerSignalDrop(peer: Peer, at: number): void {
+  peerLastDropAt.set(peer, at)
+}
 
 function socketReadyState(peer: Peer): number | null {
   const s = (peer as { socket?: { _socket?: WebSocket } }).socket?._socket
@@ -68,6 +73,7 @@ export function peerAsForceSignal(
       return connectStarted.get(peer) ?? null
     },
     signalPeerOpenAt: () => peerOpenAt.get(peer) ?? null,
+    signalLastDropAt: () => peerLastDropAt.get(peer) ?? null,
   }
   return bound
 }

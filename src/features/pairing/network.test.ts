@@ -188,6 +188,34 @@ describe('abandon open data conn', () => {
     )
   })
 
+  it('keeps conn inside ICE grace unless probe failed', () => {
+    const now = 100_000
+    const since = now - 1000
+    assert.equal(
+      shouldAbandonOpenDataConn({
+        everConnected: true,
+        dataConnOpen: true,
+        iceState: 'disconnected',
+        lastSeen: since,
+        now,
+        iceDisconnectedSince: since,
+      }),
+      false,
+    )
+    assert.equal(
+      shouldAbandonOpenDataConn({
+        everConnected: true,
+        dataConnOpen: true,
+        iceState: 'disconnected',
+        lastSeen: since,
+        now,
+        iceDisconnectedSince: since,
+        probeFailed: true,
+      }),
+      true,
+    )
+  })
+
   it('abandons when ICE is disconnected/failed or lastSeen is stale', () => {
     const now = 100_000
     assert.equal(
@@ -197,6 +225,7 @@ describe('abandon open data conn', () => {
         iceState: 'disconnected',
         lastSeen: now - 1000,
         now,
+        iceDisconnectedSince: now - 20_000,
       }),
       true,
     )

@@ -129,6 +129,7 @@ export class ForceSignalRunner {
   private timers: ForceSignalTimers
   private reclaimMinMs: number
   private onRunForce?: (kind: RunForceKind) => void
+  restoreSignalAt: number | null = null
 
   constructor(
     timers: ForceSignalTimers,
@@ -327,7 +328,8 @@ export class ForceSignalRunner {
     return {
       unverifiedAfterDrop: this.unverifiedAfterDrop,
       mode,
-      onlineAt,
+      onlineAt: onlineAt ?? this.restoreSignalAt ?? undefined,
+      restoreSignalAt: this.restoreSignalAt,
     }
   }
 

@@ -16,12 +16,15 @@ export type ForceSignalPeerStateExt = ForceSignalPeerLike & {
   signalReadyState?: () => number | null
   signalConnectStartedAt?: () => number | null
   signalPeerOpenAt?: () => number | null
+  signalLastDropAt?: () => number | null
 }
 
 export type ForceSocketReplaceOpts = {
   unverifiedAfterDrop?: boolean
   mode?: 'hook' | 'tick' | 'cadence' | 'online'
   onlineAt?: number
+  /** Restore evidence (online, visibility, recovery tick): sockets from before this time may recycle. */
+  restoreSignalAt?: number | null
 }
 
 export function peerSignalConnectingAgeMs(peer: ForceSignalPeerStateExt, now: number): number | null {
@@ -42,12 +45,8 @@ export function mayForceReplaceSignalSocket(
   if (rs == null) return true
   if (rs !== WS_CONNECTING) return true
   const started = peer.signalConnectStartedAt?.() ?? null
-  if (
-    opts?.mode === 'online'
-    && opts.onlineAt != null
-    && started != null
-    && started < opts.onlineAt
-  ) {
+  const restoreAt = opts?.restoreSignalAt ?? opts?.onlineAt ?? null
+  if (restoreAt != null && started != null && started < restoreAt) {
     return true
   }
   const age = peerSignalConnectingAgeMs(peer, now)
@@ -66,6 +65,8 @@ export function mayForceRecycleOpenSignalSocket(
   const openedAt = peer.signalPeerOpenAt?.() ?? null
   if (openedAt == null) return true
   if (now - openedAt < FORCE_SOCKET_MIN_OPEN_MS) {
+    const restoreAt = opts?.restoreSignalAt ?? opts?.onlineAt ?? null
+    if (restoreAt != null && openedAt < restoreAt) return true
     return opts?.mode === 'cadence'
   }
   return true

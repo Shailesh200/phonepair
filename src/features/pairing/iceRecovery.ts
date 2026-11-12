@@ -57,11 +57,14 @@ export type AbandonOpenDataConnInput = {
   now: number
   lastSeenTimeoutMs?: number
   iceDisconnectedSince?: number | null
+  /** Failed app-level probe with pong-capable peer — abandon inside ICE grace. */
+  probeFailed?: boolean
 }
 
 /** Only drop an open data channel when ICE is dead or the session is stale — not on signal `disconnected` alone. */
 export function shouldAbandonOpenDataConn(opts: AbandonOpenDataConnInput): boolean {
   if (!opts.everConnected || !opts.dataConnOpen) return false
+  if (opts.probeFailed) return true
   const conn = opts.connectionState
   if (conn === 'disconnected' || conn === 'failed' || conn === 'closed') return true
   const ice = opts.iceState
