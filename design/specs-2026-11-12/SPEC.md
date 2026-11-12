@@ -67,11 +67,11 @@ Extend `.pp-list` / `.pp-list-row` with `.pp-device-row`.
 - Row states: default, `:hover` (mock class `.is-hover` matches it), `.is-editing`, star pressed.
 - Sort: `fav` first, then `last` descending.
 
-Saved in the browser only (`localStorage` key `pp-devices`, JSON `{id, name, fav, last}[]`). Not sent to the helper or the peer.
+Saved in the browser only (`localStorage` key `pp.deviceMeta.v1`, shape `{v:1, devices:{[id]:{name?:string, fav?:boolean}}}`). Not sent to the helper or the peer.
 
 ## D — Wide screens
 
-`.pp-shell` wraps the laptop nav and `.grid` (drop the old `max-width: 1240px` on `.nav` / `.grid` once the shell is the wrapper).
+`.pp-shell` is the same wrapper as `.laptop` / `.phone-wrap` around the laptop nav and `.grid` (drop the old `max-width: 1240px` on `.nav` / `.grid` once the shell is the wrapper).
 
 ```css
 .pp-shell {
@@ -79,11 +79,16 @@ Saved in the browser only (`localStorage` key `pp-devices`, JSON `{id, name, fav
   margin-inline: auto;
   padding-inline: clamp(16px, 4vw, 48px);
 }
-@media (min-width: 1600px) {
-  .pp-shell { max-width: min(80vw, 1440px); }
+@media (min-width: 1200px) {
+  .laptop,
+  .phone-wrap,
+  .pp-shell { max-width: min(80vw, 1440px); margin-inline: auto; }
+}
+@media (min-width: 1200px) and (max-width: 1500px) {
+  .art { transform: scale(0.75); }
 }
 ```
 
-**Decision.** The requested `max-width: min(80vw, 1440px)` is the wide cap, but it is applied only from 1600px up. Below that, `80vw` is narrower than today’s 1240px dashboard (at 1280px it would be 1024px) and the two columns get squeezed. From 1600px, `80vw` is at least 1280px, so the grid never shrinks. The 1440px cap keeps each column near 660px after padding and the 22px gap; wider than that the drop zone and remote card look empty. Phones stay full width: at 390px the padding clamp resolves to 16px and there is no max-width.
+**Decision.** The wide cap `min(80vw, 1440px)` applies from 1200px up on `.laptop` and `.phone-wrap` (equivalent to `.pp-shell`). Between 1200px and 1500px the landing hero art (`.art`) is scaled to 0.75. `padding-inline: clamp(16px, 4vw, 48px)` stays as side padding in addition to that scale; it does not replace it. Under 1200px the page stays full width: at 390px the padding clamp resolves to 16px and there is no max-width.
 
 Mocks: `b-connect.html`, `c-remote.html`, `e-devices.html`, `d-wide.html`.

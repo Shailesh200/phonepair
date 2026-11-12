@@ -1,14 +1,20 @@
 /* Paste under the Espresso stylesheet. Uses existing variables only.
    Builders: drop these class names on the markup in SPEC.md. */
 
+/* .pp-shell matches .laptop / .phone-wrap. Padding is side padding in addition to the hero scale. */
 .pp-shell {
   box-sizing: border-box;
   width: 100%;
   margin-inline: auto;
   padding-inline: clamp(16px, 4vw, 48px);
 }
-@media (min-width: 1600px) {
-  .pp-shell { max-width: min(80vw, 1440px); }
+@media (min-width: 1200px) {
+  .laptop,
+  .phone-wrap,
+  .pp-shell { max-width: min(80vw, 1440px); margin-inline: auto; }
+}
+@media (min-width: 1200px) and (max-width: 1500px) {
+  .art { transform: scale(0.75); }
 }
 
 .pp-connect { width: 100%; }
