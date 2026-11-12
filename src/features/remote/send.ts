@@ -3,6 +3,11 @@ import type { Msg } from '../../core/bus'
 export type RemoteClick = 'left' | 'right'
 export type RemoteDir = 'prev' | 'next'
 
+/** One Prev/Next press is a single arrow. The laptop must not also send PageUp/PageDown. */
+export function navKey(dir: unknown) {
+  return dir === 'prev' ? 'ArrowLeft' : 'ArrowRight'
+}
+
 export type RemotePayload =
   | { t: 'remote:move'; dx: number; dy: number }
   | { t: 'remote:click'; btn: RemoteClick }
@@ -33,6 +38,17 @@ let channelsCreated = 0
 /** How many shared send paths have been built. One Remote mount builds one. */
 export function remoteChannelsCreated() {
   return channelsCreated
+}
+
+/** The laptop laser stays up only while the phone link is connected. */
+export function showPointerLaser(status: string) {
+  return status === 'connected'
+}
+
+/** Send pointer-off before the link is torn down, so pagehide cannot drop the laser message. */
+export function pointerOffBeforeDestroy(send: (m: { t: 'remote:pointer'; on: false }) => void, destroy: () => void) {
+  try { send({ t: 'remote:pointer', on: false }) } catch { /* already closed */ }
+  destroy()
 }
 
 /** One connection's send path, shared by trackpad, clicker, and pointer. */

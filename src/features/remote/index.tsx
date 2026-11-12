@@ -17,6 +17,7 @@ import {
   readMoverState,
   type MoverState,
 } from '../screen/mover'
+import { navKey, showPointerLaser } from './send'
 import './remote.css'
 
 const MOVE_GAIN = 1.6
@@ -426,9 +427,7 @@ function moveBy(dx: number, dy: number) {
 }
 
 function nav(dir: unknown) {
-  const prev = dir === 'prev'
-  pageKey(prev ? 'ArrowLeft' : 'ArrowRight')
-  pageKey(prev ? 'PageUp' : 'PageDown')
+  pageKey(navKey(dir))
 }
 
 function LaptopOverlay() {
@@ -528,6 +527,9 @@ registerFeature({
     pos.laser = false
     paint()
     const onResize = () => { clampPos(); paint() }
+    const syncLaser = () => { if (!showPointerLaser(ctx.link.status)) suppressOverlay() }
+    syncLaser()
+    const offStatus = ctx.link.subscribe(syncLaser)
     window.addEventListener('resize', onResize)
     const offs = [
       onMessage('remote:move', (m) => {
@@ -551,12 +553,7 @@ registerFeature({
         showCursor()
       }),
       onMessage('remote:nav', (m) => {
-        if (helperReady()) {
-          const prev = m.dir === 'prev'
-          sendHelper({ t: 'key', key: prev ? 'ArrowLeft' : 'ArrowRight' })
-          sendHelper({ t: 'key', key: prev ? 'PageUp' : 'PageDown' })
-          return
-        }
+        if (sendHelper({ t: 'key', key: navKey(m.dir) })) return
         nav(m.dir)
       }),
       onMessage('remote:type', (m) => {
@@ -613,6 +610,7 @@ registerFeature({
     return () => {
       offs.forEach((off) => off())
       offLink()
+      offStatus()
       if (moverRelay === relay) moverRelay = null
       window.removeEventListener('resize', onResize)
       window.clearTimeout(hideTimer)

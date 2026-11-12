@@ -16,6 +16,7 @@ await esbuild.build({
   platform: 'node',
   outfile,
   jsx: 'automatic',
+  loader: { '.css': 'empty' },
   define: {
     __REMOTE_SRC__: JSON.stringify(readFileSync(join(here, 'Remote.tsx'), 'utf8')),
     __INDEX_SRC__: JSON.stringify(readFileSync(join(here, 'index.tsx'), 'utf8')),
