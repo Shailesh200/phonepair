@@ -1,3 +1,4 @@
+import { SIGNAL_FRESH_CONNECTING_GRACE_MS } from './forceSignalReconnect.ts'
 import { WS_CONNECTING, type ForceSignalPeerStateExt } from './forceSignalPeerState.ts'
 
 export const STALLED_SIGNAL_CONNECTING_AFTER_DROP_MS = 3000
@@ -20,4 +21,19 @@ export function shouldKillStalledConnectingSocket(
   if (dropAt == null) return false
   if (dropAt < started) return false
   return now - dropAt >= minMs
+}
+
+/** Post-restore CONNECTING that never opens — recycle after fresh-connecting grace (8s). */
+export function shouldKillFreshConnectingStalledAfterRestore(
+  peer: ForceSignalPeerStateExt,
+  now: number,
+  restoreAt: number | null,
+  graceMs = SIGNAL_FRESH_CONNECTING_GRACE_MS,
+): boolean {
+  if (peer.destroyed || restoreAt == null) return false
+  const rs = peer.signalReadyState?.() ?? null
+  if (rs !== WS_CONNECTING) return false
+  const started = peer.signalConnectStartedAt?.() ?? null
+  if (started == null || started < restoreAt) return false
+  return now - started >= graceMs
 }

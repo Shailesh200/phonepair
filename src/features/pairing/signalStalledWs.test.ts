@@ -1,7 +1,9 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { WS_CONNECTING } from './forceSignalPeerState.ts'
+import { SIGNAL_FRESH_CONNECTING_GRACE_MS } from './forceSignalReconnect.ts'
 import {
+  shouldKillFreshConnectingStalledAfterRestore,
   shouldKillStalledConnectingSocket,
   STALLED_SIGNAL_CONNECTING_AFTER_DROP_MS,
 } from './signalStalledWs.ts'
@@ -45,6 +47,25 @@ describe('shouldKillStalledConnectingSocket', () => {
       signalLastDropAt: () => 10_000,
     }
     assert.equal(shouldKillStalledConnectingSocket(peer, restoreAt + 10_000, undefined, restoreAt), false)
+  })
+
+  it('kills post-restore CONNECTING stuck longer than fresh-connecting grace', () => {
+    const restoreAt = 20_000
+    const started = 21_000
+    const peer = {
+      destroyed: false,
+      signalReadyState: () => WS_CONNECTING,
+      signalConnectStartedAt: () => started,
+      signalLastDropAt: () => 10_000,
+    }
+    assert.equal(
+      shouldKillFreshConnectingStalledAfterRestore(peer, started + SIGNAL_FRESH_CONNECTING_GRACE_MS - 1, restoreAt),
+      false,
+    )
+    assert.equal(
+      shouldKillFreshConnectingStalledAfterRestore(peer, started + SIGNAL_FRESH_CONNECTING_GRACE_MS, restoreAt),
+      true,
+    )
   })
 
   it('does not kill young CONNECTING sockets with no drop since create', () => {

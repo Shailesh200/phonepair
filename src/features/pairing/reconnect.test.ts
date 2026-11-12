@@ -1,13 +1,17 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  GUEST_LISTEN_RECOVERY_PEER_UNAVAILABLE_CAP_MS,
+  GUEST_LISTEN_RECOVERY_PROMPT_FIRST_ATTEMPTS,
   GUEST_REDIAL_MAX_MS_EVER_CONNECTED,
   GUEST_UNAVAILABLE_RETRY_MIN_MS,
   guestRedialPlanAfterSignalRecovery,
+  guestShouldPromptRedialPeerUnavailableDuringListenRecovery,
   guestUnavailableShouldGiveUp,
   redialDelayAfterPeerUnavailable,
   redialDelayMs,
 } from './reconnect.ts'
+import { guestFailFastOnPeerUnavailable } from './errors.ts'
 
 describe('redialDelayMs after everConnected', () => {
   it('caps guest backoff at 3s once paired', () => {
@@ -50,5 +54,77 @@ describe('guestRedialPlanAfterSignalRecovery', () => {
   it('resets backoff and dials immediately on signal recovery', () => {
     assert.deepEqual(guestRedialPlanAfterSignalRecovery(true), { retry: 0, delayMs: 0 })
     assert.deepEqual(guestRedialPlanAfterSignalRecovery(false), { retry: 0, delayMs: 0 })
+  })
+})
+
+describe('guest peer-unavailable during listen recovery', () => {
+  const t0 = 2_000_000
+  const base = {
+    role: 'guest' as const,
+    everConnected: true,
+    rememberDial: true,
+    peerOpen: true,
+    peerDisconnected: false,
+    hasInFlightDial: false,
+    nextAttempt: 2,
+    unavailableSince: t0 as number | null,
+    now: t0 + 5000,
+  }
+
+  it('fresh pair with wrong code still fails fast (no prompt redial path)', () => {
+    assert.equal(guestFailFastOnPeerUnavailable('guest', false), true)
+    assert.equal(
+      guestShouldPromptRedialPeerUnavailableDuringListenRecovery({
+        ...base,
+        everConnected: false,
+        rememberDial: false,
+        nextAttempt: 1,
+      }),
+      false,
+    )
+  })
+
+  it('everConnected remember dial: fast path for first few attempts', () => {
+    assert.equal(
+      guestShouldPromptRedialPeerUnavailableDuringListenRecovery({
+        ...base,
+        nextAttempt: GUEST_LISTEN_RECOVERY_PROMPT_FIRST_ATTEMPTS,
+        unavailableSince: null,
+      }),
+      true,
+    )
+    assert.equal(
+      guestShouldPromptRedialPeerUnavailableDuringListenRecovery({
+        ...base,
+        nextAttempt: GUEST_LISTEN_RECOVERY_PROMPT_FIRST_ATTEMPTS + 1,
+      }),
+      true,
+    )
+  })
+
+  it('streak backoff applies in recovery (capped delay, not zeroed)', () => {
+    assert.equal(redialDelayAfterPeerUnavailable(1, true, GUEST_LISTEN_RECOVERY_PEER_UNAVAILABLE_CAP_MS), 0)
+    assert.ok(redialDelayAfterPeerUnavailable(2, true, GUEST_LISTEN_RECOVERY_PEER_UNAVAILABLE_CAP_MS) > 0)
+    const delay = redialDelayAfterPeerUnavailable(30, true, GUEST_LISTEN_RECOVERY_PEER_UNAVAILABLE_CAP_MS)
+    assert.ok(delay > 0)
+    assert.ok(delay <= GUEST_LISTEN_RECOVERY_PEER_UNAVAILABLE_CAP_MS)
+  })
+
+  it('permanently missing host exits fast path and reaches give-up', () => {
+    const unavailableSince = t0
+    const attempt = 20
+    assert.equal(
+      guestShouldPromptRedialPeerUnavailableDuringListenRecovery({
+        ...base,
+        nextAttempt: attempt,
+        unavailableSince,
+        now: unavailableSince + GUEST_UNAVAILABLE_RETRY_MIN_MS + 1,
+      }),
+      false,
+    )
+    assert.equal(
+      guestUnavailableShouldGiveUp(true, attempt, unavailableSince, unavailableSince + GUEST_UNAVAILABLE_RETRY_MIN_MS),
+      true,
+    )
   })
 })

@@ -27,7 +27,9 @@ import {
 } from '../features/pairing/hostIdReclaim'
 import {
   guestRedialPlanAfterSignalRecovery,
+  guestShouldPromptRedialPeerUnavailableDuringListenRecovery,
   guestUnavailableShouldGiveUp,
+  GUEST_LISTEN_RECOVERY_PEER_UNAVAILABLE_CAP_MS,
   redialDelayAfterPeerUnavailable,
   redialDelayMs,
 } from '../features/pairing/reconnect'
@@ -64,7 +66,10 @@ import {
   ppDebugIncStalledWsKilled,
   ppDebugRecordProbePong,
 } from '../features/pairing/ppDebugConnProbe'
-import { shouldKillStalledConnectingSocket } from '../features/pairing/signalStalledWs'
+import {
+  shouldKillFreshConnectingStalledAfterRestore,
+  shouldKillStalledConnectingSocket,
+} from '../features/pairing/signalStalledWs'
 import { takePeerForceDisconnect } from '../features/pairing/forceSignalSelf'
 import {
   ppDebugIncSignalDropExternal,
@@ -472,7 +477,11 @@ export class Link {
     if (!peer || peer.destroyed) return
     const wrapped = peerAsForceSignal(peer, side)
     const restoreAt = this.lastRestoreSignalAt
-    if (!shouldKillStalledConnectingSocket(wrapped, Date.now(), undefined, restoreAt)) return
+    const now = Date.now()
+    const kill =
+      shouldKillStalledConnectingSocket(wrapped, now, undefined, restoreAt)
+      || shouldKillFreshConnectingStalledAfterRestore(wrapped, now, restoreAt)
+    if (!kill) return
     ppDebugIncStalledWsKilled()
     forceSignalReconnect(peer)
   }
@@ -1409,16 +1418,34 @@ export class Link {
         if (this.role === 'guest' && this.dialTarget) ppDebugRememberDialError('peer-unavailable')
         this.releaseInFlightDial()
         this.dropConn()
-        if (
-          this.role === 'guest'
-          && this.dialTarget
-          && this.peer?.open
-          && !this.peer.disconnected
-          && !this.hasInFlightDial()
-        ) {
-          this.retry = 0
-          this.guestPeerUnavailableStreak = 0
-          this.scheduleDial()
+        const now = Date.now()
+        if (guestShouldPromptRedialPeerUnavailableDuringListenRecovery({
+          role: this.role,
+          everConnected: this.everConnected,
+          rememberDial: !!(this.dialTarget || this.rememberGuestAuth),
+          peerOpen: !!this.peer?.open,
+          peerDisconnected: !!this.peer?.disconnected,
+          hasInFlightDial: this.hasInFlightDial(),
+          nextAttempt: this.retry + 1,
+          unavailableSince: this.guestUnavailableSince,
+          now,
+        })) {
+          if (this.guestUnavailableSince == null) this.guestUnavailableSince = now
+          this.retry++
+          this.guestPeerUnavailableStreak++
+          if (
+            guestUnavailableShouldGiveUp(
+              this.everConnected,
+              this.retry,
+              this.guestUnavailableSince,
+              now,
+            )
+          ) {
+            this.failGuestHostNotFound()
+            return
+          }
+          this.set({ status: 'reconnecting' })
+          this.scheduleDialAfterPeerUnavailableInListenRecovery()
           return
         }
         if (guestFailFastOnPeerUnavailable(this.role, this.everConnected)) {
@@ -1519,18 +1546,18 @@ export class Link {
       return
     }
     const prev = this.listenPeer
-  const peerPlan = planListenBootstrapPeer(prev)
-  if (peerPlan === 'skip-open') {
-    this.listenBootstrapInFlight = false
-    return
-  }
-  if (peerPlan === 'reconnect-existing' && prev) {
-    ppDebugListenPeerReconnect()
-    this.ensureListenForceRunner().rebindPeer()
-    this.forceListenPeerSignalReconnect(prev)
-    this.listenBootstrapInFlight = false
-    return
-  }
+    const peerPlan = planListenBootstrapPeer(prev)
+    if (peerPlan === 'skip-open') {
+      this.listenBootstrapInFlight = false
+      return
+    }
+    if (peerPlan === 'reconnect-existing' && prev) {
+      ppDebugListenPeerReconnect()
+      this.ensureListenForceRunner().rebindPeer()
+      this.forceListenPeerSignalReconnect(prev)
+      this.listenBootstrapInFlight = false
+      return
+    }
     this.rememberPhones = new Map(
       store.phones.map((p) => [p.id, { key: phoneKeyBytes(p), name: p.name }]),
     )
@@ -1624,9 +1651,31 @@ export class Link {
     peer.on('error', (e: any) => {
       if (e?.type !== 'unavailable-id' || this.destroyed) return
       if (this.listenRecoveryActive() && !peer.destroyed) {
-        ppDebugListenPeerReconnect()
-        this.forceListenPeerSignalReconnect(peer)
-        return
+        ppDebugIncListenSocketUnavailableId()
+        const t = Date.now()
+        this.listenReclaimStartedAt = ensureListenReclaimStarted(
+          this.listenOwnedBefore,
+          this.listenReclaimStartedAt,
+          t,
+        )
+        this.listenRetry++
+        this.listenUnavailableFailures++
+        this.listenUnavailableFailureTimes.push(t)
+        const recovery = true
+        if (
+          !listenClaimShouldGiveUp(
+            this.listenUnavailableFailures,
+            this.listenSocketsOpened,
+            this.listenOwnedBefore,
+            this.listenReclaimStartedAt,
+            t,
+            recovery,
+          )
+        ) {
+          ppDebugListenPeerReconnect()
+          this.forceListenPeerSignalReconnect(peer)
+          return
+        }
       }
       ppDebugIncListenSocketUnavailableId()
       const t = Date.now()
@@ -1799,6 +1848,24 @@ export class Link {
         this.dial()
       }, plan.delayMs)
     }
+  }
+
+  private scheduleDialAfterPeerUnavailableInListenRecovery() {
+    if (this.status === 'error' || this.dialWait || this.hasInFlightDial()) return
+    const delay = redialDelayAfterPeerUnavailable(
+      this.guestPeerUnavailableStreak,
+      this.everConnected,
+      GUEST_LISTEN_RECOVERY_PEER_UNAVAILABLE_CAP_MS,
+    )
+    ppDebugRecordGuestRedial(delay)
+    if (delay <= 0) {
+      this.dial()
+      return
+    }
+    this.dialWait = window.setTimeout(() => {
+      this.dialWait = null
+      this.dial()
+    }, delay)
   }
 
   private scheduleDialAfterPeerUnavailable() {
