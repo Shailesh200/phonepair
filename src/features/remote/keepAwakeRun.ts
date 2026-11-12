@@ -6,6 +6,7 @@ import {
   createAutoStopClock,
   currentTimeScale,
   deriveStatus,
+  keepAwakeSwitchOn,
   type AutoStop,
   type KeepAwakeViewState,
 } from './keepAwake.ts'
@@ -31,6 +32,7 @@ type Session = {
   videoPlaying: boolean
   pipActive: boolean
   tabHidden: boolean
+  helperStopped: boolean
   wakeLockApi: boolean
   videoApi: boolean
 }
@@ -68,12 +70,15 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     videoPlaying: false,
     pipActive: false,
     tabHidden: tabHidden(),
+    helperStopped: false,
     wakeLockApi: caps.wakeLockApi,
     videoApi: caps.videoApi,
   }
 
   let epoch = 0
   let quiet = false
+  let reacquiring = false
+  let lastGood: 'On (screen awake)' | null = null
   let videoGen = 0
   let sentinel: WakeLockSentinel | null = null
   let wakeSeq = 0
@@ -86,7 +91,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   function view(): KeepAwakeViewState {
     const helperConnected = host.helperConnected()
     const holding = session.wakeLockHeld || session.videoPlaying || session.pipActive
-    const failed = session.settled && session.requested && !holding && !session.tabHidden && !session.helperOn
+    const failed = session.helperStopped || (session.settled && session.requested && !holding && !session.tabHidden && !session.helperOn)
     const mode = activeMode({
       helperConnected,
       wakeLockHeld: session.wakeLockHeld,
@@ -105,9 +110,13 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
       pipActive: session.pipActive,
       tabHidden: session.tabHidden,
       settled: session.settled,
+      reacquiring,
+      lastGood,
+      helperStopped: session.helperStopped,
     })
+    if (status === 'On (screen awake)') lastGood = 'On (screen awake)'
     return {
-      on: status != null,
+      on: keepAwakeSwitchOn(status),
       interval: session.interval,
       status,
       mode,
@@ -305,12 +314,17 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
         if (sentinel !== next) return
         sentinel = null
         session.wakeLockHeld = false
+        const recover = session.requested && !session.helperOn && !host.helperConnected() && !tabHidden()
+        if (recover) reacquiring = true
         publish()
-        if (!session.requested || session.helperOn || host.helperConnected() || tabHidden()) return
+        if (!recover) return
         const held = epoch
         void ensureVideo(held).then((playing) => {
-          if (held !== epoch || session.wakeLockHeld || tabHidden()) {
+          if (held !== epoch) return
+          reacquiring = false
+          if (session.wakeLockHeld || tabHidden()) {
             if (session.wakeLockHeld) stopVideo()
+            publish()
             return
           }
           session.videoPlaying = playing
@@ -330,6 +344,8 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
 
   async function start(interval: MoverInterval) {
     const mine = ++epoch
+    reacquiring = false
+    session.helperStopped = false
     session.interval = interval
     session.requested = true
     session.localEngaged = true
@@ -366,6 +382,9 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
 
   function stop(opts?: { tellHelper?: boolean }) {
     epoch += 1
+    reacquiring = false
+    lastGood = null
+    session.helperStopped = false
     session.requested = false
     session.helperOn = false
     session.localEngaged = false
@@ -399,6 +418,8 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   }
 
   function noteHelperReport(state: MoverState) {
+    reacquiring = false
+    session.helperStopped = false
     if (state.interval) session.interval = state.interval
     if (state.on) {
       epoch += 1
@@ -413,6 +434,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
       return
     }
     epoch += 1
+    lastGood = null
     session.helperOn = false
     session.requested = false
     session.localEngaged = false
@@ -424,12 +446,16 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   }
 
   function onHelperDisconnected() {
+    reacquiring = false
+    const helperWasOn = session.helperOn
     session.helperOn = false
     if (session.localEngaged && session.requested) {
       publish()
       return
     }
     epoch += 1
+    lastGood = null
+    session.helperStopped = helperWasOn
     session.requested = false
     session.pending = false
     session.settled = false
@@ -439,6 +465,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   }
 
   function onHelperConnected() {
+    session.helperStopped = false
     if (session.requested && session.localEngaged && !session.helperOn) {
       host.sendHelper({ t: 'mover', on: true, interval: session.interval })
     }
@@ -447,21 +474,32 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
 
   function onVisibility() {
     session.tabHidden = tabHidden()
+    const again = session.requested && !session.helperOn && !host.helperConnected() && !session.tabHidden
+    reacquiring = again
     publish()
-    if (!session.requested || session.helperOn || host.helperConnected() || session.tabHidden) return
+    if (!again) return
     const mine = epoch
     void acquireWakeLock(mine).then((locked) => {
-      if (mine !== epoch || tabHidden()) return
+      if (mine !== epoch) return
+      if (tabHidden()) {
+        reacquiring = false
+        publish()
+        return
+      }
       session.wakeLockHeld = locked
       if (locked) {
+        reacquiring = false
         stopVideo()
         publish()
         return
       }
       publish()
       void ensureVideo(mine).then((playing) => {
-        if (mine !== epoch || tabHidden() || session.wakeLockHeld) {
+        if (mine !== epoch) return
+        reacquiring = false
+        if (tabHidden() || session.wakeLockHeld) {
           if (session.wakeLockHeld) stopVideo()
+          publish()
           return
         }
         session.videoPlaying = playing
@@ -484,13 +522,21 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   }
 
   async function pip() {
-    if (typeof document === 'undefined' || document.pictureInPictureEnabled !== true) return
-    if (!video && session.requested) video = buildVideo(document, videoGen)
-    if (!video) return
+    let enabled = false
+    try { enabled = typeof document !== 'undefined' && document.pictureInPictureEnabled === true } catch { enabled = false }
+    if (!enabled) return
     try {
-      if (document.pictureInPictureElement === video) await document.exitPictureInPicture()
-      else await video.requestPictureInPicture()
-    } catch { /* needs a laptop gesture, or the browser refused */ }
+      if (!video && session.requested) video = buildVideo(document, videoGen)
+      if (!video || typeof video.requestPictureInPicture !== 'function') return
+      if (document.pictureInPictureElement === video) {
+        await document.exitPictureInPicture()
+        return
+      }
+      // play() and requestPictureInPicture() stay in this click's gesture.
+      // The first click used to start playback and return before PiP could open.
+      await video.play()
+      await video.requestPictureInPicture()
+    } catch { /* no Picture-in-Picture here, or the browser refused the gesture */ }
   }
 
   publish()

@@ -4,8 +4,10 @@ import {
   activeMode,
   autoStopDelayMs,
   createAutoStopClock,
+  dataState,
   deriveStatus,
   createKeepAwakeLinkWatch,
+  keepAwakeSwitchOn,
   KEEPAWAKE_LINK_GRACE_MS,
   keepAwakeLinkEffect,
   qaDebugText,
@@ -70,6 +72,43 @@ describe('keep-awake status', () => {
   it('pauses a hidden tab even if the fallback video is playing, unless PiP is up', () => {
     assert.equal(deriveStatus({ ...holdBase(), tabHidden: true, videoPlaying: true, pipActive: false, wakeLockHeld: true }), 'Paused, tab hidden')
     assert.equal(deriveStatus({ ...holdBase(), tabHidden: true, videoPlaying: true, pipActive: true }), 'On (screen awake)')
+  })
+
+  it('holds On (screen awake) while a wake lock is re-acquired', () => {
+    const again = { ...holdBase(), wakeLockHeld: false, reacquiring: true, lastGood: 'On (screen awake)' as const }
+    assert.equal(deriveStatus(again), 'On (screen awake)')
+    assert.equal(deriveStatus({ ...again, wakeLockHeld: true }), 'On (screen awake)')
+    assert.equal(deriveStatus({ ...again, reacquiring: false }), 'Not supported')
+    assert.equal(deriveStatus({ ...again, lastGood: 'Paused, tab hidden' }), 'Not supported')
+    assert.equal(deriveStatus({ ...again, lastGood: 'On (real mouse)' }), 'Not supported')
+    assert.equal(deriveStatus({ ...again, lastGood: null, settled: false }), null)
+    assert.equal(deriveStatus({ ...holdBase(), reacquiring: true }), 'Not supported')
+  })
+
+  it('says the helper is not running after it quits', () => {
+    assert.equal(deriveStatus({ ...holdBase(), requested: false, helperStopped: true }), 'Helper not running')
+    assert.equal(deriveStatus({ ...holdBase(), helperStopped: true, helperConnected: true, helperReportedOn: true }), 'Helper not running')
+    assert.equal(deriveStatus({ ...holdBase(), requested: false }), null)
+    assert.equal(dataState('Helper not running'), 'unsupported')
+    assert.equal(keepAwakeSwitchOn('Helper not running'), false)
+    assert.equal(keepAwakeSwitchOn('On (screen awake)'), true)
+    assert.equal(keepAwakeSwitchOn(null), false)
+    const quit = relayReport({
+      on: false,
+      interval: null,
+      status: 'Helper not running',
+      mode: 'none',
+      autoStop: 'never',
+    })
+    assert.equal(quit.on, false)
+    assert.equal(quit.status, 'Helper not running')
+    assert.deepEqual(readRelayReport(quit), {
+      on: false,
+      interval: null,
+      status: 'Helper not running',
+      mode: 'none',
+      autoStop: 'never',
+    })
   })
 })
 

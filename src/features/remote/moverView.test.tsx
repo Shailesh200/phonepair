@@ -75,6 +75,9 @@ describe('mouse mover control', () => {
     assert.equal(screen.includes('mover-pip'), false)
     assert.match(screen, /Interval applies to laptop nudges\./)
     assert.match(screen, /aria-pressed="true"[^>]*data-testid="mover-autostop-never"/)
+    for (const preset of ['15m', '30m', '1h', '2h', 'never']) {
+      assert.equal(new RegExp(`data-testid="mover-autostop-${preset}"[^>]*disabled`).test(screen), false)
+    }
     for (const id of ['30s', '1m', '5m']) {
       assert.match(screen, new RegExp(`data-testid="mover-interval-${id}"[^>]*disabled`))
     }
@@ -87,6 +90,10 @@ describe('mouse mover control', () => {
     assert.match(off, /aria-checked="false"/)
     assert.equal(/data-testid="mover-toggle"[^>]*disabled/.test(off), false)
     assert.match(off, /data-testid="mover-interval-30s"[^>]*disabled/)
+    assert.match(off, /aria-pressed="true"[^>]*data-testid="mover-autostop-never"/)
+    for (const preset of ['15m', '30m', '1h', '2h', 'never']) {
+      assert.match(off, new RegExp(`data-testid="mover-autostop-${preset}"[^>]*disabled`))
+    }
     assert.equal(off.includes('mover-badge'), false)
     assert.equal(off.includes('data-mode'), false)
     assert.equal(off.includes('mover-debug-mode'), false)
@@ -105,6 +112,9 @@ describe('mouse mover control', () => {
     assert.match(on, /aria-pressed="false"[^>]*data-testid="mover-interval-30s"/)
     assert.equal(on.includes('mover-interval-1m" disabled'), false)
     assert.match(on, /aria-pressed="true"[^>]*data-testid="mover-autostop-1h"/)
+    for (const preset of ['15m', '30m', '1h', '2h', 'never']) {
+      assert.equal(new RegExp(`data-testid="mover-autostop-${preset}"[^>]*disabled`).test(on), false)
+    }
 
     const paused = markup(React.createElement(MoverControl, {
       ...hands,
@@ -114,6 +124,19 @@ describe('mouse mover control', () => {
     assert.match(paused, /data-state="paused"/)
     assert.match(paused, /Paused, tab hidden/)
     assert.match(paused, /data-testid="mover-pip"/)
+
+    const quit = markup(React.createElement(MoverControl, {
+      ...hands,
+      state: { on: false, interval: '1m', status: 'Helper not running', mode: 'none', autoStop: 'never' },
+    }))
+    assert.match(quit, /data-state="unsupported"/)
+    assert.match(quit, /aria-checked="false"/)
+    assert.match(quit, /data-testid="mover-status"[^>]*>Helper not running</)
+    assert.match(quit, /class="pp-mover-badge"/)
+    assert.match(quit, /aria-pressed="true"[^>]*data-testid="mover-autostop-never"/)
+    for (const preset of ['15m', '30m', '1h', '2h', 'never']) {
+      assert.match(quit, new RegExp(`data-testid="mover-autostop-${preset}"[^>]*disabled`))
+    }
 
     const unsupported = markup(React.createElement(MoverControl, {
       ...hands,

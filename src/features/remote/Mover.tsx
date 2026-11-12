@@ -5,6 +5,7 @@ import {
   AUTO_STOP_LABEL,
   NUDGE_INTERVAL_HINT,
   dataState,
+  keepAwakeSwitchOn,
   nudgeIntervalEnabled,
   qaDebugText,
   qaModeAttribute,
@@ -22,7 +23,7 @@ export function MoverControl({ state, qa = false, showPip = false, onToggle, onI
   onPip?: () => void
 }) {
   const view = dataState(state.status)
-  const on = state.status != null
+  const on = keepAwakeSwitchOn(state.status)
   const nudges = nudgeIntervalEnabled(state.mode, on)
   const debug = qaDebugText(qa, state.mode)
   return <div className="pp-mover" data-state={view} data-interval={state.mode === 'helper' ? 'on' : 'off'} data-mode={qaModeAttribute(qa, state.mode)}>
@@ -56,6 +57,7 @@ export function MoverControl({ state, qa = false, showPip = false, onToggle, onI
             type="button"
             aria-pressed={state.autoStop === preset}
             data-testid={`mover-autostop-${preset}`}
+            disabled={!on}
             onClick={() => onAutoStop(preset)}
           >{AUTO_STOP_LABEL[preset]}</button>
         ))}

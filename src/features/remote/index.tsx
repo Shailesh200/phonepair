@@ -14,7 +14,7 @@ import {
   moverToggleCommand,
   readMoverState,
 } from '../screen/mover'
-import { KEEP_AWAKE_IDLE, browserSearch, createKeepAwakeLinkWatch, pictureInPictureEnabled, qaHooksEnabled, readRelayCommand, relayReport, type KeepAwakeViewState } from './keepAwake'
+import { KEEP_AWAKE_IDLE, browserSearch, createKeepAwakeLinkWatch, dataState, pictureInPictureEnabled, qaHooksEnabled, readRelayCommand, relayReport, type KeepAwakeViewState } from './keepAwake'
 import { createBrowserKeepAwake } from './keepAwakeRun'
 import { navKey, showPointerLaser } from './send'
 import type { HelperAttempt } from './connectGuide.ts'
@@ -56,7 +56,7 @@ export function stopMouseMover() {
 export function MoverHeaderBadge() {
   const state = moverReported.use()
   if (!state.status) return null
-  return <span className="pp-mover-badge" data-testid="mover-badge">{state.status}</span>
+  return <span className="pp-mover-badge" data-testid="mover-badge" data-state={dataState(state.status)}>{state.status}</span>
 }
 let helperJob = 0
 let helperConnects = 0

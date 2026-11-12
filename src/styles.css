@@ -702,12 +702,16 @@ body:has(.pg.remote){
 .pp-mover[data-state="off"] .pp-mover-badge,
 .pp-mover[data-state="disconnected"] .pp-mover-badge { display: none; }
 .pp-mover[data-state="paused"] .pp-mover-badge,
-.pp-mover[data-state="unsupported"] .pp-mover-badge {
+.pp-mover[data-state="unsupported"] .pp-mover-badge,
+.pp-mover-badge[data-state="paused"],
+.pp-mover-badge[data-state="unsupported"] {
   background: var(--surface-2);
   color: var(--muted);
 }
 .pp-mover[data-state="paused"] .pp-mover-badge::before,
-.pp-mover[data-state="unsupported"] .pp-mover-badge::before {
+.pp-mover[data-state="unsupported"] .pp-mover-badge::before,
+.pp-mover-badge[data-state="paused"]::before,
+.pp-mover-badge[data-state="unsupported"]::before {
   background: var(--muted);
   animation: none;
 }
