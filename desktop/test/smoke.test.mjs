@@ -123,6 +123,8 @@ test('window copy and builder ids stay fixed', () => {
   assert.ok(remote.includes('>Download for Windows<'))
   assert.ok(remote.includes('https://github.com/Shailesh200/phonepair/releases/latest/download/PhonePair-Helper-mac.dmg'))
   assert.ok(remote.includes('https://github.com/Shailesh200/phonepair/releases/latest/download/PhonePair-Helper-win.exe'))
+  assert.ok(remote.includes('href="https://github.com/Shailesh200/phonepair/releases/latest" target="_blank" rel="noopener noreferrer"'))
+  assert.ok(remote.includes('>Other downloads<'))
   assert.ok(remote.includes('Open the DMG, drag PhonePair Helper to Applications, and open it. Allow Accessibility when asked so Control works.'))
   assert.ok(remote.includes('If SmartScreen appears, click More info, then Run anyway.'))
   assert.ok(remote.includes('or run from source: <code>cd helper && npm start</code>'))
