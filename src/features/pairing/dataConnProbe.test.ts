@@ -360,23 +360,24 @@ describe('tick keepalive vs probe', () => {
 })
 
 describe('connProbeMayAbandonAfterFail', () => {
-  it('with fake clock, slow post-restore link abandons at most once before connGen bumps', () => {
+  it('with fake clock, slow post-restore link abandons at most once per restore window', () => {
     mock.timers.enable({ apis: ['Date'] })
     const restoreAt = 0
     let lastAbandonRestoreAt: number | null = null
     let lastAbandonConnGen: number | null = null
-    const connGen = 1
+    let connGen = 1
     let abandonCount = 0
     const tickMs = [0, 2500, 4000, 8000, 12_000, 20_000, 25_500]
     for (const now of tickMs) {
       mock.timers.setTime(now)
+      if (now === 8000) connGen = 2
       if (
-        now - restoreAt <= DATA_CONN_PROBE_POST_RESTORE_MS
-        && connProbeMayAbandonAfterFail({
+        connProbeMayAbandonAfterFail({
           restoreSignalAt: restoreAt,
           connGen,
           lastAbandonRestoreAt,
           lastAbandonConnGen,
+          now,
         })
       ) {
         abandonCount += 1
@@ -388,14 +389,17 @@ describe('connProbeMayAbandonAfterFail', () => {
     mock.timers.reset()
   })
 
-  it('allows one abandon per restore and per connGen', () => {
+  it('post-restore window: one abandon total; outside window: one per connGen', () => {
     const restore = 1_000
+    const inside = restore + 5_000
+    const outside = restore + DATA_CONN_PROBE_POST_RESTORE_MS + 1
     assert.equal(
       connProbeMayAbandonAfterFail({
         restoreSignalAt: restore,
         connGen: 1,
         lastAbandonRestoreAt: null,
         lastAbandonConnGen: null,
+        now: inside,
       }),
       true,
     )
@@ -405,6 +409,7 @@ describe('connProbeMayAbandonAfterFail', () => {
         connGen: 1,
         lastAbandonRestoreAt: restore,
         lastAbandonConnGen: 1,
+        now: inside,
       }),
       false,
     )
@@ -414,8 +419,9 @@ describe('connProbeMayAbandonAfterFail', () => {
         connGen: 2,
         lastAbandonRestoreAt: restore,
         lastAbandonConnGen: 1,
+        now: inside,
       }),
-      true,
+      false,
     )
     assert.equal(
       connProbeMayAbandonAfterFail({
@@ -423,6 +429,27 @@ describe('connProbeMayAbandonAfterFail', () => {
         connGen: 1,
         lastAbandonRestoreAt: restore,
         lastAbandonConnGen: 1,
+        now: restore + 1 + 1_000,
+      }),
+      true,
+    )
+    assert.equal(
+      connProbeMayAbandonAfterFail({
+        restoreSignalAt: null,
+        connGen: 1,
+        lastAbandonRestoreAt: restore,
+        lastAbandonConnGen: 1,
+        now: outside,
+      }),
+      false,
+    )
+    assert.equal(
+      connProbeMayAbandonAfterFail({
+        restoreSignalAt: null,
+        connGen: 2,
+        lastAbandonRestoreAt: restore,
+        lastAbandonConnGen: 1,
+        now: outside,
       }),
       true,
     )

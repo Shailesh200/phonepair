@@ -108,21 +108,26 @@ export function planTickOpenConnTraffic(opts: {
   return 'keepalive-ping'
 }
 
-/** At most one probe-fail abandon per conn generation and per restore signal. */
+/**
+ * Post-restore window: at most one probe-fail abandon for that restore (any connGen).
+ * Otherwise: at most one abandon per conn generation.
+ */
 export function connProbeMayAbandonAfterFail(opts: {
   restoreSignalAt: number | null
   connGen: number
   lastAbandonRestoreAt: number | null
   lastAbandonConnGen: number | null
+  now: number
 }): boolean {
-  if (opts.lastAbandonConnGen != null && opts.lastAbandonConnGen === opts.connGen) return false
-  if (
-    opts.restoreSignalAt != null
-    && opts.lastAbandonRestoreAt != null
-    && opts.lastAbandonRestoreAt === opts.restoreSignalAt
-  ) {
-    return false
+  const inPostRestoreWindow = opts.restoreSignalAt != null
+    && opts.now - opts.restoreSignalAt <= DATA_CONN_PROBE_POST_RESTORE_MS
+  if (inPostRestoreWindow) {
+    return !(
+      opts.lastAbandonRestoreAt != null
+      && opts.lastAbandonRestoreAt === opts.restoreSignalAt
+    )
   }
+  if (opts.lastAbandonConnGen != null && opts.lastAbandonConnGen === opts.connGen) return false
   return true
 }
 

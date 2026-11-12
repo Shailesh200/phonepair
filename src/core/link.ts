@@ -584,6 +584,7 @@ export class Link {
         connGen: this.connDataGen,
         lastAbandonRestoreAt: this.connProbeLastAbandonRestoreAt,
         lastAbandonConnGen: this.connProbeLastAbandonConnGen,
+        now: Date.now(),
       })
     ) {
       return
