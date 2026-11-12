@@ -8,26 +8,31 @@ export function buildLinkHelloMessage(localDeviceName: string) {
   return { t: 'hello' as const, name: localDeviceName, caps: [...LINK_HELLO_CAPS] }
 }
 
-/** Clears stale remote pong capability when the data conn is dropped or replaced. */
+/** Clears stale in-memory remote pong flag; ledger keeps per-peer evidence across drops. */
 export function freshRemotePongCap(): false {
   return false
 }
 
-/** Fresh paired session (no remember-guest auth path): both sides advertise pong in hello. */
-export function isNewToNewProbeSession(opts: {
-  everConnected: boolean
-  sessionPaired: boolean
-  rememberGuestAuth: boolean
-}): boolean {
-  return opts.everConnected && opts.sessionPaired && !opts.rememberGuestAuth
+export type RemotePongCapLedger = Map<string, boolean>
+
+/** Record hello caps for this remote peer id; returns whether pong was advertised. */
+export function recordRemoteHelloPongCap(
+  ledger: RemotePongCapLedger,
+  remotePeerId: string,
+  caps: unknown,
+): boolean {
+  const cap = helloCapsIncludePong(caps)
+  ledger.set(remotePeerId, cap)
+  return cap
 }
 
-export function effectiveRemotePongCapForProbe(
-  remotePongCap: boolean,
-  session: { everConnected: boolean; sessionPaired: boolean; rememberGuestAuth: boolean },
+/** Probe only when a prior hello from this peer id included caps:['pong']. */
+export function remotePongCapSeenForPeer(
+  ledger: RemotePongCapLedger,
+  remotePeerId: string | null | undefined,
 ): boolean {
-  if (remotePongCap) return true
-  return isNewToNewProbeSession(session)
+  if (!remotePeerId) return false
+  return ledger.get(remotePeerId) === true
 }
 
 export function shouldMarkConnProbeEligible(opts: {
@@ -39,11 +44,7 @@ export function shouldMarkConnProbeEligible(opts: {
 }): boolean {
   if (!opts.connOpen) return false
   if (opts.connProbeEligible) return true
-  return isNewToNewProbeSession({
-    everConnected: opts.everConnected,
-    sessionPaired: opts.sessionPaired,
-    rememberGuestAuth: opts.rememberGuestAuth,
-  })
+  return opts.everConnected && opts.sessionPaired && !opts.rememberGuestAuth
 }
 
 export function helloCapsIncludePong(caps: unknown): boolean {

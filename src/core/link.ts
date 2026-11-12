@@ -51,10 +51,11 @@ import {
   buildLinkHelloMessage,
   dataConnProbeSucceeded,
   freshRemotePongCap,
-  helloCapsIncludePong,
-  effectiveRemotePongCapForProbe,
+  recordRemoteHelloPongCap,
+  remotePongCapSeenForPeer,
   shouldMarkConnProbeEligible,
   shouldRunDataConnProbe,
+  type RemotePongCapLedger,
 } from '../features/pairing/dataConnProbe'
 import {
   ppDebugIncProbeSent,
@@ -264,6 +265,7 @@ export class Link {
   private hostOfflineSince: number | null = null
   private hostStuckOfflineBootstrapAt: number | null = null
   private remotePongCap = false
+  private readonly remotePongCapLedger: RemotePongCapLedger = new Map()
   private connProbeEligible = false
   private connProbeAt: number | null = null
   private connProbeTimer: number | null = null
@@ -432,6 +434,10 @@ export class Link {
     if (this.conn?.open) this.connProbeEligible = true
   }
 
+  private syncRemotePongCapFromLedger(conn: DataConnection | null = this.conn) {
+    this.remotePongCap = remotePongCapSeenForPeer(this.remotePongCapLedger, conn?.peer ?? null)
+  }
+
   private syncConnProbeEligibleForSession() {
     if (
       shouldMarkConnProbeEligible({
@@ -483,11 +489,7 @@ export class Link {
       !shouldRunDataConnProbe({
         connOpen: !!this.conn?.open,
         localOffersPong: true,
-        remoteSupportsPong: effectiveRemotePongCapForProbe(this.remotePongCap, {
-          everConnected: this.everConnected,
-          sessionPaired: this.sessionPaired,
-          rememberGuestAuth: !!this.rememberGuestAuth,
-        }),
+        remoteSupportsPong: remotePongCapSeenForPeer(this.remotePongCapLedger, this.conn?.peer ?? null),
         probePending: this.connProbeAt != null || this.connProbeTimer != null,
         lastSeen: this.lastSeen,
         now,
@@ -1870,6 +1872,7 @@ export class Link {
       this.remotePongCap = freshRemotePongCap()
       this.conn = c
       this.connPeer = this.peer
+      this.syncRemotePongCapFromLedger(c)
     }
     const onOpen = () => {
       if (c !== this.inFlightDial && c !== this.pending && c !== this.conn) return
@@ -1887,6 +1890,7 @@ export class Link {
       this.remotePongCap = freshRemotePongCap()
       this.conn = c
       this.connPeer = this.peer
+      this.syncRemotePongCapFromLedger(c)
       if (this.hostGrace) { clearTimeout(this.hostGrace); this.hostGrace = null }
       if (this.role === 'host') {
         notifyHostPhoneConnected(this.listenForceRunner, this.hostSignalRunner)
@@ -1927,7 +1931,12 @@ export class Link {
     }
     if (!this.rememberGuestLive()) return
     if (m.t === 'hello') {
-      this.remotePongCap = helloCapsIncludePong((m as { caps?: unknown }).caps)
+      const remotePeerId = String(c.peer ?? '')
+      this.remotePongCap = recordRemoteHelloPongCap(
+        this.remotePongCapLedger,
+        remotePeerId,
+        (m as { caps?: unknown }).caps,
+      )
       this.set({ remoteName: m.name })
       if (this.role === 'guest' && this.code) rememberLastLaptop(m.name, this.code)
       if (this.role === 'host' && c.open) {
@@ -2062,6 +2071,7 @@ export class Link {
     this.remotePongCap = freshRemotePongCap()
     this.conn = c
     this.connPeer = fromListenPeer ? this.listenPeer : this.peer
+    this.syncRemotePongCapFromLedger(c)
     if (fromListenPeer && rememberPhoneId) this.authenticatedRememberPhoneId = rememberPhoneId
     if (this.role === 'host') {
       notifyHostPhoneConnected(this.listenForceRunner, this.hostSignalRunner)
