@@ -163,6 +163,36 @@
 
 .pg.remote .clicker-help { margin-top: 14px; }
 
+.phone-page:has(.pg.remote) > .top .ttl {
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  white-space: nowrap;
+  min-width: auto;
+  overflow: visible;
+  text-overflow: clip;
+}
+.phone-page:has(.pg.remote) > .top .status-row {
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  overflow: hidden;
+}
+.phone-page:has(.pg.remote) > .top .pill.sm {
+  display: inline-block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+.phone-page:has(.pg.remote) > .top .pill.sm::before {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: var(--space-2);
+}
+
 .phone-wrap .phone-page:has(.pg.remote) {
   height: var(--vvh, 100dvh);
   max-height: var(--vvh, 100dvh);
