@@ -15,6 +15,7 @@ export type PpDebugForceRuns = {
 
 export type PpDebugRemember = {
   dials: number
+  dialOpened: number
   dialErrors: Record<string, number>
   authSent: number
 }
@@ -72,7 +73,7 @@ function freshDebug(): PpDebugState {
       redials: { scheduled: 0, immediate: 0, lastDelayMs: 0, delaysMs: [] },
     },
     relayFallbackNoTurn: 0,
-    remember: { dials: 0, dialErrors: {}, authSent: 0 },
+    remember: { dials: 0, dialOpened: 0, dialErrors: {}, authSent: 0 },
     ice: {
       connGeneration: 0,
       abandonOnSignalDrop: 0,

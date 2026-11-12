@@ -11,6 +11,9 @@ export const PP_DEBUG_ALLOWED_STRINGS = new Set([
   'socket-error',
   'socket-closed',
   'unknown',
+  'dial-timeout',
+  'dial-closed',
+  'dial-error',
 ])
 
 export function ppDebugStringLooksLikeId(value: string): boolean {

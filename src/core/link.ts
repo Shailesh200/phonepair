@@ -54,6 +54,7 @@ import {
   ppDebugRememberAuthSent,
   ppDebugRememberDial,
   ppDebugRememberDialError,
+  ppDebugRememberDialOpened,
 } from '../features/pairing/ppDebugRemember'
 import { shouldCallPeerReconnect, shouldHostReconnect } from '../features/pairing/peerReconnect'
 import {
@@ -82,6 +83,10 @@ import { rememberLastLaptop } from '../features/pairing/session'
 import { guestAcceptsRememberOk } from '../remember/guestAuth'
 import { guestRememberIncomingAuthAction, guestRememberSwapOnPromote } from '../remember/guestRememberConn'
 import { guestRememberDialShouldClearOpenConn } from '../remember/guestDialStaleConn'
+import {
+  listenForceTickAllowed,
+  shouldInhibitHostCodePeerForce,
+} from '../remember/hostRememberListenPriority'
 import { peerForOutboundCall } from '../remember/callPeer'
 import { signPhoneProof } from '../remember/proof'
 import type { HostAuthFailReason } from '../remember/hostAuth'
@@ -272,7 +277,14 @@ export class Link {
           if (shouldForceSignalOnVisibility(hiddenMs, this.listenSignalUnverified())) {
             const lp = this.listenPeer
             if (lp && !lp.destroyed && this.listenPeerEverOpen) {
-              if (!shouldDeferListenForce(!!this.peer?.open, this.hostListenStaggerUntil, Date.now())) {
+              if (
+                !shouldDeferListenForce(
+                  !!this.peer?.open,
+                  this.hostListenStaggerUntil,
+                  Date.now(),
+                  this.hostHasRememberPhones(),
+                )
+              ) {
                 this.ensureListenForceRunner().hook(peerAsForceSignal(lp), false)
               }
             }
@@ -290,7 +302,12 @@ export class Link {
           if (lp !== this.listenPeer || lp.destroyed) return
           this.ensureListenForceRunner().hookOnline(peerAsForceSignal(lp), false)
         }
-        const deferMs = shouldDeferListenForce(!!this.peer?.open, this.hostListenStaggerUntil, Date.now())
+        const deferMs = shouldDeferListenForce(
+          !!this.peer?.open,
+          this.hostListenStaggerUntil,
+          Date.now(),
+          this.hostHasRememberPhones(),
+        )
           ? Math.max(0, (this.hostListenStaggerUntil ?? 0) - Date.now())
           : 0
         if (deferMs > 0) window.setTimeout(run, deferMs)
@@ -331,12 +348,16 @@ export class Link {
     }
   }
 
+  private hostHasRememberPhones(): boolean {
+    return hostHasPhones(loadHostStore())
+  }
+
   private tickListenSignalForce(lp: Peer) {
-    if (!hostHasPhones(loadHostStore()) || lp.destroyed) return
-    if (!this.listenPeerEverOpen) return
+    if (!this.hostHasRememberPhones() || lp.destroyed) return
+    if (!listenForceTickAllowed(this.listenPeerEverOpen, this.listenSignalUnverified())) return
     const now = Date.now()
     const codePeer = this.peer
-    if (shouldDeferListenForce(!!codePeer?.open, this.hostListenStaggerUntil, now)) return
+    if (shouldDeferListenForce(!!codePeer?.open, this.hostListenStaggerUntil, now, true)) return
     const unverified = this.listenSignalUnverified()
     const peerLooksHealthy = lp.open && !lp.disconnected && !unverified
     const active = shouldRearmListenPeer({
@@ -371,7 +392,16 @@ export class Link {
       else return
     }
     const lp = this.listenPeer
-    if (lp && !lp.destroyed) return
+    if (lp && !lp.destroyed) {
+      if (
+        !lp.open
+        && this.listenSignalUnverified()
+        && !this.ensureListenForceRunner().runnerBusy()
+      ) {
+        this.ensureListenForceRunner().hook(peerAsForceSignal(lp), false)
+      }
+      return
+    }
     this.listenPeer = null
     if (Date.now() < this.listenBackoffUntil) return
     void this.bootstrapRememberListen()
@@ -403,9 +433,12 @@ export class Link {
       if (this.role === 'guest' && !this.destroyed && !this.conn?.open && this.status !== 'error') {
         this.applyGuestSignalRecoveryRedial()
       }
-      if (shouldHostReconnectOnOnline(this.role, this.destroyed)) {
+      if (
+        shouldHostReconnectOnOnline(this.role, this.destroyed)
+        && !shouldInhibitHostCodePeerForce(this.hostHasRememberPhones())
+      ) {
         const peer = this.peer
-        if (peer && !peer.destroyed) {
+        if (peer && !peer.destroyed && !this.hostSignalRunner?.runnerBusy()) {
           this.ensureHostSignalRunner().hookOnline(peerAsForceSignal(peer), false)
         }
       }
@@ -419,9 +452,13 @@ export class Link {
       if (this.documentHiddenAt != null) {
         const hiddenMs = Date.now() - this.documentHiddenAt
         this.documentHiddenAt = null
-        if (this.role === 'host' && shouldForceSignalOnVisibility(hiddenMs, this.hostCodeSignalUnverified())) {
+        if (
+          this.role === 'host'
+          && shouldForceSignalOnVisibility(hiddenMs, this.hostCodeSignalUnverified())
+          && !shouldInhibitHostCodePeerForce(this.hostHasRememberPhones())
+        ) {
           const peer = this.peer
-          if (peer && !peer.destroyed) {
+          if (peer && !peer.destroyed && !this.hostSignalRunner?.runnerBusy()) {
             this.ensureHostSignalRunner().hook(peerAsForceSignal(peer), false)
           }
         }
@@ -466,6 +503,7 @@ export class Link {
 
   private hostCodeSignalForceActive(peer: Peer): boolean {
     if (this.role !== 'host' || this.destroyed || peer.destroyed) return false
+    if (shouldInhibitHostCodePeerForce(this.hostHasRememberPhones())) return false
     if (this.hostCodeSignalUnverified()) return true
     if (this.status === 'reconnecting' || this.status === 'waiting') return true
     return shouldHostReconnectHalfOpen(this.role, this.destroyed, peer.open, !!this.conn?.open)
@@ -487,6 +525,8 @@ export class Link {
   private forceHostPeerSignalReconnect() {
     const peer = this.peer
     if (!peer || peer.destroyed || this.destroyed) return
+    if (shouldInhibitHostCodePeerForce(this.hostHasRememberPhones())) return
+    if (this.hostSignalRunner?.runnerBusy()) return
     this.ensureHostSignalRunner().hook(peerAsForceSignal(peer), false)
   }
 
@@ -686,7 +726,11 @@ export class Link {
       }
       window.setTimeout(() => {
         if (this.role === 'host') {
-          if (peer === this.peer && !this.destroyed) this.forceHostPeerSignalReconnect()
+          if (peer === this.peer && !this.destroyed) {
+          if (!shouldInhibitHostCodePeerForce(this.hostHasRememberPhones())) {
+            this.forceHostPeerSignalReconnect()
+          }
+        }
           return
         }
         this.tryGuestPeerReconnect(peer)
@@ -1140,6 +1184,7 @@ export class Link {
     this.dialHangTimer = window.setTimeout(() => {
       this.dialHangTimer = null
       if (!this.destroyed && this.inFlightDial === c && !c.open) {
+        if (this.rememberGuestAuth) ppDebugRememberDialError('dial-timeout')
         this.releaseInFlightDial()
         this.dropConn()
         if (this.role === 'guest' && !this.destroyed) this.scheduleDial()
@@ -1386,6 +1431,7 @@ export class Link {
     this.authPending = { conn: c, phase: 'await-hello', phoneNonce: null, hostNonce: null }
     const greet = () => {
       if (c !== this.authPending?.conn || !this.rememberGuestAuth) return
+      ppDebugRememberDialOpened()
       const phoneNonce = randomBytes(32)
       this.authPending = { conn: c, phase: 'await-proof', phoneNonce, hostNonce: null }
       try {
@@ -1395,7 +1441,9 @@ export class Link {
           phoneNonce: bytesToB64(phoneNonce),
         })
         ppDebugRememberAuthSent()
-      } catch {}
+      } catch {
+        ppDebugRememberDialError('dial-error')
+      }
       this.armAuthTimeout(c)
       const next = this.conn?.open
         ? 'connected'
@@ -1440,8 +1488,16 @@ export class Link {
       }
       if (c === this.conn) this.dispatchPayload(m, c)
     })
-    c.on('close', () => this.lost(c))
-    c.on('error', () => this.lost(c))
+    c.on('close', () => {
+      if (this.rememberGuestAuth && (c === this.inFlightDial || c === this.authPending?.conn) && !c.open) {
+        ppDebugRememberDialError('dial-closed')
+      }
+      this.lost(c)
+    })
+    c.on('error', () => {
+      if (this.rememberGuestAuth && c === this.inFlightDial) ppDebugRememberDialError('dial-error')
+      this.lost(c)
+    })
   }
 
   private hostAuthCallbacks(): import('../remember/hostAuth').HostAuthCallbacks {
@@ -1488,6 +1544,7 @@ export class Link {
       }
       if (
         peer
+        && !shouldInhibitHostCodePeerForce(hostHasPhones(loadHostStore()))
         && shouldHostReconnectHalfOpen(this.role, this.destroyed, !!peer.open, !!this.conn?.open)
       ) {
         this.forceHostPeerSignalReconnect()
@@ -1591,7 +1648,7 @@ export class Link {
     if (this.role === 'guest' && peer && peer.disconnected && !peer.destroyed && !this.destroyed) {
       this.tryGuestPeerReconnect(peer)
     }
-    if (this.role === 'host' && peer && !peer.destroyed) {
+    if (this.role === 'host' && peer && !peer.destroyed && !shouldInhibitHostCodePeerForce(this.hostHasRememberPhones())) {
       this.tickHostCodeSignalForce(peer)
     }
     const lp = this.listenPeer

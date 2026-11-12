@@ -38,6 +38,7 @@ describe('ppDebug has no ids', () => {
     }
     assertPpDebugHasNoIds(ppDebug())
     assert.equal(ppDebug().remember.dials, 2)
+    assert.equal((ppDebug().remember as { dialOpened?: number }).dialOpened, 0)
     assert.ok(!('lastTarget' in ppDebug().remember))
     assert.equal(gen, 1)
   })

@@ -8,7 +8,9 @@ export function shouldDeferListenForce(
   codePeerOpen: boolean,
   staggerUntil: number | null,
   now: number,
+  rememberPhonesListenPriority = false,
 ): boolean {
+  if (rememberPhonesListenPriority) return false
   if (codePeerOpen) return false
   if (staggerUntil == null) return false
   return now < staggerUntil

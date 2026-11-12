@@ -10,6 +10,10 @@ export function ppDebugRememberDialError(errorType: string): void {
   r.dialErrors[key] = (r.dialErrors[key] ?? 0) + 1
 }
 
+export function ppDebugRememberDialOpened(): void {
+  ppDebug().remember.dialOpened += 1
+}
+
 export function ppDebugRememberAuthSent(): void {
   ppDebug().remember.authSent += 1
 }

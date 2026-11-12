@@ -8,6 +8,7 @@ describe('host signal stagger', () => {
     assert.equal(shouldDeferListenForce(false, until, until - 1), true)
     assert.equal(shouldDeferListenForce(false, until, until), false)
     assert.equal(shouldDeferListenForce(true, until, until - 1), false)
+    assert.equal(shouldDeferListenForce(false, until, until - 1, true), false)
     assert.equal(HOST_LISTEN_FORCE_STAGGER_MS, 2000)
   })
 })
