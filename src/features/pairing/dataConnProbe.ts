@@ -141,6 +141,66 @@ export function isConnProbeControlType(t: unknown): boolean {
   return t === 'ping' || t === 'pong'
 }
 
+export const CLIP_PATH_CHECK = 'clip:path-check' as const
+export const CLIP_PATH_ACK = 'clip:path-ack' as const
+export const CLIP_PATH_CONFIRM_TIMEOUT_MS = 2500
+export const CLIP_PATH_CONFIRM_DELAY_MS = 400
+
+export function isClipPathControlType(t: unknown): boolean {
+  return t === CLIP_PATH_CHECK || t === CLIP_PATH_ACK
+}
+
+/** Open data conn survived from before signalling came back — probe ping/pong can lie. */
+export function connEstablishedBeforeRestore(
+  connEstablishedAt: number | null,
+  restoreSignalAt: number | null,
+): boolean {
+  if (connEstablishedAt == null || restoreSignalAt == null) return false
+  return connEstablishedAt < restoreSignalAt
+}
+
+export function shouldArmPostRestoreClipPath(opts: {
+  connOpen: boolean
+  restoreSignalAt: number | null
+  connEstablishedAt: number | null
+  armedForRestore: number | null
+  now: number
+}): boolean {
+  if (!opts.connOpen) return false
+  if (opts.restoreSignalAt == null) return false
+  if (opts.now - opts.restoreSignalAt > DATA_CONN_PROBE_POST_RESTORE_MS) return false
+  if (opts.armedForRestore === opts.restoreSignalAt) return false
+  return connEstablishedBeforeRestore(opts.connEstablishedAt, opts.restoreSignalAt)
+}
+
+/** Probe retry only when the 2s lastSeen deferral blocked us (not cap/pending). */
+export function connProbeBlockedByRecentTraffic(opts: {
+  connOpen: boolean
+  localOffersPong: boolean
+  remoteSupportsPong: boolean
+  probePending: boolean
+  lastSeen: number
+  now: number
+  recentMs?: number
+  restoreSignalAt?: number | null
+}): boolean {
+  if (!opts.connOpen || !opts.localOffersPong || !opts.remoteSupportsPong) return false
+  if (opts.probePending) return false
+  const recent = opts.recentMs ?? DATA_CONN_PROBE_SKIP_RECENT_MS
+  const postRestore = opts.restoreSignalAt != null
+    && opts.now - opts.restoreSignalAt <= DATA_CONN_PROBE_POST_RESTORE_MS
+  if (postRestore) return false
+  return opts.lastSeen > 0 && opts.now - opts.lastSeen < recent
+}
+
+export function clipPathCheckInitiatorRole(role: 'host' | 'guest', opts: {
+  sessionPaired: boolean
+  rememberGuestAuth: boolean
+}): boolean {
+  if (role === 'guest') return opts.sessionPaired || opts.rememberGuestAuth
+  return opts.sessionPaired && !opts.rememberGuestAuth
+}
+
 /** Conn keepalive (ping/pong, lastSeen) runs on an open data conn even while remember-guest is reconnecting. */
 export function shouldDispatchConnKeepalive(opts: {
   connOpen: boolean
@@ -150,5 +210,6 @@ export function shouldDispatchConnKeepalive(opts: {
 }): boolean {
   if (!opts.connOpen) return false
   if (isConnProbeControlType(opts.t)) return true
+  if (isClipPathControlType(opts.t)) return true
   return !opts.rememberGuestAuth || opts.status === 'connected'
 }

@@ -57,8 +57,17 @@ import {
   recordRemoteHelloPongCap,
   remotePongCapSeenForPeer,
   shouldMarkConnProbeEligible,
+  CLIP_PATH_ACK,
+  CLIP_PATH_CHECK,
+  CLIP_PATH_CONFIRM_DELAY_MS,
+  CLIP_PATH_CONFIRM_TIMEOUT_MS,
+  clipPathCheckInitiatorRole,
+  connEstablishedBeforeRestore,
+  connProbeBlockedByRecentTraffic,
   connProbeMayAbandonAfterFail,
   connProbeRetryDelayMs,
+  planTickOpenConnTraffic,
+  shouldArmPostRestoreClipPath,
   shouldRunDataConnProbe,
   shouldSendTickConnKeepalivePing,
   type RemotePongCapLedger,
@@ -68,6 +77,9 @@ import {
   ppDebugIncProbeTimeout,
   ppDebugIncStalledWsKilled,
   ppDebugRecordProbePong,
+  ppDebugIncClipPathSent,
+  ppDebugRecordClipPathAck,
+  ppDebugIncClipPathTimeout,
 } from '../features/pairing/ppDebugConnProbe'
 import {
   shouldKillFreshConnectingStalledAfterRestore,
@@ -292,7 +304,13 @@ export class Link {
   private connProbeLastAbandonRestoreAt: number | null = null
   private connProbeLastAbandonConnGen: number | null = null
   private connDataGen = 0
+  private connEstablishedAt: number | null = null
   private lastRestoreSignalAt: number | null = null
+  private clipPathArmedForRestore: number | null = null
+  private clipPathDelayTimer: number | null = null
+  private clipPathCheckTimer: number | null = null
+  private clipPathCheckAt: number | null = null
+  private clipPathCheckNonce = 0
   private listenRecoveryMode = false
   private listenRecoveryDropAt: number | null = null
   private listenRecoveryReclaimUntil: number | null = null
@@ -457,6 +475,18 @@ export class Link {
     }
   }
 
+  private clearClipPathTimers() {
+    if (this.clipPathDelayTimer != null) {
+      clearTimeout(this.clipPathDelayTimer)
+      this.clipPathDelayTimer = null
+    }
+    if (this.clipPathCheckTimer != null) {
+      clearTimeout(this.clipPathCheckTimer)
+      this.clipPathCheckTimer = null
+    }
+    this.clipPathCheckAt = null
+  }
+
   private markConnProbeEligible() {
     if (this.conn?.open) this.connProbeEligible = true
   }
@@ -511,7 +541,72 @@ export class Link {
       this.syncRemotePongCapFromLedger()
       try { this.conn.send(this.helloMessage()) } catch {}
     }
+    this.armPostRestoreClipPathCheck(at)
     this.onDataConnBackSignal(at)
+  }
+
+  private armPostRestoreClipPathCheck(restoreAt: number) {
+    const now = Date.now()
+    if (
+      !shouldArmPostRestoreClipPath({
+        connOpen: !!this.conn?.open,
+        restoreSignalAt: restoreAt,
+        connEstablishedAt: this.connEstablishedAt,
+        armedForRestore: this.clipPathArmedForRestore,
+        now,
+      })
+    ) {
+      return
+    }
+    this.clipPathArmedForRestore = restoreAt
+    if (this.clipPathDelayTimer != null) return
+    this.clipPathDelayTimer = window.setTimeout(() => {
+      this.clipPathDelayTimer = null
+      this.beginPostRestoreClipPathCheck()
+    }, CLIP_PATH_CONFIRM_DELAY_MS)
+  }
+
+  private beginPostRestoreClipPathCheck() {
+    if (this.destroyed || !this.conn?.open) return
+    if (
+      !clipPathCheckInitiatorRole(this.role, {
+        sessionPaired: this.sessionPaired,
+        rememberGuestAuth: !!this.rememberGuestAuth,
+      })
+    ) {
+      return
+    }
+    if (this.clipPathCheckAt != null) return
+    if (
+      !connEstablishedBeforeRestore(this.connEstablishedAt, this.lastRestoreSignalAt)
+    ) {
+      return
+    }
+    const nonce = ++this.clipPathCheckNonce
+    const now = Date.now()
+    this.clipPathCheckAt = now
+    ppDebugIncClipPathSent()
+    try { this.send({ t: CLIP_PATH_CHECK, n: nonce }) } catch {}
+    this.clipPathCheckTimer = window.setTimeout(
+      () => this.onClipPathConfirmDeadline(),
+      CLIP_PATH_CONFIRM_TIMEOUT_MS,
+    )
+  }
+
+  private completePostRestoreClipPathCheck() {
+    this.clearClipPathTimers()
+    ppDebugRecordClipPathAck()
+    if (connEstablishedBeforeRestore(this.connEstablishedAt, this.lastRestoreSignalAt)) {
+      this.abandonConnAfterProbeFail()
+    }
+  }
+
+  private onClipPathConfirmDeadline() {
+    this.clipPathCheckTimer = null
+    if (this.clipPathCheckAt == null) return
+    this.clipPathCheckAt = null
+    ppDebugIncClipPathTimeout()
+    this.abandonConnAfterProbeFail()
   }
 
   private onDataConnBackSignal(now = Date.now()) {
@@ -542,7 +637,19 @@ export class Link {
         restoreSignalAt: this.lastRestoreSignalAt,
       })
     ) {
-      this.scheduleConnProbeRetry(now)
+      if (
+        connProbeBlockedByRecentTraffic({
+          connOpen: !!this.conn?.open,
+          localOffersPong: true,
+          remoteSupportsPong: remotePongCapSeenForPeer(this.remotePongCapLedger, this.conn?.peer ?? null),
+          probePending: this.connProbeAt != null || this.connProbeTimer != null,
+          lastSeen: this.lastSeen,
+          now,
+          restoreSignalAt: this.lastRestoreSignalAt,
+        })
+      ) {
+        this.scheduleConnProbeRetry(now)
+      }
       return false
     }
     const c = this.conn
@@ -560,6 +667,9 @@ export class Link {
     this.connProbeAt = null
     this.connProbeEligible = false
     ppDebugRecordProbePong(ms)
+    if (this.lastRestoreSignalAt != null) {
+      this.armPostRestoreClipPathCheck(this.lastRestoreSignalAt)
+    }
   }
 
   private onConnProbeDeadline() {
@@ -1333,6 +1443,7 @@ export class Link {
     if (!pc) return
     const gen = ppDebugRecordDataConnected()
     this.connDataGen = gen
+    this.connEstablishedAt = Date.now()
     const onIce = () => {
       this.handleGuestIce(pc)
       const state = pc.iceConnectionState
@@ -1838,12 +1949,14 @@ export class Link {
     }
     this.clearIceRecovery()
     this.clearConnProbeTimer()
+    this.clearClipPathTimers()
     this.connProbeAt = null
     this.connProbeEligible = false
     this.remotePongCap = freshRemotePongCap()
     this.connViaRelay = null
     this.conn = null
     this.connPeer = null
+    this.connEstablishedAt = null
     this.authenticatedRememberPhoneId = null
   }
 
@@ -2131,6 +2244,16 @@ export class Link {
         return
       }
       if (m.t === 'pong') return
+    }
+    if (m.t === CLIP_PATH_CHECK && typeof m.n === 'number' && connOpen) {
+      try { this.send({ t: CLIP_PATH_ACK, n: m.n }) } catch {}
+      return
+    }
+    if (m.t === CLIP_PATH_ACK && typeof m.n === 'number' && connOpen) {
+      if (this.clipPathCheckAt != null && m.n === this.clipPathCheckNonce) {
+        this.completePostRestoreClipPathCheck()
+      }
+      return
     }
     if (!this.rememberGuestLive()) return
     if (m.t === 'hello') {
@@ -2533,12 +2656,27 @@ export class Link {
   private tickOpenConnKeepalive(now: number) {
     const c = this.conn
     if (!c?.open) return
+    const probeWouldRun = this.connProbeEligible
+      && shouldRunDataConnProbe({
+        connOpen: true,
+        localOffersPong: true,
+        remoteSupportsPong: remotePongCapSeenForPeer(this.remotePongCapLedger, c.peer ?? null),
+        probePending: this.connProbeAt != null || this.connProbeTimer != null,
+        lastSeen: this.lastSeen,
+        now,
+        restoreSignalAt: this.lastRestoreSignalAt,
+      })
     let probeSentThisTick = false
     if (this.connProbeEligible) {
       this.syncConnProbeEligibleForSession()
-      if (this.maybeRunConnProbe(now)) probeSentThisTick = true
+      if (probeWouldRun && this.maybeRunConnProbe(now)) probeSentThisTick = true
     }
-    if (shouldSendTickConnKeepalivePing({ connOpen: true, probeSentThisTick })) {
+    const traffic = planTickOpenConnTraffic({ connOpen: true, probeWouldRun })
+    if (
+      traffic === 'keepalive-ping'
+      && !probeSentThisTick
+      && shouldSendTickConnKeepalivePing({ connOpen: true, probeSentThisTick: false })
+    ) {
       try { c.send({ t: 'ping' }) } catch {}
     }
   }
