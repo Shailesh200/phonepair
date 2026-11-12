@@ -3,13 +3,14 @@ import { CoreCtx, getFeatures } from './core/bus'
 import { ConnRelayNote, Logo, StatusPill } from './core/ui'
 import { QrCard } from './features/pairing/QrCard'
 import { useHostPairFlow } from './features/pairing/useHostPairFlow'
+import { hostShowsPairedView } from './features/pairing/hostSignalReconnect'
 import { MoverHeaderBadge, stopMouseMover } from './features/remote'
 import { RememberPrompt, SavedPhonesPanel } from './remember/ui'
 
 export function Laptop({ ctx }: { ctx: CoreCtx }) {
   const flow = useHostPairFlow(ctx.link)
   const feats = getFeatures()
-  const waitingPhone = ctx.link.hadGuest && ctx.link.status === 'reconnecting'
+  const waitingPhone = hostShowsPairedView(ctx.link.status, ctx.link.hadGuest) && ctx.link.status !== 'connected'
 
   return <div className="laptop">
     {flow.showDashboard ? <Dashboard ctx={ctx} waitingPhone={waitingPhone} /> : <Landing ctx={ctx} cardPhase={flow.cardPhase} />}
@@ -143,7 +144,7 @@ function Dashboard({ ctx, waitingPhone }: { ctx: CoreCtx; waitingPhone: boolean 
   const Screen = screen?.LaptopPanel
   return <div className="dash">
     <header className="nav"><Logo /><div className="row-g"><MoverHeaderBadge /><StatusPill link={ctx.link} /><ConnRelayNote link={ctx.link} /><button className="btn ghost" data-testid="disconnect" onClick={() => { stopMouseMover(); ctx.link.disconnect() }}>Disconnect</button></div></header>
-    {waitingPhone && <div className="banner warn dash-wait">Phone disconnected, waiting to reconnect</div>}
+    {waitingPhone && <div className="banner warn dash-wait" data-testid="reconnecting-banner">Reconnecting…</div>}
     {ctx.link.rememberListenOtherTab && (
       <p className="mut small remember-other-tab" data-testid="remember-other-tab">
         Saved phones are connected in another tab.

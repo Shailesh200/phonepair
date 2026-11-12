@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Link } from '../../core/link'
+import { hostShowsPairedView } from './hostSignalReconnect'
 
 export type QrCardPhase = 'idle' | 'found' | 'paired'
 
 function dashboardOpen(link: Link) {
-  return link.role === 'host' && (link.status === 'connected' || (link.status === 'reconnecting' && link.hadGuest))
+  return link.role === 'host' && (link.status === 'connected' || hostShowsPairedView(link.status, link.hadGuest))
 }
 
 export function useHostPairFlow(link: Link) {
@@ -23,15 +24,15 @@ export function useHostPairFlow(link: Link) {
       return
     }
 
+    if (hostShowsPairedView(s, link.hadGuest)) {
+      setShowDashboard(true)
+      return
+    }
+
     if (s === 'waiting') {
       setCardPhase('idle')
       setShowDashboard(false)
       celebrated.current = false
-      return
-    }
-
-    if (s === 'reconnecting' && link.hadGuest) {
-      setShowDashboard(true)
       return
     }
 

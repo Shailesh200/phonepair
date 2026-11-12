@@ -53,6 +53,40 @@ export function hostKeepsConnectedStatusOnSignalDrop(dataConnOpen: boolean): boo
   return dataConnOpen
 }
 
+/** Socket reopened. A paired host with no data connection stays reconnecting, not back on the QR screen. */
+export function hostStatusWhenSignalOpens(everConnected: boolean, dataConnOpen: boolean): 'connected' | 'reconnecting' | 'waiting' {
+  if (dataConnOpen) return 'connected'
+  if (everConnected) return 'reconnecting'
+  return 'waiting'
+}
+
+/** Bye or Disconnect stays waiting. A network drop on a paired host stays reconnecting. */
+export function hostStatusAfterDataConnLost(everConnected: boolean, endedPairing: boolean): 'waiting' | 'reconnecting' {
+  if (endedPairing || !everConnected) return 'waiting'
+  return 'reconnecting'
+}
+
+/** The recovery grace must not send the paired view home. */
+export function nextHostStatusAfterRecoveryGrace(status: string, connOpen: boolean): string {
+  if (connOpen) return 'connected'
+  if (status === 'reconnecting') return 'reconnecting'
+  return status
+}
+
+/** Paired laptop stays on the dashboard while the phone link is coming back. */
+export function hostShowsPairedView(status: string, hadGuest: boolean): boolean {
+  return hadGuest && (status === 'reconnecting' || status === 'connecting')
+}
+
+/** Status chip while the host is recovering. Waiting (after bye) is not a drop. */
+export function laptopStatusLabel(status: string, hadGuest: boolean): string {
+  if (hadGuest && (status === 'reconnecting' || status === 'connecting')) return 'Reconnecting…'
+  if (status === 'reconnecting') return 'Reconnecting…'
+  if (status === 'waiting') return 'Waiting for phone…'
+  if (status === 'connecting') return 'Connecting…'
+  return 'Not connected'
+}
+
 export function shouldHostReconnectOnOnline(role: LinkRole, linkDestroyed: boolean): boolean {
   return role === 'host' && !linkDestroyed
 }

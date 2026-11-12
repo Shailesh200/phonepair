@@ -187,4 +187,63 @@ describe('keep-awake visibility listener', () => {
       try { nav.wakeLock = prevLock } catch { Object.defineProperty(nav, 'wakeLock', { configurable: true, value: prevLock }) }
     }
   })
+
+  it('releases an older wake lock when a newer request wins', async () => {
+    const prevDoc = globalThis.document
+    const nav = globalThis.navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<unknown> } | null }
+    const prevLock = nav.wakeLock
+    const pending: Array<(sentinel: { release: () => Promise<void>; addEventListener: () => void }) => void> = []
+    const released: string[] = []
+    let held = false
+    const doc = {
+      hidden: false,
+      body: { appendChild() {} },
+      pictureInPictureElement: null,
+      createElement() {
+        return {
+          paused: true,
+          style: {},
+          setAttribute() {},
+          addEventListener() {},
+          removeAttribute() {},
+          pause() {},
+          play() { return Promise.resolve() },
+          remove() {},
+        }
+      },
+      addEventListener() {},
+      removeEventListener() {},
+    }
+    Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: doc })
+    nav.wakeLock = {
+      request: () => new Promise((resolve) => { pending.push(resolve) }),
+    }
+    const listeners = new Set<() => void>()
+    doc.addEventListener = (_t: string, fn: () => void) => { listeners.add(fn) }
+    try {
+      const awake = createBrowserKeepAwake({
+        helperConnected: () => false,
+        sendHelper() {},
+        publish(state) { held = state.status === 'On (screen awake)' },
+      })
+      awake.attach()
+      const starting = awake.start('1m')
+      await flush()
+      for (const fn of listeners) fn()
+      await flush()
+      assert.equal(pending.length, 2)
+      const older = { release: async () => { released.push('old') }, addEventListener() {} }
+      const newer = { release: async () => { released.push('new') }, addEventListener() {} }
+      pending[1](newer)
+      await flush()
+      pending[0](older)
+      await flush()
+      await starting
+      assert.deepEqual(released, ['old'])
+      assert.equal(held, true)
+    } finally {
+      Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: prevDoc })
+      try { nav.wakeLock = prevLock } catch { Object.defineProperty(nav, 'wakeLock', { configurable: true, value: prevLock }) }
+    }
+  })
 })

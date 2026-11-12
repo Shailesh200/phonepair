@@ -131,6 +131,8 @@ describe('keep-awake link drops', () => {
       assert.equal(stopped, 0)
       watch.onStatus('connected')
       assert.equal(resent, 1)
+      watch.onStatus('connected')
+      assert.equal(resent, 1)
       assert.equal(lock, true)
       assert.equal(video, true)
       mock.timers.tick(KEEPAWAKE_LINK_GRACE_MS)

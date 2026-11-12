@@ -134,6 +134,7 @@ export function createKeepAwakeLinkWatch(opts: {
   graceMs?: number
 }) {
   let id: number | null = null
+  let prevStatus: string | null = null
   const graceMs = opts.graceMs ?? KEEPAWAKE_LINK_GRACE_MS
   const clear = () => {
     if (id == null) return
@@ -147,6 +148,8 @@ export function createKeepAwakeLinkWatch(opts: {
       opts.stop()
     },
     onStatus(status: string) {
+      const from = prevStatus
+      prevStatus = status
       const effect = keepAwakeLinkEffect(status)
       if (effect === 'stop') {
         clear()
@@ -155,7 +158,7 @@ export function createKeepAwakeLinkWatch(opts: {
       }
       if (effect === 'resync') {
         clear()
-        opts.resync()
+        if (from !== 'connected') opts.resync()
         return
       }
       if (!LINK_GRACE_STATUSES.has(status) || id != null) return

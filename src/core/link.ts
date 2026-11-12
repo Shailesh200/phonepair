@@ -115,6 +115,9 @@ import {
 import { shouldCallPeerReconnect, shouldHostReconnect } from '../features/pairing/peerReconnect'
 import {
   hostKeepsConnectedStatusOnSignalDrop,
+  hostStatusWhenSignalOpens,
+  hostStatusAfterDataConnLost,
+  nextHostStatusAfterRecoveryGrace,
   shouldHostReconnectHalfOpen,
   shouldHostReconnectOnOnline,
 } from '../features/pairing/hostSignalReconnect'
@@ -249,6 +252,8 @@ export class Link {
   private pending: DataConnection | null = null
   private dialWait: number | null = null
   private hostGrace: number | null = null
+  /** Set when this host ends the pair (Disconnect or a phone bye) so close() cannot flip status to reconnecting. */
+  private hostEndedPairing = false
   private hostFails = 0
   private connectingSince = 0
   private dialOnOpenPending = false
@@ -1327,7 +1332,7 @@ export class Link {
       this.retry = 0
       if (this.role === 'host') {
         this.hostFails = 0
-        const st = this.conn?.open ? 'connected' : 'waiting'
+        const st = hostStatusWhenSignalOpens(this.everConnected, !!this.conn?.open)
         this.set({ status: st, error: '' })
       } else       if (this.role === 'guest' && !this.conn?.open && this.status !== 'error') {
         if (this.everConnected || guestShouldRedialOnPeerOpen(this.role, this.status, false)) {
@@ -2036,6 +2041,7 @@ export class Link {
       if (c !== this.inFlightDial && c !== this.pending && c !== this.conn) return
       this.lastSeen = Date.now()
       this.everConnected = true
+      if (this.role === 'host') this.hostEndedPairing = false
       this.sessionPaired = true
       this.retry = 0
       this.guestUnavailableSince = null
@@ -2104,6 +2110,7 @@ export class Link {
     }
     if (m.t === 'bye') {
       if (this.role === 'host') {
+        this.hostEndedPairing = true
         this.ensureListenForceRunner().endUnverifiedForcing()
         this.ensureHostSignalRunner().endUnverifiedForcing()
       }
@@ -2221,6 +2228,7 @@ export class Link {
     })) return
     this.lastSeen = Date.now()
     this.everConnected = true
+    if (this.role === 'host') this.hostEndedPairing = false
     markDeviceConnected(rememberPhoneId || this.rememberGuestAuth?.listenId || '', this.lastSeen)
     this.retry = 0
     this.guestUnavailableSince = null
@@ -2382,6 +2390,11 @@ export class Link {
       this.dropConn()
     }
     if (this.role === 'host') {
+      if (this.hostEndedPairing) {
+        if (this.hostGrace) { clearTimeout(this.hostGrace); this.hostGrace = null }
+        if (this.status !== 'waiting') this.set({ status: 'waiting' })
+        return
+      }
       const peer = this.peer
       if (this.role === 'host' && hostHasPhones(loadHostStore()) && !this.conn?.open) {
         this.markHostDualSignalingDrop()
@@ -2393,14 +2406,15 @@ export class Link {
         this.forceHostPeerSignalReconnect()
       }
       if (this.everConnected) {
-        this.set({ status: 'reconnecting' })
-        if (!this.hostGrace) {
+        const lostStatus = hostStatusAfterDataConnLost(true, this.hostEndedPairing)
+        this.set({ status: lostStatus })
+        if (!this.hostGrace && lostStatus === 'reconnecting') {
           this.hostGrace = window.setTimeout(() => {
             this.hostGrace = null
-            if (!this.conn?.open && !this.destroyed) {
-              this.set({ status: 'waiting' })
-              if (this.listenSignalUnverified()) this.rearmRememberListenPeer()
-            }
+            if (this.destroyed) return
+            const next = nextHostStatusAfterRecoveryGrace(this.status, !!this.conn?.open)
+            if (next !== this.status) this.set({ status: next as Status })
+            if (!this.conn?.open && this.listenSignalUnverified()) this.rearmRememberListenPeer()
           }, 15000)
         }
         if (this.listenSignalUnverified()) this.rearmRememberListenPeer()
@@ -2551,6 +2565,7 @@ export class Link {
   }
 
   disconnect() {
+    if (this.role === 'host') this.hostEndedPairing = true
     if (linkTeardownSendsBye('disconnect')) {
       try { this.conn?.send({ t: 'bye' }) } catch {}
     }

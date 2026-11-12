@@ -76,6 +76,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   let quiet = false
   let videoGen = 0
   let sentinel: WakeLockSentinel | null = null
+  let wakeSeq = 0
   let video: HTMLVideoElement | null = null
   let canvas: HTMLCanvasElement | null = null
   let drawTimer: number | null = null
@@ -288,13 +289,16 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
 
   async function acquireWakeLock(mine: number): Promise<boolean> {
     if (!session.wakeLockApi || typeof navigator === 'undefined' || !navigator.wakeLock) return false
+    const seq = ++wakeSeq
     try {
       const next = await navigator.wakeLock.request('screen')
-      if (mine !== epoch) {
+      if (mine !== epoch || seq !== wakeSeq) {
         void next.release().catch(() => undefined)
         return false
       }
+      const older = sentinel
       sentinel = next
+      if (older && older !== next) void older.release().catch(() => undefined)
       session.wakeLockHeld = true
       stopVideo()
       next.addEventListener('release', () => {
@@ -315,7 +319,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
       })
       return true
     } catch {
-      session.wakeLockHeld = false
+      if (seq === wakeSeq) session.wakeLockHeld = false
       return false
     }
   }
@@ -346,8 +350,9 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     startAudio()
     const locked = await acquireWakeLock(mine)
     if (mine !== epoch) return
-    session.wakeLockHeld = locked
-    if (!locked) {
+    const haveLock = locked || sentinel != null
+    session.wakeLockHeld = haveLock
+    if (!haveLock) {
       const playing = await ensureVideo(mine)
       if (mine !== epoch) return
       session.videoPlaying = playing
