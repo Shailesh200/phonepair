@@ -62,6 +62,27 @@ test('positive dx scrolls right and positive dy scrolls down', () => {
   assert.equal(nutScrollName('left', 'win32'), 'scrollRight')
 })
 
+test('a left click is one press and one release', async () => {
+  const calls = []
+  const inject = createNutInjector({
+    async tap() {},
+    async typeChar() {},
+  }, {
+    click: {
+      async press(btn) { calls.push(['press', btn]) },
+      async release(btn) { calls.push(['release', btn]) },
+    },
+  })
+  await inject.click('left')
+  await inject.click('right')
+  assert.deepEqual(calls, [
+    ['press', 'left'],
+    ['release', 'left'],
+    ['press', 'right'],
+    ['release', 'right'],
+  ])
+})
+
 test('one typed character, Enter, and Backspace are each one keystroke', async () => {
   assert.deepEqual(strokesForText('ab'), [{ op: 'char', ch: 'a' }, { op: 'char', ch: 'b' }])
   assert.deepEqual(strokesForText('a\n'), [{ op: 'char', ch: 'a' }, { op: 'tap', names: ['Return'] }])

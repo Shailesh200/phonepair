@@ -112,6 +112,49 @@ test('fake timers: 30s, 1m, and 5m nudge on that interval and nothing else is ac
   assert.equal(clock.pending(), 1)
 })
 
+test('each tick moves the pointer away and back, and a new interval re-arms', async () => {
+  const clock = fakeClock()
+  const moves = []
+  let pos = { x: 10, y: 20 }
+  const mouse = {
+    async getPosition() { return { x: pos.x, y: pos.y } },
+    async setPosition(x, y) {
+      moves.push([x, y])
+      pos = { x, y }
+    },
+  }
+  const mover = createMover({
+    nudge: () => performNudge(mouse, { dwellMs: 0 }),
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+  })
+  const flush = () => new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(mover.start('30s'), { on: true, interval: '30s' })
+  clock.tick(29_999)
+  await flush()
+  assert.equal(moves.length, 0)
+  clock.tick(1)
+  await flush()
+  clock.tick(30_000)
+  await flush()
+  clock.tick(30_000)
+  await flush()
+  assert.deepEqual(moves, [
+    [11, 22], [10, 20],
+    [11, 22], [10, 20],
+    [11, 22], [10, 20],
+  ])
+  assert.deepEqual(mover.start('30s'), { on: true, interval: '30s' })
+  assert.deepEqual(mover.start('1m'), { on: true, interval: '1m' })
+  clock.tick(30_000)
+  await flush()
+  assert.equal(moves.length, 6, 'the restarted timer does not keep the old 30s phase')
+  clock.tick(30_000)
+  await flush()
+  assert.deepEqual(moves.slice(6), [[11, 22], [10, 20]])
+  assert.equal(clock.pending(), 1)
+})
+
 test('stop clears the only timer', () => {
   const { clock, nudges, mover } = harness()
   mover.start('30s')

@@ -1,6 +1,6 @@
 import { Button, Key, Point, keyboard, mouse, screen } from '@nut-tree-fork/nut-js'
 import { planKey } from './keys.js'
-import { performNudge } from './mover.js'
+import { NUDGE_DWELL_MS, performNudge } from './mover.js'
 import type { Injector } from './server.js'
 import type { Mod } from './validate.js'
 
@@ -189,7 +189,39 @@ export async function releaseModifiers(): Promise<void> {
   }
 }
 
-export function createNutInjector(port: KeyPort = nutKeys): Injector {
+export type CursorPort = {
+  getPosition(): Promise<{ x: number; y: number }>
+  setPosition(x: number, y: number): Promise<void>
+}
+
+export type ClickPort = {
+  press(btn: 'left' | 'right'): Promise<void>
+  release(btn: 'left' | 'right'): Promise<void>
+}
+
+const nutCursor: CursorPort = {
+  async getPosition() {
+    const pos = await mouse.getPosition()
+    return { x: pos.x, y: pos.y }
+  },
+  async setPosition(x, y) {
+    await mouse.setPosition(new Point(x, y))
+  },
+}
+
+const nutClick: ClickPort = {
+  async press(btn) {
+    await mouse.pressButton(btn === 'right' ? Button.RIGHT : Button.LEFT)
+  },
+  async release(btn) {
+    await mouse.releaseButton(btn === 'right' ? Button.RIGHT : Button.LEFT)
+  },
+}
+
+export function createNutInjector(port: KeyPort = nutKeys, io?: { cursor?: CursorPort; click?: ClickPort; dwellMs?: number }): Injector {
+  const cursor = io?.cursor ?? nutCursor
+  const buttons = io?.click ?? nutClick
+  const dwellMs = io?.dwellMs ?? NUDGE_DWELL_MS
   mouse.config.autoDelayMs = 0
   keyboard.config.autoDelayMs = 0
   mouse.config.mouseSpeed = 4000
@@ -228,8 +260,9 @@ export function createNutInjector(port: KeyPort = nutKeys): Injector {
     click(btn) {
       return run(async () => {
         await pointer.release()
-        if (btn === 'right') await mouse.rightClick()
-        else await mouse.leftClick()
+        const which = btn === 'right' ? 'right' : 'left'
+        await buttons.press(which)
+        await buttons.release(which)
       })
     },
     scroll(dx, dy) {
@@ -282,10 +315,7 @@ export function createNutInjector(port: KeyPort = nutKeys): Injector {
       return run(() => pointer.release())
     },
     nudge() {
-      return run(() => performNudge({
-        getPosition: async () => mouse.getPosition(),
-        setPosition: async (x, y) => { await mouse.setPosition(new Point(x, y)) },
-      }))
+      return run(() => performNudge(cursor, { dwellMs }))
     },
   }
 }

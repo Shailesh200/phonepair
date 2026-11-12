@@ -27,15 +27,23 @@ export function nudgeTargets(pos: { x: number; y: number }): { away: { x: number
   return { away: { x: x + 1, y: y + 2 }, home: { x, y } }
 }
 
-/** Move away, then back only while the cursor is still on that away point.
- * If the user moved it, leave it where they put it. */
+/** How long the cursor stays on the away point.
+ * A warp out and straight back is shorter than a 4ms pointer poll, so the OS
+ * sample never sees it. Holding the point makes the nudge a real move. */
+export const NUDGE_DWELL_MS = 60
+
+/** Move away, wait, then back only while the cursor is still on that away point.
+ * If the user moved it during the wait, leave it where they put it. */
 export async function performNudge(mouse: {
   getPosition(): Promise<{ x: number; y: number }>
   setPosition(x: number, y: number): Promise<void>
-}): Promise<void> {
+}, opts?: { dwellMs?: number; sleep?: (ms: number) => Promise<void> }): Promise<void> {
+  const dwellMs = opts?.dwellMs ?? NUDGE_DWELL_MS
+  const sleep = opts?.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)))
   const pos = await mouse.getPosition()
   const step = nudgeTargets(pos)
   await mouse.setPosition(step.away.x, step.away.y)
+  if (dwellMs > 0) await sleep(dwellMs)
   const after = await mouse.getPosition()
   if (Math.round(after.x) !== step.away.x || Math.round(after.y) !== step.away.y) return
   await mouse.setPosition(step.home.x, step.home.y)
