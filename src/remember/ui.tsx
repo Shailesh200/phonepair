@@ -1,4 +1,4 @@
-import { useRef, useState, useSyncExternalStore } from 'react'
+import { useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { CoreCtx } from '../core/bus'
 import { allowRemember, denyRemember, forgetGuestLaptop, forgetGuestLaptopLocal, forgetHostPhone, rememberPrompt } from './index'
 import {
@@ -19,35 +19,43 @@ function useDeviceMeta() {
   useSyncExternalStore(subscribeDeviceMeta, deviceMetaRevision, deviceMetaRevision)
 }
 
-function DeviceNameEditor({ id, fallback }: { id: string; fallback: string }) {
+function DeviceNameEditor({ id, fallback, onEditing }: { id: string; fallback: string; onEditing: (editing: boolean) => void }) {
   useDeviceMeta()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const skipSave = useRef(false)
   const shown = deviceLabel(id, fallback)
+  const setMode = (next: boolean) => {
+    setEditing(next)
+    onEditing(next)
+  }
 
   if (!editing) {
     return (
       <button
         type="button"
-        className="device-name"
+        className="device-name grow"
         data-testid="device-name"
         aria-label={`Rename ${shown}`}
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => {
           skipSave.current = false
           setDraft(shown)
-          setEditing(true)
+          setMode(true)
         }}
       >
-        {shown}
+        <b>{shown}</b>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+          <path d="M4 20h4l10-10-4-4L4 16v4z" />
+          <path d="m13 7 4 4" />
+        </svg>
       </button>
     )
   }
 
   return (
     <input
-      className="device-name-input"
+      className="pp-rename-input"
       data-testid="device-name-input"
       aria-label="Device name"
       value={draft}
@@ -64,11 +72,11 @@ function DeviceNameEditor({ id, fallback }: { id: string; fallback: string }) {
           e.preventDefault()
           skipSave.current = true
           renameDevice(id, draft)
-          setEditing(false)
+          setMode(false)
         } else if (e.key === 'Escape') {
           e.preventDefault()
           skipSave.current = true
-          setEditing(false)
+          setMode(false)
         }
       }}
       onBlur={() => {
@@ -77,7 +85,7 @@ function DeviceNameEditor({ id, fallback }: { id: string; fallback: string }) {
           return
         }
         renameDevice(id, draft)
-        setEditing(false)
+        setMode(false)
       }}
     />
   )
@@ -89,14 +97,43 @@ function FavouriteToggle({ id }: { id: string }) {
   return (
     <button
       type="button"
-      className="device-fav"
+      className="pp-icon-toggle pp-star"
       data-testid="device-fav"
       aria-label={fav ? 'Remove from favourites' : 'Add to favourites'}
       aria-pressed={fav}
       onClick={() => toggleFavourite(id)}
     >
-      {fav ? '★' : '☆'}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+        <path d="m12 3 2.6 5.6L21 9.3l-4.5 4.2 1.2 6.2L12 16.8 6.3 19.7l1.2-6.2L3 9.3l6.4-.7L12 3z" />
+      </svg>
     </button>
+  )
+}
+
+function ConnectedDeviceRow({
+  id,
+  fallback,
+  testId,
+  listenName,
+  children,
+}: {
+  id: string
+  fallback: string
+  testId: string
+  listenName?: string
+  children?: ReactNode
+}) {
+  const [editing, setEditing] = useState(false)
+  return (
+    <li
+      className={'pp-list-row pp-device-row' + (editing ? ' is-editing' : '')}
+      data-testid={testId}
+      data-listen-name={listenName}
+    >
+      <DeviceNameEditor id={id} fallback={fallback} onEditing={setEditing} />
+      <FavouriteToggle id={id} />
+      {children}
+    </li>
   )
 }
 
@@ -126,11 +163,9 @@ export function SavedPhonesPanel({ ctx }: { ctx: CoreCtx }) {
   return (
     <div className="remember-panel card" data-testid="saved-phones">
       <h4>Connected devices</h4>
-      <ul className="remember-list">
+      <ul className="remember-list pp-list">
         {phones.map((p) => (
-          <li key={p.id} data-testid="saved-phone">
-            <FavouriteToggle id={p.id} />
-            <DeviceNameEditor id={p.id} fallback={p.name} />
+          <ConnectedDeviceRow key={p.id} id={p.id} fallback={p.name} testId="saved-phone">
             <button
               type="button"
               className="linkbtn"
@@ -139,7 +174,7 @@ export function SavedPhonesPanel({ ctx }: { ctx: CoreCtx }) {
             >
               Forget
             </button>
-          </li>
+          </ConnectedDeviceRow>
         ))}
       </ul>
     </div>
@@ -161,15 +196,15 @@ export function SavedLaptopsList({
   return (
     <div className="remember-saved">
       <p className="mut saved-h">Connected devices</p>
-      <ul className="remember-list" data-testid="saved-laptops">
+      <ul className="remember-list pp-list" data-testid="saved-laptops">
         {ordered.map((lap) => (
-          <li
+          <ConnectedDeviceRow
             key={lap.listenId}
-            data-testid="saved-laptop"
-            data-listen-name={deviceLabel(lap.listenId, lap.name)}
+            id={lap.listenId}
+            fallback={lap.name}
+            testId="saved-laptop"
+            listenName={deviceLabel(lap.listenId, lap.name)}
           >
-            <FavouriteToggle id={lap.listenId} />
-            <DeviceNameEditor id={lap.listenId} fallback={lap.name} />
             <button
               type="button"
               className="btn ghost"
@@ -190,7 +225,7 @@ export function SavedLaptopsList({
             >
               Forget
             </button>
-          </li>
+          </ConnectedDeviceRow>
         ))}
       </ul>
     </div>

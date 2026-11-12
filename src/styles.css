@@ -417,6 +417,14 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
 .pp-icon-toggle svg{width:20px;height:20px}
 .pp-icon-toggle.on{color:var(--accent)}
 .pp-icon-toggle:hover{background:rgba(42,28,22,.04)}
+.pp-device-row{width:100%}
+.pp-device-row:hover,
+.pp-device-row.is-hover{background:var(--surface-soft);border-color:var(--line-strong)}
+.pp-device-row.is-editing{background:var(--tile);border-color:var(--accent)}
+.pp-star[aria-pressed="true"]{color:var(--spark)}
+.pp-star[aria-pressed="true"] svg{fill:var(--spark);stroke:var(--spark)}
+.pp-rename-input{flex:1;min-width:0;height:40px;max-width:100%;border:1px solid var(--accent);border-radius:var(--r-md);background:var(--tile);color:var(--text);padding:0 12px;font:inherit;font-size:15px;box-shadow:0 0 0 3px var(--accent-soft)}
+.pp-rename-input:focus{outline:none}
 .pp-prompt{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:24px;background:rgba(42,28,22,.4)}
 .pp-prompt-card{width:min(420px,100%);background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:var(--r-xl);padding:24px;box-shadow:0 16px 40px rgba(42,28,22,.12)}
 .pp-prompt-card h2{font-size:22px;font-weight:600;letter-spacing:-.03em;line-height:1.2}
@@ -478,12 +486,10 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
 .remember-actions{display:flex;gap:10px;justify-content:flex-end}
 .remember-panel{margin:0 24px 16px;padding:16px 18px}
 .remember-panel h4{margin:0 0 10px;font-size:var(--fs-14)}
-.remember-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-.remember-list li{display:flex;align-items:center;justify-content:flex-start;gap:8px}
+.remember-list{list-style:none;margin:0;padding:0}
 .remember-list .linkbtn{margin-top:0}
-.device-name{flex:1;min-width:0;background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
-.device-name-input{flex:1;min-width:0;font:inherit;padding:2px 6px}
-.device-fav{background:none;border:0;padding:0 2px;cursor:pointer;font:inherit;line-height:1}
+.device-name{display:flex;align-items:center;gap:8px;flex:1;min-width:0;background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.device-name svg{width:20px;height:20px;color:var(--muted)}
 .remember-saved{margin-bottom:16px}
 .remember-saved .saved-h{margin:0 0 8px}
 /* Remote shell fits one viewport, padding included (border-box). */
