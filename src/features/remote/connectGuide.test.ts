@@ -6,9 +6,11 @@ import {
   CONNECT_STEPS,
   HELPER_DOWN,
   HELPER_DROPPED,
+  applyConnectFocus,
   connectStepStates,
   initialConnectGuide,
   reduceConnectGuide,
+  type ConnectFocusTarget,
   type ConnectGuideEvent,
   type ConnectGuideState,
   type ConnectStep,
@@ -293,5 +295,105 @@ describe('connect guide reducer', () => {
     state = send(state, { type: 'open-guide' })
     assert.equal(stateOf(state, 'open'), 'current')
     assert.equal(state.code, '42')
+  })
+})
+
+function tracker() {
+  const focused: string[] = []
+  const node = (id: string): ConnectFocusTarget => ({ focus: () => focused.push(id) })
+  return { focused, node }
+}
+
+describe('connect guide focus', () => {
+  it('focuses the current step control when the guide opens', () => {
+    const { focused, node } = tracker()
+    const opened = send(initialConnectGuide(), { type: 'open-guide' })
+    const nodes = new Map<string, ConnectFocusTarget>([
+      ['download-mac', node('download-mac')],
+      ['connect-confirm-download', node('connect-confirm-download')],
+    ])
+    const intent = applyConnectFocus({
+      intent: 'step',
+      open: opened.open,
+      steps: connectStepStates(opened),
+      query: (id) => nodes.get(id) ?? null,
+      guide: node('connect-guide'),
+      openButton: node('connect-open'),
+    })
+    assert.equal(intent, null)
+    assert.deepEqual(focused, ['download-mac'])
+  })
+
+  it('focuses confirm, the code field, retry, or disconnect for the active step', () => {
+    const { focused, node } = tracker()
+    const nodes = new Map<string, ConnectFocusTarget>()
+    const query = (id: string) => {
+      const found = node(id)
+      nodes.set(id, found)
+      return found
+    }
+    const guide = node('connect-guide')
+    const openButton = node('connect-open')
+
+    let state = confirmThrough(initialConnectGuide(), 'open')
+    applyConnectFocus({ intent: 'step', open: true, steps: connectStepStates(state), query, guide, openButton })
+    state = confirmThrough(state, 'accessibility')
+    applyConnectFocus({ intent: 'step', open: true, steps: connectStepStates(state), query, guide, openButton })
+    state = confirmThrough(state, 'code')
+    applyConnectFocus({ intent: 'step', open: true, steps: connectStepStates(state), query, guide, openButton })
+    state = send(state, { type: 'submit' })
+    applyConnectFocus({ intent: 'step', open: true, steps: connectStepStates(state), query, guide, openButton })
+    state = send(state, signals('off', 'down'))
+    applyConnectFocus({ intent: 'step', open: true, steps: connectStepStates(state), query, guide, openButton })
+    state = send(confirmThrough(initialConnectGuide(), 'code'), signals('connected'))
+    applyConnectFocus({ intent: 'step', open: true, steps: connectStepStates(state), query, guide, openButton })
+
+    assert.deepEqual(focused, [
+      'connect-confirm-open',
+      'connect-confirm-accessibility',
+      'helper-code',
+      'connect-retry-code',
+      'connect-retry-open',
+      'connect-disconnect',
+    ])
+  })
+
+  it('focuses the guide section when the primary control is missing', () => {
+    const { focused, node } = tracker()
+    const opened = send(initialConnectGuide(), { type: 'open-guide' })
+    applyConnectFocus({
+      intent: 'step',
+      open: true,
+      steps: connectStepStates(opened),
+      query: () => null,
+      guide: node('connect-guide'),
+      openButton: node('connect-open'),
+    })
+    assert.deepEqual(focused, ['connect-guide'])
+  })
+
+  it('returns focus to Connect only after that button is mounted again', () => {
+    const { focused, node } = tracker()
+    const steps = connectStepStates(initialConnectGuide())
+    const held = applyConnectFocus({
+      intent: 'open',
+      open: true,
+      steps,
+      query: () => null,
+      guide: node('connect-guide'),
+      openButton: node('connect-open'),
+    })
+    assert.equal(held, 'open')
+    assert.deepEqual(focused, [])
+    const cleared = applyConnectFocus({
+      intent: held,
+      open: false,
+      steps,
+      query: () => null,
+      guide: node('connect-guide'),
+      openButton: node('connect-open'),
+    })
+    assert.equal(cleared, null)
+    assert.deepEqual(focused, ['connect-open'])
   })
 })

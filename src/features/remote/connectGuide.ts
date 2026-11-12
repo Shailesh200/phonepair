@@ -244,3 +244,60 @@ export function connectStepStates(state: ConnectGuideState): ConnectStepView[] {
     }
   })
 }
+
+export type ConnectFocusTarget = { focus: () => void }
+
+/** Which control should take focus for the guide's active step. `connect-guide` is the section fallback. */
+export function connectFocusId(steps: ConnectStepView[]): string {
+  const active = steps.find((step) => step.state === 'current' || step.state === 'connecting' || step.state === 'connected')
+    ?? steps.find((step) => step.state === 'error')
+  if (!active) return 'connect-guide'
+  if (active.state === 'error') return `connect-retry-${active.id}`
+  if (active.state === 'connected') return 'connect-disconnect'
+  if (active.state === 'connecting') return 'connect-guide'
+  if (active.id === 'code') return 'helper-code'
+  if (active.id === 'download') return 'download-mac'
+  if (active.manual) return `connect-confirm-${active.id}`
+  return 'connect-guide'
+}
+
+/** Focus the active step's control. If that control is missing, focus the guide section. */
+export function focusConnectStep(
+  steps: ConnectStepView[],
+  query: (testid: string) => ConnectFocusTarget | null,
+  guide: ConnectFocusTarget | null,
+): string {
+  const id = connectFocusId(steps)
+  if (id !== 'connect-guide') {
+    const node = query(id)
+    if (node) {
+      node.focus()
+      return id
+    }
+  }
+  guide?.focus()
+  return 'connect-guide'
+}
+
+/**
+ * Apply one focus intent. Opening focuses the active step. Closing focuses the
+ * Connect button only once it is mounted again. Any other intent is left in place.
+ */
+export function applyConnectFocus(args: {
+  intent: 'step' | 'open' | null
+  open: boolean
+  steps: ConnectStepView[]
+  query: (testid: string) => ConnectFocusTarget | null
+  guide: ConnectFocusTarget | null
+  openButton: ConnectFocusTarget | null
+}): 'step' | 'open' | null {
+  if (args.intent === 'step' && args.open) {
+    focusConnectStep(args.steps, args.query, args.guide)
+    return null
+  }
+  if (args.intent === 'open' && !args.open) {
+    args.openButton?.focus()
+    return null
+  }
+  return args.intent
+}

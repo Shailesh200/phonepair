@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  applyConnectFocus,
   connectStepStates,
   initialConnectGuide,
   reduceConnectGuide,
@@ -41,13 +42,31 @@ export function ConnectGuide({
 }) {
   const [guide, setGuide] = useState(initialConnectGuide)
   const guideRef = useRef(guide)
+  const openButtonRef = useRef<HTMLButtonElement>(null)
+  const guideSectionRef = useRef<HTMLElement>(null)
+  const focusIntent = useRef<'step' | 'open' | null>(null)
   guideRef.current = guide
 
   useEffect(() => {
     setGuide((current) => reduceConnectGuide(current, { type: 'signals', signals: { status, attempt } }))
   }, [status, attempt])
 
+  useEffect(() => {
+    focusIntent.current = applyConnectFocus({
+      intent: focusIntent.current,
+      open: guide.open,
+      steps: connectStepStates(guide),
+      query: (testid) => guideSectionRef.current?.querySelector<HTMLElement>(`[data-testid="${testid}"]`) ?? null,
+      guide: guideSectionRef.current,
+      openButton: openButtonRef.current,
+    })
+  }, [guide])
+
   const onEvent = (event: ConnectGuideEvent) => {
+    if (event.type === 'open-guide') focusIntent.current = 'step'
+    if (event.type === 'close-guide' || event.type === 'user-disconnect' || (event.type === 'back' && guideRef.current.open && guideRef.current.step <= 0)) {
+      focusIntent.current = 'open'
+    }
     if (event.type === 'submit') {
       const next = reduceConnectGuide(guideRef.current, event)
       guideRef.current = next
@@ -77,7 +96,7 @@ export function ConnectGuide({
       </div>
     </div>
     {guide.open ? (
-      <section className="connect-guide" data-testid="connect-guide" aria-label="Connect the helper">
+      <section ref={guideSectionRef} className="connect-guide" data-testid="connect-guide" aria-label="Connect the helper" tabIndex={-1}>
         <p className="mut small" data-testid="helper-hint">Download the PhonePair Helper, open it, and type the 6-digit code it shows.</p>
         <ol>
           {steps.map((step, index) => {
@@ -122,7 +141,7 @@ export function ConnectGuide({
         <button type="button" className="btn ghost" data-testid="connect-back" onClick={() => onEvent({ type: 'back' })}>Back</button>
       </section>
     ) : (
-      <button type="button" className="btn" data-testid="connect-open" data-state={paired ? 'connected' : guide.error ? 'error' : 'idle'} onClick={() => onEvent({ type: 'open-guide' })}>
+      <button ref={openButtonRef} type="button" className="btn" data-testid="connect-open" data-state={paired ? 'connected' : guide.error ? 'error' : 'idle'} onClick={() => onEvent({ type: 'open-guide' })}>
         {paired ? 'Connected' : 'Connect'}
       </button>
     )}
