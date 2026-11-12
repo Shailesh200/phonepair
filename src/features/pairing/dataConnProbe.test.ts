@@ -1,9 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  DATA_CONN_PROBE_POST_RESTORE_MS,
   DATA_CONN_PROBE_SKIP_RECENT_MS,
   DATA_CONN_PROBE_TIMEOUT_MS,
   buildLinkHelloMessage,
+  connProbeRetryDelayMs,
   dataConnProbeSucceeded,
   freshRemotePongCap,
   helloCapsIncludePong,
@@ -225,6 +227,30 @@ describe('shouldRunDataConnProbe', () => {
     assert.equal(shouldRunDataConnProbe({ ...base, remoteSupportsPong: false }), false)
   })
 
+  it('runs after signal restore even when lastSeen was bumped within 2s', () => {
+    const restoreAt = 10_000
+    const now = restoreAt + 500
+    assert.equal(
+      shouldRunDataConnProbe({
+        ...base,
+        lastSeen: now - 1,
+        now,
+        restoreSignalAt: restoreAt,
+      }),
+      true,
+    )
+    const afterWindow = restoreAt + DATA_CONN_PROBE_POST_RESTORE_MS + 1
+    assert.equal(
+      shouldRunDataConnProbe({
+        ...base,
+        lastSeen: afterWindow - 1,
+        now: afterWindow,
+        restoreSignalAt: restoreAt,
+      }),
+      false,
+    )
+  })
+
   it('skips when recent inbound data arrived within 2s', () => {
     assert.equal(
       shouldRunDataConnProbe({
@@ -274,6 +300,29 @@ describe('probe policy', () => {
 
   it('non-pong inbound after probeAt resolves as alive', () => {
     assert.equal(dataConnProbeSucceeded(5001, 5000), true)
+  })
+})
+
+describe('connProbeRetryDelayMs', () => {
+  it('waits until the recent-traffic window passes', () => {
+    const now = 10_000
+    assert.equal(connProbeRetryDelayMs(now - 500, now), 1500)
+    assert.equal(connProbeRetryDelayMs(now - 3000, now), 0)
+  })
+})
+
+describe('shouldMarkConnProbeEligible remember sessions', () => {
+  it('marks remember-guest sessions eligible after pairing', () => {
+    assert.equal(
+      shouldMarkConnProbeEligible({
+        connOpen: true,
+        connProbeEligible: false,
+        everConnected: true,
+        sessionPaired: true,
+        rememberGuestAuth: true,
+      }),
+      true,
+    )
   })
 })
 

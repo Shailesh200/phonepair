@@ -1,6 +1,8 @@
 /** App-level {t:'ping'} probe after recovery; peer must advertise caps:['pong'] in hello. */
 export const DATA_CONN_PROBE_TIMEOUT_MS = 2500
 export const DATA_CONN_PROBE_SKIP_RECENT_MS = 2000
+/** After a signalling restore, always probe even if lastSeen was bumped during reconnect. */
+export const DATA_CONN_PROBE_POST_RESTORE_MS = 30_000
 export const HELLO_CAP_PONG = 'pong' as const
 export const LINK_HELLO_CAPS: readonly string[] = [HELLO_CAP_PONG]
 
@@ -44,7 +46,7 @@ export function shouldMarkConnProbeEligible(opts: {
 }): boolean {
   if (!opts.connOpen) return false
   if (opts.connProbeEligible) return true
-  return opts.everConnected && opts.sessionPaired && !opts.rememberGuestAuth
+  return opts.everConnected && opts.sessionPaired
 }
 
 export function helloCapsIncludePong(caps: unknown): boolean {
@@ -59,13 +61,26 @@ export function shouldRunDataConnProbe(opts: {
   lastSeen: number
   now: number
   recentMs?: number
+  restoreSignalAt?: number | null
 }): boolean {
   if (!opts.connOpen) return false
   if (!opts.localOffersPong || !opts.remoteSupportsPong) return false
   if (opts.probePending) return false
   const recent = opts.recentMs ?? DATA_CONN_PROBE_SKIP_RECENT_MS
-  if (opts.lastSeen > 0 && opts.now - opts.lastSeen < recent) return false
+  const postRestore = opts.restoreSignalAt != null
+    && opts.now - opts.restoreSignalAt <= DATA_CONN_PROBE_POST_RESTORE_MS
+  if (!postRestore && opts.lastSeen > 0 && opts.now - opts.lastSeen < recent) return false
   return true
+}
+
+export function connProbeRetryDelayMs(
+  lastSeen: number,
+  now: number,
+  recentMs = DATA_CONN_PROBE_SKIP_RECENT_MS,
+): number {
+  if (lastSeen <= 0) return 0
+  const wait = recentMs - (now - lastSeen)
+  return wait > 0 ? wait : 0
 }
 
 /** Fresh data after probeAt (lastSeen strictly past probeAt) means the conn is alive. */
