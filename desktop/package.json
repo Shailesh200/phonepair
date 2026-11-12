@@ -1,7 +1,7 @@
 {
   "name": "phonepair-helper-app",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.4",
   "description": "PhonePair Helper. A small desktop app that runs the local PhonePair control server.",
   "author": "Shailesh200",
   "homepage": "https://github.com/Shailesh200/phonepair",
