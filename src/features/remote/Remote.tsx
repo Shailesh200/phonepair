@@ -170,6 +170,20 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
     setStripOn(false)
     send.pointer(on)
   }
+  useEffect(() => {
+    const leavePage = () => {
+      point(false)
+      releasePad()
+      for (const id of ['lclick', 'rclick']) pageRef.current?.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)?.blur()
+    }
+    const onHide = () => { if (document.visibilityState === 'hidden') leavePage() }
+    document.addEventListener('visibilitychange', onHide)
+    window.addEventListener('pagehide', leavePage)
+    return () => {
+      document.removeEventListener('visibilitychange', onHide)
+      window.removeEventListener('pagehide', leavePage)
+    }
+  }, [send])
 
   const onStripDown = (e: React.PointerEvent) => {
     e.stopPropagation()

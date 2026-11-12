@@ -113,6 +113,10 @@ export async function runRemoteTests() {
   expect(remoteSrc.includes('onLostPointerCapture={() => point(false)}'), 'lost pointer capture releases the laser')
   expect(/const releasePad = \(\) => \{[\s\S]*clearPadGesture\(st\.current/.test(remoteSrc), 'releasePad clears through clearPadGesture')
   expect(/useEffect\(\(\) => \(\) => \{[\s\S]*releasePad\(\)[\s\S]*send\.pointer\(false\)/.test(remoteSrc), 'unmount clears the pad through the same path as the laser')
+  expect(/const leavePage = \(\) => \{[\s\S]*point\(false\)[\s\S]*releasePad\(\)[\s\S]*lclick[\s\S]*rclick/.test(remoteSrc), 'leaving the page turns the laser off, releases the pad, and clears held clicks')
+  expect(remoteSrc.includes("document.visibilityState === 'hidden'"), 'a hidden page releases the laser')
+  expect(remoteSrc.includes("document.addEventListener('visibilitychange'") && remoteSrc.includes("document.removeEventListener('visibilitychange'"), 'the visibility listener is removed on unmount')
+  expect(remoteSrc.includes("window.addEventListener('pagehide'") && remoteSrc.includes("window.removeEventListener('pagehide'"), 'the pagehide listener is removed on unmount')
 
   expect(count(remoteSrc, 'createRemoteSend(') === 1, 'one send path is created')
   expect(count(remoteSrc, 'ctxRef.current.send') === 1, 'that path uses the shared connection')
