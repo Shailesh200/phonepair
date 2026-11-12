@@ -6,6 +6,7 @@ export type PpDebugConnProbe = {
   probeTimeout: number
   probeMsLast: number | null
   stalledWsKilled: number
+  staleDataRebuild: number
 }
 
 export function ensurePpDebugConnProbe(): PpDebugConnProbe {
@@ -17,6 +18,7 @@ export function ensurePpDebugConnProbe(): PpDebugConnProbe {
       probeTimeout: 0,
       probeMsLast: null,
       stalledWsKilled: 0,
+      staleDataRebuild: 0,
     }
   }
   return d.connProbe
@@ -38,4 +40,8 @@ export function ppDebugIncProbeTimeout(): void {
 
 export function ppDebugIncStalledWsKilled(): void {
   ensurePpDebugConnProbe().stalledWsKilled += 1
+}
+
+export function ppDebugIncStaleDataRebuild(): void {
+  ensurePpDebugConnProbe().staleDataRebuild += 1
 }

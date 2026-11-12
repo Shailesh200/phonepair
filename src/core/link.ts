@@ -57,7 +57,16 @@ import {
   recordRemoteHelloPongCap,
   remotePongCapSeenForPeer,
   shouldMarkConnProbeEligible,
+  POST_RESTORE_STALE_DATA_REBUILD_MS,
+  connEstablishedBeforeRestore,
+  connProbeBlockedByRecentTraffic,
+  connProbeMayAbandonAfterFail,
+  connProbeRetryDelayMs,
+  planTickOpenConnTraffic,
+  shouldArmPostRestoreStaleDataRebuild,
+  shouldGuestInitiatePostRestoreStaleDataRebuild,
   shouldRunDataConnProbe,
+  shouldSendTickConnKeepalivePing,
   type RemotePongCapLedger,
 } from '../features/pairing/dataConnProbe'
 import {
@@ -65,6 +74,7 @@ import {
   ppDebugIncProbeTimeout,
   ppDebugIncStalledWsKilled,
   ppDebugRecordProbePong,
+  ppDebugIncStaleDataRebuild,
 } from '../features/pairing/ppDebugConnProbe'
 import {
   shouldKillFreshConnectingStalledAfterRestore,
@@ -290,7 +300,14 @@ export class Link {
   private connProbeEligible = false
   private connProbeAt: number | null = null
   private connProbeTimer: number | null = null
+  private connProbeRetryTimer: number | null = null
+  private connProbeLastAbandonRestoreAt: number | null = null
+  private connProbeLastAbandonConnGen: number | null = null
+  private connDataGen = 0
+  private connEstablishedAt: number | null = null
   private lastRestoreSignalAt: number | null = null
+  private staleDataRebuildArmedForRestore: number | null = null
+  private staleDataRebuildTimer: number | null = null
   private listenRecoveryMode = false
   private listenRecoveryDropAt: number | null = null
   private listenRecoveryReclaimUntil: number | null = null
@@ -449,6 +466,17 @@ export class Link {
       clearTimeout(this.connProbeTimer)
       this.connProbeTimer = null
     }
+    if (this.connProbeRetryTimer != null) {
+      clearTimeout(this.connProbeRetryTimer)
+      this.connProbeRetryTimer = null
+    }
+  }
+
+  private clearStaleDataRebuildTimer() {
+    if (this.staleDataRebuildTimer != null) {
+      clearTimeout(this.staleDataRebuildTimer)
+      this.staleDataRebuildTimer = null
+    }
   }
 
   private markConnProbeEligible() {
@@ -501,7 +529,52 @@ export class Link {
     } else {
       this.maybeRecycleStalledSignaling(this.peer, 'code')
     }
+    if (this.conn?.open) {
+      this.syncRemotePongCapFromLedger()
+      try { this.conn.send(this.helloMessage()) } catch {}
+    }
+    this.armPostRestoreStaleDataRebuild(at)
     this.onDataConnBackSignal(at)
+  }
+
+  private armPostRestoreStaleDataRebuild(restoreAt: number) {
+    const now = Date.now()
+    if (
+      !shouldArmPostRestoreStaleDataRebuild({
+        connOpen: !!this.conn?.open,
+        restoreSignalAt: restoreAt,
+        connEstablishedAt: this.connEstablishedAt,
+        armedForRestore: this.staleDataRebuildArmedForRestore,
+        now,
+      })
+    ) {
+      return
+    }
+    this.staleDataRebuildArmedForRestore = restoreAt
+    if (this.staleDataRebuildTimer != null) return
+    this.staleDataRebuildTimer = window.setTimeout(() => {
+      this.staleDataRebuildTimer = null
+      this.runPostRestoreStaleDataRebuild()
+    }, POST_RESTORE_STALE_DATA_REBUILD_MS)
+  }
+
+  private runPostRestoreStaleDataRebuild() {
+    if (this.destroyed || !this.conn?.open) return
+    if (
+      !shouldGuestInitiatePostRestoreStaleDataRebuild(this.role, {
+        sessionPaired: this.sessionPaired,
+        rememberGuestAuth: !!this.rememberGuestAuth,
+      })
+    ) {
+      return
+    }
+    if (
+      !connEstablishedBeforeRestore(this.connEstablishedAt, this.lastRestoreSignalAt)
+    ) {
+      return
+    }
+    ppDebugIncStaleDataRebuild()
+    this.abandonConnAfterProbeFail()
   }
 
   private onDataConnBackSignal(now = Date.now()) {
@@ -509,7 +582,18 @@ export class Link {
     this.maybeRunConnProbe(now)
   }
 
-  private maybeRunConnProbe(now = Date.now()) {
+  private scheduleConnProbeRetry(now = Date.now()) {
+    if (this.connProbeRetryTimer != null) return
+    const delay = connProbeRetryDelayMs(this.lastSeen, now)
+    if (delay <= 0) return
+    this.connProbeRetryTimer = window.setTimeout(() => {
+      this.connProbeRetryTimer = null
+      if (this.destroyed) return
+      this.onDataConnBackSignal(Date.now())
+    }, delay + 1)
+  }
+
+  private maybeRunConnProbe(now = Date.now()): boolean {
     if (
       !shouldRunDataConnProbe({
         connOpen: !!this.conn?.open,
@@ -518,17 +602,32 @@ export class Link {
         probePending: this.connProbeAt != null || this.connProbeTimer != null,
         lastSeen: this.lastSeen,
         now,
+        restoreSignalAt: this.lastRestoreSignalAt,
       })
     ) {
-      return
+      if (
+        connProbeBlockedByRecentTraffic({
+          connOpen: !!this.conn?.open,
+          localOffersPong: true,
+          remoteSupportsPong: remotePongCapSeenForPeer(this.remotePongCapLedger, this.conn?.peer ?? null),
+          probePending: this.connProbeAt != null || this.connProbeTimer != null,
+          lastSeen: this.lastSeen,
+          now,
+          restoreSignalAt: this.lastRestoreSignalAt,
+        })
+      ) {
+        this.scheduleConnProbeRetry(now)
+      }
+      return false
     }
     const c = this.conn
-    if (!c?.open) return
+    if (!c?.open) return false
     this.connProbeAt = now
     ppDebugIncProbeSent()
-    try { c.send({ t: 'ping' }) } catch { this.connProbeAt = null; return }
+    try { c.send({ t: 'ping' }) } catch { this.connProbeAt = null; return false }
     this.clearConnProbeTimer()
     this.connProbeTimer = window.setTimeout(() => this.onConnProbeDeadline(), DATA_CONN_PROBE_TIMEOUT_MS)
+    return true
   }
 
   private completeConnProbeSuccess(ms: number) {
@@ -554,6 +653,19 @@ export class Link {
     const c = this.conn
     this.clearConnProbeTimer()
     this.connProbeAt = null
+    if (
+      !connProbeMayAbandonAfterFail({
+        restoreSignalAt: this.lastRestoreSignalAt,
+        connGen: this.connDataGen,
+        lastAbandonRestoreAt: this.connProbeLastAbandonRestoreAt,
+        lastAbandonConnGen: this.connProbeLastAbandonConnGen,
+        now: Date.now(),
+      })
+    ) {
+      return
+    }
+    this.connProbeLastAbandonRestoreAt = this.lastRestoreSignalAt
+    this.connProbeLastAbandonConnGen = this.connDataGen
     this.connProbeEligible = false
     if (!c?.open) return
     this.clearIceGraceTimer()
@@ -1295,6 +1407,8 @@ export class Link {
     const pc = this.peerConnectionOf(c)
     if (!pc) return
     const gen = ppDebugRecordDataConnected()
+    this.connDataGen = gen
+    this.connEstablishedAt = Date.now()
     const onIce = () => {
       this.handleGuestIce(pc)
       const state = pc.iceConnectionState
@@ -1800,12 +1914,14 @@ export class Link {
     }
     this.clearIceRecovery()
     this.clearConnProbeTimer()
+    this.clearStaleDataRebuildTimer()
     this.connProbeAt = null
     this.connProbeEligible = false
     this.remotePongCap = freshRemotePongCap()
     this.connViaRelay = null
     this.conn = null
     this.connPeer = null
+    this.connEstablishedAt = null
     this.authenticatedRememberPhoneId = null
   }
 
@@ -2068,6 +2184,8 @@ export class Link {
         rememberGuestPairedCode(this.code)
         this.clearGuestWatchdog()
       }
+      this.syncConnProbeEligibleForSession()
+      this.onDataConnBackSignal(Date.now())
     }
     if (c.open) onOpen(); else c.on('open', onOpen)
     c.on('data', (m: any) => {
@@ -2499,6 +2617,34 @@ export class Link {
     try { peer.reconnect() } catch {}
   }
 
+  private tickOpenConnKeepalive(now: number) {
+    const c = this.conn
+    if (!c?.open) return
+    const probeWouldRun = this.connProbeEligible
+      && shouldRunDataConnProbe({
+        connOpen: true,
+        localOffersPong: true,
+        remoteSupportsPong: remotePongCapSeenForPeer(this.remotePongCapLedger, c.peer ?? null),
+        probePending: this.connProbeAt != null || this.connProbeTimer != null,
+        lastSeen: this.lastSeen,
+        now,
+        restoreSignalAt: this.lastRestoreSignalAt,
+      })
+    let probeSentThisTick = false
+    if (this.connProbeEligible) {
+      this.syncConnProbeEligibleForSession()
+      if (probeWouldRun && this.maybeRunConnProbe(now)) probeSentThisTick = true
+    }
+    const traffic = planTickOpenConnTraffic({ connOpen: true, probeWouldRun })
+    if (
+      traffic === 'keepalive-ping'
+      && !probeSentThisTick
+      && shouldSendTickConnKeepalivePing({ connOpen: true, probeSentThisTick: false })
+    ) {
+      try { c.send({ t: 'ping' }) } catch {}
+    }
+  }
+
   private tick() {
     if (this.role === 'host') this.syncHostOfflineSince()
     this.tickGuestWatchdog()
@@ -2530,10 +2676,11 @@ export class Link {
         this.tickListenSignalForce(lp)
       }
     }
+    this.tickOpenConnKeepalive(Date.now())
     const c = this.conn
-    if (c?.open) {
-      try { c.send({ t: 'ping' }) } catch {}
-      if (Date.now() - this.lastSeen > 15000) { try { c.close() } catch {}; this.lost(c) }
+    if (c?.open && Date.now() - this.lastSeen > 15000) {
+      try { c.close() } catch {}
+      this.lost(c)
     } else if (this.role === 'guest' && (this.status === 'reconnecting' || this.status === 'connecting') && this.peer && !this.peer.disconnected) {
       if (!this.dialWait && !this.hasInFlightDial()) this.scheduleDial()
     }

@@ -1,10 +1,16 @@
-import { describe, it } from 'node:test'
+import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  DATA_CONN_PROBE_POST_RESTORE_MS,
   DATA_CONN_PROBE_SKIP_RECENT_MS,
   DATA_CONN_PROBE_TIMEOUT_MS,
   buildLinkHelloMessage,
+  connProbeMayAbandonAfterFail,
+  connProbeRetryDelayMs,
+  connProbeSentOnTick,
   dataConnProbeSucceeded,
+  planTickOpenConnTraffic,
+  shouldSendTickConnKeepalivePing,
   freshRemotePongCap,
   helloCapsIncludePong,
   recordRemoteHelloPongCap,
@@ -12,6 +18,10 @@ import {
   shouldDispatchConnKeepalive,
   shouldMarkConnProbeEligible,
   shouldRunDataConnProbe,
+  connEstablishedBeforeRestore,
+  connProbeBlockedByRecentTraffic,
+  shouldArmPostRestoreStaleDataRebuild,
+  shouldGuestInitiatePostRestoreStaleDataRebuild,
 } from './dataConnProbe.ts'
 
 describe('buildLinkHelloMessage', () => {
@@ -225,6 +235,30 @@ describe('shouldRunDataConnProbe', () => {
     assert.equal(shouldRunDataConnProbe({ ...base, remoteSupportsPong: false }), false)
   })
 
+  it('runs after signal restore even when lastSeen was bumped within 2s', () => {
+    const restoreAt = 10_000
+    const now = restoreAt + 500
+    assert.equal(
+      shouldRunDataConnProbe({
+        ...base,
+        lastSeen: now - 1,
+        now,
+        restoreSignalAt: restoreAt,
+      }),
+      true,
+    )
+    const afterWindow = restoreAt + DATA_CONN_PROBE_POST_RESTORE_MS + 1
+    assert.equal(
+      shouldRunDataConnProbe({
+        ...base,
+        lastSeen: afterWindow - 1,
+        now: afterWindow,
+        restoreSignalAt: restoreAt,
+      }),
+      false,
+    )
+  })
+
   it('skips when recent inbound data arrived within 2s', () => {
     assert.equal(
       shouldRunDataConnProbe({
@@ -277,6 +311,155 @@ describe('probe policy', () => {
   })
 })
 
+describe('connProbeRetryDelayMs', () => {
+  it('waits until the recent-traffic window passes', () => {
+    const now = 10_000
+    assert.equal(connProbeRetryDelayMs(now - 500, now), 1500)
+    assert.equal(connProbeRetryDelayMs(now - 3000, now), 0)
+  })
+})
+
+describe('shouldMarkConnProbeEligible remember sessions', () => {
+  it('marks remember-guest sessions eligible after pairing', () => {
+    assert.equal(
+      shouldMarkConnProbeEligible({
+        connOpen: true,
+        connProbeEligible: false,
+        everConnected: true,
+        sessionPaired: true,
+        rememberGuestAuth: true,
+      }),
+      true,
+    )
+  })
+})
+
+describe('tick keepalive vs probe', () => {
+  it('old peer without pong cap gets keepalive ping every tick, never a probe', () => {
+    assert.equal(
+      shouldRunDataConnProbe({
+        connOpen: true,
+        localOffersPong: true,
+        remoteSupportsPong: false,
+        probePending: false,
+        lastSeen: 0,
+        now: 10_000,
+      }),
+      false,
+    )
+    assert.equal(
+      planTickOpenConnTraffic({ connOpen: true, probeWouldRun: false }),
+      'keepalive-ping',
+    )
+    assert.equal(shouldSendTickConnKeepalivePing({ connOpen: true, probeSentThisTick: false }), true)
+  })
+
+  it('probe-eligible session sends a probe or keepalive, never neither', () => {
+    assert.equal(planTickOpenConnTraffic({ connOpen: true, probeWouldRun: true }), 'probe')
+    assert.equal(planTickOpenConnTraffic({ connOpen: true, probeWouldRun: false }), 'keepalive-ping')
+    assert.equal(shouldSendTickConnKeepalivePing({ connOpen: true, probeSentThisTick: true }), false)
+    assert.equal(connProbeSentOnTick(5000, 5000), true)
+    assert.equal(connProbeSentOnTick(4999, 5000), false)
+  })
+})
+
+describe('connProbeMayAbandonAfterFail', () => {
+  it('with fake clock, slow post-restore link abandons at most once per restore window', () => {
+    mock.timers.enable({ apis: ['Date'] })
+    const restoreAt = 0
+    let lastAbandonRestoreAt: number | null = null
+    let lastAbandonConnGen: number | null = null
+    let connGen = 1
+    let abandonCount = 0
+    const tickMs = [0, 2500, 4000, 8000, 12_000, 20_000, 25_500]
+    for (const now of tickMs) {
+      mock.timers.setTime(now)
+      if (now === 8000) connGen = 2
+      if (
+        connProbeMayAbandonAfterFail({
+          restoreSignalAt: restoreAt,
+          connGen,
+          lastAbandonRestoreAt,
+          lastAbandonConnGen,
+          now,
+        })
+      ) {
+        abandonCount += 1
+        lastAbandonRestoreAt = restoreAt
+        lastAbandonConnGen = connGen
+      }
+    }
+    assert.equal(abandonCount, 1)
+    mock.timers.reset()
+  })
+
+  it('post-restore window: one abandon total; outside window: one per connGen', () => {
+    const restore = 1_000
+    const inside = restore + 5_000
+    const outside = restore + DATA_CONN_PROBE_POST_RESTORE_MS + 1
+    assert.equal(
+      connProbeMayAbandonAfterFail({
+        restoreSignalAt: restore,
+        connGen: 1,
+        lastAbandonRestoreAt: null,
+        lastAbandonConnGen: null,
+        now: inside,
+      }),
+      true,
+    )
+    assert.equal(
+      connProbeMayAbandonAfterFail({
+        restoreSignalAt: restore,
+        connGen: 1,
+        lastAbandonRestoreAt: restore,
+        lastAbandonConnGen: 1,
+        now: inside,
+      }),
+      false,
+    )
+    assert.equal(
+      connProbeMayAbandonAfterFail({
+        restoreSignalAt: restore,
+        connGen: 2,
+        lastAbandonRestoreAt: restore,
+        lastAbandonConnGen: 1,
+        now: inside,
+      }),
+      false,
+    )
+    assert.equal(
+      connProbeMayAbandonAfterFail({
+        restoreSignalAt: restore + 1,
+        connGen: 1,
+        lastAbandonRestoreAt: restore,
+        lastAbandonConnGen: 1,
+        now: restore + 1 + 1_000,
+      }),
+      true,
+    )
+    assert.equal(
+      connProbeMayAbandonAfterFail({
+        restoreSignalAt: null,
+        connGen: 1,
+        lastAbandonRestoreAt: restore,
+        lastAbandonConnGen: 1,
+        now: outside,
+      }),
+      false,
+    )
+    assert.equal(
+      connProbeMayAbandonAfterFail({
+        restoreSignalAt: null,
+        connGen: 2,
+        lastAbandonRestoreAt: restore,
+        lastAbandonConnGen: 1,
+        now: outside,
+      }),
+      true,
+    )
+  })
+})
+
 describe('probe deadline', () => {
   it('data after probeAt cancels abandonment; missing pong does not', () => {
     const probeAt = 1000
@@ -287,4 +470,64 @@ describe('probe deadline', () => {
   it('uses a 2.5s probe window', () => {
     assert.equal(DATA_CONN_PROBE_TIMEOUT_MS, 2500)
   })
+})
+
+describe('post-restore stale data rebuild', () => {
+  it('arms only when data conn predates restore', () => {
+    const restore = 20_000
+    const established = 10_000
+    assert.equal(connEstablishedBeforeRestore(established, restore), true)
+    assert.equal(connEstablishedBeforeRestore(restore + 1, restore), false)
+    assert.equal(shouldArmPostRestoreStaleDataRebuild({
+      connOpen: true,
+      restoreSignalAt: restore,
+      connEstablishedAt: established,
+      armedForRestore: null,
+      now: restore + 100,
+    }), true)
+    assert.equal(shouldArmPostRestoreStaleDataRebuild({
+      connOpen: true,
+      restoreSignalAt: restore,
+      connEstablishedAt: established,
+      armedForRestore: restore,
+      now: restore + 100,
+    }), false)
+  })
+
+  it('guest initiates on remember session', () => {
+    assert.equal(shouldGuestInitiatePostRestoreStaleDataRebuild('guest', { sessionPaired: false, rememberGuestAuth: true }), true)
+    assert.equal(shouldGuestInitiatePostRestoreStaleDataRebuild('host', { sessionPaired: true, rememberGuestAuth: false }), false)
+    assert.equal(shouldGuestInitiatePostRestoreStaleDataRebuild('guest', { sessionPaired: false, rememberGuestAuth: false }), false)
+  })
+
+  it('probe retry only on recent-traffic deferral', () => {
+    const now = 5000
+    const lastSeen = now - 500
+    assert.equal(connProbeBlockedByRecentTraffic({
+      connOpen: true,
+      localOffersPong: true,
+      remoteSupportsPong: true,
+      probePending: false,
+      lastSeen,
+      now,
+    }), true)
+    assert.equal(connProbeBlockedByRecentTraffic({
+      connOpen: true,
+      localOffersPong: true,
+      remoteSupportsPong: true,
+      probePending: true,
+      lastSeen,
+      now,
+    }), false)
+    assert.equal(connProbeBlockedByRecentTraffic({
+      connOpen: true,
+      localOffersPong: true,
+      remoteSupportsPong: true,
+      probePending: false,
+      lastSeen,
+      now,
+      restoreSignalAt: now - 1000,
+    }), false)
+  })
+
 })
