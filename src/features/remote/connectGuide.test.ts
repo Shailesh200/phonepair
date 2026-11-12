@@ -3,13 +3,17 @@ import { describe, it } from 'node:test'
 import {
   CODE_REJECTED,
   CODE_REQUIRED,
-  CONNECT_STEPS,
   HELPER_DOWN,
   HELPER_DROPPED,
+  MAC_STEPS,
+  WINDOWS_STEPS,
   applyConnectFocus,
+  codeSubmitEnabled,
   connectStepStates,
+  detectConnectPlatform,
   initialConnectGuide,
   reduceConnectGuide,
+  stepsFor,
   type ConnectFocusTarget,
   type ConnectGuideEvent,
   type ConnectGuideState,
@@ -33,7 +37,8 @@ function stateOf(state: ConnectGuideState, id: ConnectStep) {
 
 function confirmThrough(state: ConnectGuideState, step: ConnectStep): ConnectGuideState {
   let next = state.open ? state : send(state, { type: 'open-guide' })
-  const target = CONNECT_STEPS.indexOf(step)
+  const target = stepsFor(next.platform).indexOf(step)
+  if (target < 0) throw new Error(`${step} is not a ${next.platform} step`)
   while (next.step < target) next = send(next, { type: 'confirm' })
   return next
 }
@@ -43,12 +48,13 @@ describe('connect guide reducer', () => {
     const state = initialConnectGuide()
     assert.equal(state.open, false)
     assert.equal(state.step, 0)
-    assert.deepEqual(CONNECT_STEPS, ['download', 'open', 'accessibility', 'code'])
+    assert.deepEqual(MAC_STEPS, ['download', 'open-mac', 'accessibility-mac', 'code'])
+    assert.deepEqual(WINDOWS_STEPS, ['download', 'open-win', 'access-win', 'code'])
     const opened = send(state, { type: 'open-guide' })
     assert.equal(opened.open, true)
     assert.equal(stateOf(opened, 'download'), 'current')
-    assert.equal(stateOf(opened, 'open'), 'upcoming')
-    assert.equal(stateOf(opened, 'accessibility'), 'upcoming')
+    assert.equal(stateOf(opened, 'open-mac'), 'upcoming')
+    assert.equal(stateOf(opened, 'accessibility-mac'), 'upcoming')
     assert.equal(stateOf(opened, 'code'), 'upcoming')
     assert.equal(connectStepStates(opened).every((step) => step.id === 'code' ? step.manual === false : step.manual === true), true)
   })
@@ -64,18 +70,18 @@ describe('connect guide reducer', () => {
     let state = send(initialConnectGuide(), { type: 'open-guide' })
     state = send(state, { type: 'confirm' })
     assert.equal(state.confirmed.download, true)
-    assert.equal(state.confirmed.open, false)
+    assert.equal(state.confirmed['open-mac'], false)
     assert.equal(stateOf(state, 'download'), 'done')
-    assert.equal(stateOf(state, 'open'), 'current')
+    assert.equal(stateOf(state, 'open-mac'), 'current')
     state = send(state, { type: 'confirm' })
-    assert.equal(state.confirmed.accessibility, false)
-    assert.equal(stateOf(state, 'accessibility'), 'current')
+    assert.equal(state.confirmed['accessibility-mac'], false)
+    assert.equal(stateOf(state, 'accessibility-mac'), 'current')
     state = send(state, { type: 'confirm' })
-    assert.equal(state.confirmed.accessibility, true)
+    assert.equal(state.confirmed['accessibility-mac'], true)
     assert.equal(stateOf(state, 'code'), 'current')
     const stuck = send(state, { type: 'confirm' })
     assert.equal(stuck.step, state.step)
-    assert.equal(stuck.confirmed.accessibility, true)
+    assert.equal(stuck.confirmed['accessibility-mac'], true)
   })
 
   it('ignores confirm, back, and typing while the guide is closed', () => {
@@ -86,10 +92,10 @@ describe('connect guide reducer', () => {
   })
 
   it('goes back one step, and back from the first step closes the guide', () => {
-    let state = confirmThrough(initialConnectGuide(), 'accessibility')
+    let state = confirmThrough(initialConnectGuide(), 'accessibility-mac')
     state = send(state, { type: 'back' })
-    assert.equal(stateOf(state, 'open'), 'current')
-    assert.equal(state.confirmed.accessibility, false)
+    assert.equal(stateOf(state, 'open-mac'), 'current')
+    assert.equal(state.confirmed['accessibility-mac'], false)
     state = send(state, { type: 'back' })
     state = send(state, { type: 'back' })
     assert.equal(state.open, false)
@@ -102,7 +108,7 @@ describe('connect guide reducer', () => {
     assert.equal(state.error?.step, 'code')
     assert.equal(state.error?.message, CODE_REQUIRED)
     state = send(state, { type: 'back' })
-    assert.equal(stateOf(state, 'accessibility'), 'current')
+    assert.equal(stateOf(state, 'accessibility-mac'), 'current')
     assert.equal(stateOf(state, 'code'), 'error')
     assert.equal(state.error?.message, CODE_REQUIRED)
   })
@@ -117,9 +123,9 @@ describe('connect guide reducer', () => {
     assert.equal(state.code, '998877')
     assert.equal(state.error, null)
     state = send(state, signals('off', 'down'))
-    assert.equal(state.error?.step, 'open')
+    assert.equal(state.error?.step, 'open-mac')
     state = send(state, { type: 'code', value: '111111' })
-    assert.equal(state.error?.step, 'open')
+    assert.equal(state.error?.step, 'open-mac')
     assert.equal(state.code, '111111')
   })
 
@@ -142,23 +148,23 @@ describe('connect guide reducer', () => {
     assert.equal(state.error?.message, CODE_REJECTED)
     assert.equal(stateOf(state, 'code'), 'error')
     assert.equal(state.confirmed.download, true)
-    assert.equal(state.confirmed.open, true)
-    assert.equal(state.confirmed.accessibility, true)
-    assert.equal(stateOf(state, 'open'), 'done')
+    assert.equal(state.confirmed['open-mac'], true)
+    assert.equal(state.confirmed['accessibility-mac'], true)
+    assert.equal(stateOf(state, 'open-mac'), 'done')
   })
 
   it('does not mark Accessibility done from a pair result', () => {
     let state = send(initialConnectGuide(), { type: 'open-guide' })
     state = send(state, signals('off', 'rejected'))
     assert.equal(state.confirmed.download, true)
-    assert.equal(state.confirmed.open, true)
-    assert.equal(state.confirmed.accessibility, false)
-    assert.equal(stateOf(state, 'accessibility'), 'upcoming')
+    assert.equal(state.confirmed['open-mac'], true)
+    assert.equal(state.confirmed['accessibility-mac'], false)
+    assert.equal(stateOf(state, 'accessibility-mac'), 'upcoming')
     assert.equal(stateOf(state, 'code'), 'error')
     state = send(initialConnectGuide(), signals('connected'))
-    assert.equal(state.confirmed.accessibility, false)
+    assert.equal(state.confirmed['accessibility-mac'], false)
     assert.equal(stateOf(state, 'code'), 'connected')
-    assert.equal(stateOf(state, 'accessibility'), 'upcoming')
+    assert.equal(stateOf(state, 'accessibility-mac'), 'upcoming')
   })
 
   it('puts an unreachable helper on the open step', () => {
@@ -166,10 +172,10 @@ describe('connect guide reducer', () => {
     state = send(state, { type: 'code', value: '123456' })
     state = send(state, signals('connecting'))
     state = send(state, signals('off', 'down'))
-    assert.equal(state.error?.step, 'open')
+    assert.equal(state.error?.step, 'open-mac')
     assert.equal(state.error?.message, HELPER_DOWN)
-    assert.equal(stateOf(state, 'open'), 'error')
-    assert.equal(state.confirmed.open, false)
+    assert.equal(stateOf(state, 'open-mac'), 'error')
+    assert.equal(state.confirmed['open-mac'], false)
     assert.equal(state.confirmed.download, true)
     assert.equal(stateOf(state, 'download'), 'done')
     assert.equal(stateOf(state, 'code'), 'upcoming')
@@ -180,13 +186,13 @@ describe('connect guide reducer', () => {
     state = send(state, signals('off', 'down'))
     state = send(state, { type: 'retry' })
     assert.equal(state.error, null)
-    assert.equal(stateOf(state, 'open'), 'current')
-    assert.equal(state.confirmed.open, false)
+    assert.equal(stateOf(state, 'open-mac'), 'current')
+    assert.equal(state.confirmed['open-mac'], false)
     const again = send(state, signals('off', 'down'))
     assert.equal(again, state)
     state = send(state, { type: 'confirm' })
-    assert.equal(state.confirmed.open, true)
-    assert.equal(stateOf(state, 'accessibility'), 'current')
+    assert.equal(state.confirmed['open-mac'], true)
+    assert.equal(stateOf(state, 'accessibility-mac'), 'current')
   })
 
   it('shows a second unreachable result after the guide has moved on', () => {
@@ -198,7 +204,7 @@ describe('connect guide reducer', () => {
     state = send(state, signals('connecting'))
     state = send(state, signals('off', 'down'))
     assert.equal(state.error?.message, HELPER_DOWN)
-    assert.equal(stateOf(state, 'open'), 'error')
+    assert.equal(stateOf(state, 'open-mac'), 'error')
   })
 
   it('marks the code step connected when the helper pairs', () => {
@@ -208,21 +214,21 @@ describe('connect guide reducer', () => {
     assert.equal(state.error, null)
     assert.equal(stateOf(state, 'code'), 'connected')
     assert.equal(state.confirmed.download, true)
-    assert.equal(state.confirmed.open, true)
+    assert.equal(state.confirmed['open-mac'], true)
     assert.equal(stateOf(state, 'download'), 'done')
-    assert.equal(stateOf(state, 'open'), 'done')
-    assert.equal(stateOf(state, 'accessibility'), 'done')
+    assert.equal(stateOf(state, 'open-mac'), 'done')
+    assert.equal(stateOf(state, 'accessibility-mac'), 'done')
   })
 
   it('lets the user go back while paired without being pulled forward again', () => {
     let state = confirmThrough(initialConnectGuide(), 'code')
     state = send(state, signals('connected'))
     state = send(state, { type: 'back' })
-    assert.equal(stateOf(state, 'accessibility'), 'current')
+    assert.equal(stateOf(state, 'accessibility-mac'), 'current')
     assert.equal(stateOf(state, 'code'), 'connected')
     const same = send(state, signals('connected'))
     assert.equal(same.step, state.step)
-    assert.equal(stateOf(same, 'accessibility'), 'current')
+    assert.equal(stateOf(same, 'accessibility-mac'), 'current')
   })
 
   it('opens an already paired helper on the connected step', () => {
@@ -231,7 +237,7 @@ describe('connect guide reducer', () => {
     state = send(state, { type: 'open-guide' })
     assert.equal(state.open, true)
     assert.equal(stateOf(state, 'code'), 'connected')
-    assert.equal(state.confirmed.accessibility, false)
+    assert.equal(state.confirmed['accessibility-mac'], false)
   })
 
   it('reports a dropped socket on the code step', () => {
@@ -250,7 +256,7 @@ describe('connect guide reducer', () => {
     assert.equal(state.open, false)
     assert.equal(state.error, null)
     assert.equal(state.signals.status, 'off')
-    assert.equal(state.step, CONNECT_STEPS.indexOf('code'))
+    assert.equal(state.step, stepsFor(state.platform).indexOf('code'))
     const follow = send(state, signals('off', null))
     assert.equal(follow.error, null)
     assert.equal(follow.open, false)
@@ -271,8 +277,8 @@ describe('connect guide reducer', () => {
     state = send(state, signals('off', 'down'))
     const blocked = send(state, { type: 'confirm' })
     assert.equal(blocked.step, state.step)
-    assert.equal(blocked.confirmed.open, false)
-    assert.equal(blocked.error?.step, 'open')
+    assert.equal(blocked.confirmed['open-mac'], false)
+    assert.equal(blocked.error?.step, 'open-mac')
   })
 
   it('ignores submit while connecting or already paired', () => {
@@ -287,13 +293,13 @@ describe('connect guide reducer', () => {
   })
 
   it('close leaves progress in place', () => {
-    let state = confirmThrough(initialConnectGuide(), 'open')
+    let state = confirmThrough(initialConnectGuide(), 'open-mac')
     state = send(state, { type: 'code', value: '42' })
     state = send(state, { type: 'close-guide' })
     assert.equal(state.open, false)
     assert.equal(state.confirmed.download, true)
     state = send(state, { type: 'open-guide' })
-    assert.equal(stateOf(state, 'open'), 'current')
+    assert.equal(stateOf(state, 'open-mac'), 'current')
     assert.equal(state.code, '42')
   })
 })
@@ -303,6 +309,52 @@ function tracker() {
   const node = (id: string): ConnectFocusTarget => ({ focus: () => focused.push(id) })
   return { focused, node }
 }
+
+describe('connect guide platform', () => {
+  it('gives Windows an allow-access step and no Mac Accessibility step', () => {
+    const opened = send(initialConnectGuide('windows'), { type: 'open-guide' })
+    assert.deepEqual(connectStepStates(opened).map((step) => step.id), ['download', 'open-win', 'access-win', 'code'])
+    let state = opened
+    state = send(state, { type: 'confirm' })
+    state = send(state, { type: 'confirm' })
+    assert.equal(stateOf(state, 'access-win'), 'current')
+    state = send(state, { type: 'confirm' })
+    assert.equal(stateOf(state, 'code'), 'current')
+  })
+
+  it('switches the open and allow steps when the OS changes', () => {
+    let state = confirmThrough(initialConnectGuide(), 'accessibility-mac')
+    state = send(state, { type: 'platform', platform: 'windows' })
+    assert.equal(state.platform, 'windows')
+    assert.equal(stateOf(state, 'access-win'), 'current')
+    assert.equal(connectStepStates(state).some((step) => step.id === 'accessibility-mac'), false)
+    state = send(state, { type: 'platform', platform: 'mac' })
+    assert.equal(stateOf(state, 'accessibility-mac'), 'current')
+  })
+
+  it('moves an unreachable-helper error onto the other OS open step', () => {
+    let state = confirmThrough(initialConnectGuide(), 'code')
+    state = send(state, signals('off', 'down'))
+    assert.equal(state.error?.step, 'open-mac')
+    state = send(state, { type: 'platform', platform: 'windows' })
+    assert.equal(state.error?.step, 'open-win')
+    assert.equal(stateOf(state, 'open-win'), 'error')
+  })
+
+  it('detects Windows from userAgentData ahead of platform', () => {
+    assert.equal(detectConnectPlatform({ userAgentData: { platform: 'Windows' }, platform: 'MacIntel' }), 'windows')
+    assert.equal(detectConnectPlatform({ platform: 'Win32' }), 'windows')
+    assert.equal(detectConnectPlatform({ platform: 'MacIntel' }), 'mac')
+    assert.equal(detectConnectPlatform({}), 'mac')
+  })
+
+  it('enables the code arrow only when six digits are entered and the helper is not connecting', () => {
+    assert.equal(codeSubmitEnabled('', 'off'), false)
+    assert.equal(codeSubmitEnabled('12345', 'off'), false)
+    assert.equal(codeSubmitEnabled('123456', 'off'), true)
+    assert.equal(codeSubmitEnabled('123456', 'connecting'), false)
+  })
+})
 
 describe('connect guide focus', () => {
   it('focuses the current step control when the guide opens', () => {
@@ -335,9 +387,9 @@ describe('connect guide focus', () => {
     const guide = node('connect-guide')
     const openButton = node('connect-open')
 
-    let state = confirmThrough(initialConnectGuide(), 'open')
+    let state = confirmThrough(initialConnectGuide(), 'open-mac')
     applyConnectFocus({ intent: 'step', open: true, steps: connectStepStates(state), query, guide, openButton })
-    state = confirmThrough(state, 'accessibility')
+    state = confirmThrough(state, 'accessibility-mac')
     applyConnectFocus({ intent: 'step', open: true, steps: connectStepStates(state), query, guide, openButton })
     state = confirmThrough(state, 'code')
     applyConnectFocus({ intent: 'step', open: true, steps: connectStepStates(state), query, guide, openButton })
@@ -349,11 +401,11 @@ describe('connect guide focus', () => {
     applyConnectFocus({ intent: 'step', open: true, steps: connectStepStates(state), query, guide, openButton })
 
     assert.deepEqual(focused, [
-      'connect-confirm-open',
-      'connect-confirm-accessibility',
+      'connect-confirm-open-mac',
+      'connect-confirm-accessibility-mac',
       'helper-code',
       'connect-retry-code',
-      'connect-retry-open',
+      'connect-retry-open-mac',
       'connect-disconnect',
     ])
   })
