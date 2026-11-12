@@ -3,6 +3,8 @@ import { describe, it } from 'node:test'
 import {
   listenForceResumesAfterRecoverySettle,
   listenForceTickBlockedByRecoveryMode,
+  listenRecoveryReclaimIntervalMs,
+  listenRecoveryStaleOpenNeedsImmediateRecycle,
   listenReclaimRecycleSkipsOpenSocket,
   shouldBeginListenIdRecoveryOnDataConnClose,
   shouldClearStaleRememberMainConnForRecovery,
@@ -47,10 +49,24 @@ describe('remember recovery conn hygiene', () => {
     )
   })
 
-  it('reclaim recycle skips only visibly open listen sockets', () => {
-    assert.equal(listenReclaimRecycleSkipsOpenSocket(true, false), true)
-    assert.equal(listenReclaimRecycleSkipsOpenSocket(false, false), false)
-    assert.equal(listenReclaimRecycleSkipsOpenSocket(true, true), false)
+  it('stale open with no server OPEN recycles immediately; reclaim polls within ~3s', () => {
+    const dropAt = 10_000
+    assert.equal(listenRecoveryStaleOpenNeedsImmediateRecycle(true, dropAt, null), true)
+    assert.equal(listenRecoveryStaleOpenNeedsImmediateRecycle(true, dropAt, dropAt + 100), false)
+    assert.equal(listenRecoveryReclaimIntervalMs(), 2500)
+    assert.ok(listenRecoveryReclaimIntervalMs() <= 3000)
+  })
+
+  it('reclaim recycle: stale open (OPEN before drop) is recycled; fresh open is kept', () => {
+    const dropAt = 10_000
+    const staleOpenAt = dropAt - 500
+    const freshOpenAt = dropAt + 200
+    assert.equal(listenReclaimRecycleSkipsOpenSocket(true, false, dropAt, staleOpenAt), false)
+    assert.equal(listenReclaimRecycleSkipsOpenSocket(true, false, dropAt, freshOpenAt), true)
+    assert.equal(listenReclaimRecycleSkipsOpenSocket(true, false, dropAt, null), false)
+    assert.equal(listenReclaimRecycleSkipsOpenSocket(true, false, null, freshOpenAt), true)
+    assert.equal(listenReclaimRecycleSkipsOpenSocket(false, false, dropAt, freshOpenAt), false)
+    assert.equal(listenReclaimRecycleSkipsOpenSocket(true, true, dropAt, freshOpenAt), false)
   })
 
   it('listen force resumes after recovery settle for silent socket handling', () => {

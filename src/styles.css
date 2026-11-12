@@ -245,7 +245,7 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
 .qr img,.qr-ph{width:100%;height:100%;display:block;background:var(--tile);object-fit:contain;border-radius:0}
 .qr-card .code{display:flex;justify-content:center;align-items:baseline;gap:0;margin:12px 0 0;max-width:none;font-family:var(--mono);font-size:26px;font-weight:600;letter-spacing:.12em;color:var(--tile-ink);padding-left:.12em}
 .qr-card .code span{flex:none;width:auto;max-width:none;height:auto;border:0;background:transparent;box-shadow:none;font:inherit;letter-spacing:inherit;color:inherit;display:inline;margin:0;border-radius:0}
-.qr-card .code-sep{letter-spacing:0;margin:0 .35em;padding-left:0}
+.qr-card .code span.code-mid::after{content:'·';margin:0 .35em;font-weight:500;pointer-events:none}
 .qr-card .code-click{cursor:pointer}
 .qr-card .code-click:hover{opacity:.8}
 .qr-card .wait{display:flex;align-items:center;justify-content:center;gap:10px;color:var(--wait);font-weight:500;font-size:16px;line-height:1.3;margin:10px 0 0}
@@ -313,11 +313,6 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
 .ptr.clicked svg{animation:clk .3s}
 @keyframes clk{50%{transform:scale(.8)}}
 .ptr .dot{display:block;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;background:#FF5F57;box-shadow:0 0 0 6px rgba(255,95,87,.25)}
-
-.slides{position:fixed;inset:0;background:#0B1020;z-index:80;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff}
-.slides-top{position:absolute;top:0;left:0;right:0;display:flex;gap:16px;align-items:center;padding:12px 18px;font-weight:600;font-size:var(--fs-14)}
-.slides-top .mut{flex:1;color:#94A3B8}
-.slides canvas{background:#fff;border-radius:6px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
 
 .phone-wrap{min-height:100vh;min-height:100dvh;display:flex;justify-content:center;overflow-x:clip}
 .phone-page{width:100%;max-width:480px;min-height:100vh;min-height:100dvh;padding-bottom:calc(24px + env(safe-area-inset-bottom));overflow-x:clip}

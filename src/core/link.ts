@@ -226,6 +226,7 @@ export class Link {
   private lastListenForceHookAt = 0
   private listenForceSettleUntil: number | null = null
   private listenRecoveryMode = false
+  private listenRecoveryDropAt: number | null = null
   private listenRecoveryReclaimUntil: number | null = null
   private listenRecoveryReclaimTimer: number | null = null
   private listenRecoveryModeClearTimer: number | null = null
@@ -443,6 +444,7 @@ export class Link {
 
   private clearListenRecoveryState() {
     this.listenRecoveryMode = false
+    this.listenRecoveryDropAt = null
     this.listenRecoveryReclaimUntil = null
     this.clearListenRecoveryReclaimTimer()
     this.clearListenRecoveryModeClearTimer()
@@ -464,16 +466,23 @@ export class Link {
 
   private beginListenIdRecovery(at: number) {
     this.listenRecoveryMode = true
+    this.listenRecoveryDropAt = at
     this.listenRecoveryReclaimUntil = listenRecoveryReclaimUntilFromDrop(at)
     this.scheduleListenRecoveryModeClearAt(this.listenRecoveryReclaimUntil)
     ppDebugMarkListenRecoveryDrop(at)
     this.clearStaleRememberMainConnForRecovery()
     const lp = this.listenPeer
-    if (lp && !lp.destroyed && lp.open && !lp.disconnected) {
-      this.scheduleListenRecoveryReclaim(LISTEN_RECOVERY_ID_BACKOFF_MS)
-      return
+    if (lp && !lp.destroyed) {
+      const serverOpenAt = peerAsForceSignal(lp, 'listen').signalPeerOpenAt?.() ?? null
+      if (listenReclaimRecycleSkipsOpenSocket(!!lp.open, !!lp.disconnected, at, serverOpenAt)) {
+        this.scheduleListenRecoveryReclaim(LISTEN_RECOVERY_ID_BACKOFF_MS)
+        return
+      }
     }
     void this.recycleListenPeerForServerReclaim()
+    if (this.listenRecoveryActive() && !this.isRememberConnOnListenPeer()) {
+      this.scheduleListenRecoveryReclaim(LISTEN_RECOVERY_ID_BACKOFF_MS)
+    }
   }
 
   /** After a hard drop, PeerJS may keep conn.open while the PC is dead — that blocks listen auth accepts. */
@@ -519,12 +528,22 @@ export class Link {
       if (this.destroyed || !this.listenRecoveryActive()) return
       if (this.isRememberConnOnListenPeer()) return
       void this.recycleListenPeerForServerReclaim()
+      if (this.destroyed || !this.listenRecoveryActive()) return
+      if (this.isRememberConnOnListenPeer()) return
+      this.scheduleListenRecoveryReclaim(LISTEN_RECOVERY_ID_BACKOFF_MS)
     }, delayMs)
   }
 
   private recycleListenPeerForServerReclaim() {
     const lp = this.listenPeer
-    if (lp && !lp.destroyed && listenReclaimRecycleSkipsOpenSocket(!!lp.open, !!lp.disconnected)) return
+    const dropAt = this.listenRecoveryDropAt
+    const serverOpenAt = lp && !lp.destroyed
+      ? peerAsForceSignal(lp, 'listen').signalPeerOpenAt?.() ?? null
+      : null
+    if (lp && !lp.destroyed
+      && listenReclaimRecycleSkipsOpenSocket(!!lp.open, !!lp.disconnected, dropAt, serverOpenAt)) {
+      return
+    }
     if (lp && !lp.destroyed) {
       this.ensureListenForceRunner().rebindPeer()
       try { lp.destroy() } catch {}
