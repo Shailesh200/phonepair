@@ -445,8 +445,8 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
       {link.status !== 'connected' && <>
         <p className="mut small" data-testid="helper-hint">Download the PhonePair Helper, open it, and type the 6-digit code it shows.</p>
         <p className="helper-downloads">
-          <a className="linkbtn sm" href="https://github.com/Shailesh200/phonepair/releases/latest" target="_blank" rel="noreferrer" data-testid="download-mac">Download for Mac</a>
-          <a className="linkbtn sm" href="https://github.com/Shailesh200/phonepair/releases/latest" target="_blank" rel="noreferrer" data-testid="download-win">Download for Windows</a>
+          <a className="linkbtn sm" href="https://github.com/Shailesh200/phonepair/releases/latest/download/PhonePair-Helper-mac.dmg" target="_blank" rel="noreferrer" data-testid="download-mac">Download for Mac</a>
+          <a className="linkbtn sm" href="https://github.com/Shailesh200/phonepair/releases/latest/download/PhonePair-Helper-win.exe" target="_blank" rel="noreferrer" data-testid="download-win">Download for Windows</a>
         </p>
         <p className="mut small" data-testid="mac-open-steps">{'Open the DMG, drag PhonePair Helper to Applications, and open it. Allow Accessibility when asked so Control works.'}</p>
         <p className="mut small" data-testid="win-open-steps">{'If SmartScreen appears, click More info, then Run anyway.'}</p>
