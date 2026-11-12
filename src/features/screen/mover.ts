@@ -1,0 +1,72 @@
+/** Mouse-mover messages, next to the `sc` messages.
+ *
+ * Phone -> laptop, and laptop -> helper:
+ * - `{t:'mover', on:true, interval:'30s'|'1m'|'5m'}` starts or restarts the nudge.
+ * - `{t:'mover', on:false}` stops it.
+ * - `{t:'mover', ask:true}` asks the laptop for the last helper report.
+ *
+ * Helper -> laptop page, and laptop -> phone:
+ * - `{t:'mover', on, interval}` the helper's state. `interval` is null while off.
+ *   The indicator follows this report. A click does not flip it early.
+ */
+
+export const MOVER_INTERVALS = ['30s', '1m', '5m'] as const
+export type MoverInterval = (typeof MOVER_INTERVALS)[number]
+
+export type MoverState = {
+  on: boolean
+  interval: MoverInterval | null
+}
+
+export const MOVER_HINT = 'Connect laptop control first.'
+export const MOVER_DEFAULT_INTERVAL: MoverInterval = '1m'
+
+export function isMoverInterval(value: unknown): value is MoverInterval {
+  return value === '30s' || value === '1m' || value === '5m'
+}
+
+export function moverBadgeText(interval: MoverInterval): string {
+  return `Mouse mover on · every ${interval}`
+}
+
+export type MoverView = 'on' | 'off' | 'disconnected'
+
+/** The row the page shows. Disconnected wins, even if a stale report says on. */
+export function moverView(helperConnected: boolean, state: MoverState): MoverView {
+  if (!helperConnected) return 'disconnected'
+  return state.on && state.interval ? 'on' : 'off'
+}
+
+/** Helper report, or the laptop's relay of that report. Commands and asks are not reports. */
+export function readMoverState(value: unknown): MoverState | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const msg = value as Record<string, unknown>
+  if (msg.t !== 'mover' || msg.ask === true) return null
+  if (msg.on === false) return { on: false, interval: null }
+  if (msg.on !== true || !isMoverInterval(msg.interval)) return null
+  return { on: true, interval: msg.interval }
+}
+
+export type MoverCommand =
+  | { on: false }
+  | { on: true; interval: MoverInterval }
+
+/** What a toggle click asks for. The switch stays put until a report arrives. */
+export function moverToggleCommand(state: MoverState): MoverCommand {
+  if (state.on) return { on: false }
+  return { on: true, interval: state.interval ?? MOVER_DEFAULT_INTERVAL }
+}
+
+export function moverIntervalCommand(interval: MoverInterval): MoverCommand {
+  return { on: true, interval }
+}
+
+/** Phone command the laptop may forward. Anything else is dropped. */
+export function moverCommandFrom(value: unknown): MoverCommand | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const msg = value as Record<string, unknown>
+  if (msg.ask === true) return null
+  if (msg.on === false) return { on: false }
+  if (msg.on === true && isMoverInterval(msg.interval)) return { on: true, interval: msg.interval }
+  return null
+}

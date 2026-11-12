@@ -21,6 +21,7 @@ function injector() {
     async btn() { await noop() },
     async dbl() { await noop() },
     async release() { await noop() },
+    async nudge() { await noop() },
   }
 }
 

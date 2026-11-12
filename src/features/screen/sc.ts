@@ -16,6 +16,7 @@
  *   `sc:start`, or until screen sharing starts again.
  *
  * Keys stay on the existing remote messages (`remote:key`, `remote:type`).
+ * Mouse mover uses `{t:'mover', ...}` in `mover.ts`, on this same peer channel.
  */
 
 export const SC_ACTIONS = ['move', 'down', 'up', 'click', 'dbl', 'right'] as const

@@ -13,6 +13,7 @@ const inject = {
   async btn() { await noop() },
   async dbl() { await noop() },
   async release() { await noop() },
+  async nudge() { await noop() },
 }
 
 process.env.PHONEPAIR_DEV = '1'

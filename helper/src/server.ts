@@ -2,7 +2,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { Duplex } from 'node:stream'
 import { WebSocketServer, type RawData, type WebSocket } from 'ws'
 import { codesMatch, createGate, isLocked, noteFailure, noteSuccess, type Gate } from './auth.js'
-import { originAllowed, parseInput, parseJson, parsePair, type InputMsg, type Mod } from './validate.js'
+import { createMover, type TimerHandle } from './mover.js'
+import { originAllowed, parseInput, parseJson, parseMover, parsePair, type InputMsg, type Mod } from './validate.js'
 
 export const LOOPBACK = '127.0.0.1'
 export const DEFAULT_PORTS = [47811, 47812, 47813, 47814]
@@ -20,11 +21,15 @@ export type Injector = {
   dbl(): Promise<void>
   /** Release the button this session pressed. No-op when nothing is held. */
   release(): Promise<void>
+  /** Read the cursor, step +1px/+2px, then put it back. */
+  nudge(): Promise<void>
 }
 
 export type RunningHelper = {
   port: number
   host: typeof LOOPBACK
+  /** Clear the mover timer. Safe to call more than once. */
+  stopMover(): void
   close(): Promise<void>
 }
 
@@ -36,6 +41,8 @@ export type StartOptions = {
   now?: () => number
   authTimeoutMs?: number
   gapMs?: number
+  setTimer?: (fn: () => void, ms: number) => TimerHandle
+  clearTimer?: (id: TimerHandle) => void
 }
 
 const REJECT_REASON = ['code', 'locked', 'busy'] as const
@@ -172,6 +179,15 @@ export async function startHelper(opts: StartOptions): Promise<RunningHelper> {
   const authTimeoutMs = opts.authTimeoutMs ?? 5000
   const gapMs = opts.gapMs ?? BUTTON_GAP_MS
   const gate: Gate = createGate()
+  const mover = createMover({
+    nudge: () => opts.inject.nudge(),
+    setTimer: opts.setTimer,
+    clearTimer: opts.clearTimer,
+  })
+  const sendMover = (ws: WebSocket) => {
+    const state = mover.state()
+    sendJson(ws, { t: 'mover', on: state.on, interval: state.interval })
+  }
   let active: WebSocket | null = null
   let paired = false
   let warned = false
@@ -286,6 +302,7 @@ export async function startHelper(opts: StartOptions): Promise<RunningHelper> {
           // Disconnect and unpair both close this single session.
           releaseHeld()
           controlOff()
+          mover.stop()
         }
       })
 
@@ -310,6 +327,7 @@ export async function startHelper(opts: StartOptions): Promise<RunningHelper> {
           noteSuccess(gate)
           log('CONTROL ON (paired)')
           sendJson(ws, { t: 'paired' })
+          sendMover(ws)
           return
         }
         if (isBinary) return
@@ -317,6 +335,16 @@ export async function startHelper(opts: StartOptions): Promise<RunningHelper> {
         if (text === null) return
         const parsed = parseJson(text)
         if (!parsed.ok) return
+        const moverCmd = parseMover(parsed.msg)
+        if (moverCmd.ok) {
+          if (moverCmd.msg.on) {
+            if (!mover.start(moverCmd.msg.interval)) return
+          } else {
+            mover.stop()
+          }
+          sendMover(ws)
+          return
+        }
         const input = parseInput(parsed.msg)
         if (!input.ok) return
         noteInput(input.msg)
@@ -337,7 +365,11 @@ export async function startHelper(opts: StartOptions): Promise<RunningHelper> {
   return {
     port,
     host: LOOPBACK,
+    stopMover() {
+      mover.stop()
+    },
     close() {
+      mover.stop()
       clearGap()
       heldBtn = null
       return new Promise((resolve) => {

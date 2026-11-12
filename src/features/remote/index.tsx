@@ -1,11 +1,21 @@
 // Phone as a remote for this tab. Messages: remote:move, remote:click, remote:scroll,
 // remote:nav, remote:type, remote:key, remote:pointer.
 import React, { useEffect, useRef, useState } from 'react'
-import { CoreCtx, onMessage, registerFeature } from '../../core/bus'
+import { CoreCtx, createStore, onMessage, registerFeature } from '../../core/bus'
 import { Remote } from './Remote'
+import { MoverControl } from './Mover'
 import { Icon } from '../../core/icons'
 import { CopyBtn } from '../../core/ui'
 import { helperProbeTimeout, settleHelperProbe, type HelperProbeSocket } from './helperProbe'
+import {
+  moverBadgeText,
+  moverCommandFrom,
+  moverIntervalCommand,
+  moverToggleCommand,
+  moverView,
+  readMoverState,
+  type MoverState,
+} from '../screen/mover'
 import './remote.css'
 
 const MOVE_GAIN = 1.6
@@ -26,6 +36,31 @@ const helper = {
   status: 'off' as HelperStatus,
   ws: null as WebSocket | null,
   listeners: new Set<() => void>(),
+}
+const moverReported = createStore<MoverState>({ on: false, interval: null })
+let moverRelay: { send: (msg: { t: 'mover'; on: boolean; interval: MoverState['interval'] }) => void; connected: () => boolean } | null = null
+
+function applyMoverReport(state: MoverState) {
+  moverReported.set(state)
+  if (moverRelay?.connected()) moverRelay.send({ t: 'mover', on: state.on, interval: state.interval })
+}
+
+function readHelperMover(data: unknown) {
+  let parsed: unknown
+  try { parsed = JSON.parse(String(data)) } catch { return }
+  const state = readMoverState(parsed)
+  if (state) applyMoverReport(state)
+}
+
+export function stopMouseMover() {
+  sendHelper({ t: 'mover', on: false })
+}
+
+export function MoverHeaderBadge() {
+  const link = useHelper()
+  const state = moverReported.use()
+  if (moverView(link.status === 'connected', state) !== 'on' || !state.interval) return null
+  return <span className="pp-mover-badge" data-testid="mover-badge">{moverBadgeText(state.interval)}</span>
 }
 let helperJob = 0
 let helperConnects = 0
@@ -67,6 +102,17 @@ export function subscribeHelper(listener: () => void) {
   return () => { helper.listeners.delete(listener) }
 }
 
+function watchHelper(ws: WebSocket) {
+  ws.onmessage = (ev) => { readHelperMover(ev.data) }
+  ws.onclose = () => {
+    if (helper.ws !== ws) return
+    helper.ws = null
+    helper.status = 'off'
+    applyMoverReport({ on: false, interval: null })
+    emitHelper()
+  }
+}
+
 function closeHelperSocket() {
   const ws = helper.ws
   helper.ws = null
@@ -104,12 +150,7 @@ function tryHelperPort(port: number, code: string, mine: number, attempt: number
     clearTimer: (id) => { window.clearTimeout(id) },
     onPaired: () => {
       helper.ws = ws
-      ws.onclose = () => {
-        if (helper.ws !== ws) return
-        helper.ws = null
-        helper.status = 'off'
-        emitHelper()
-      }
+      watchHelper(ws)
     },
   })
 }
@@ -120,6 +161,7 @@ async function connectHelper(code: string): Promise<HelperResult> {
   const mine = ++helperJob
   closeHelperSocket()
   helper.status = 'connecting'
+  applyMoverReport({ on: false, interval: null })
   emitHelper()
   let rejected = false
   for (let portIndex = 0; portIndex < HELPER_PORTS.length; portIndex++) {
@@ -146,6 +188,7 @@ function disconnectHelper() {
   helperJob += 1
   closeHelperSocket()
   helper.status = 'off'
+  applyMoverReport({ on: false, interval: null })
   emitHelper()
 }
 
@@ -430,9 +473,17 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
     })
   }
 
+  const mover = moverReported.use()
+  const helperOn = link.status === 'connected'
   const statusText = link.status === 'connected' ? 'Connected' : link.status === 'connecting' ? 'Connecting…' : 'Not connected'
   return <div className="card pad" data-testid="remote-panel">
     <h3 className="h-row"><span><Icon n="keyboard" /> Phone keyboard</span>{text ? <CopyBtn text={text} ctx={ctx} label="Copy" /> : null}</h3>
+    <MoverControl
+      connected={helperOn}
+      state={mover}
+      onToggle={() => { if (helperOn) sendHelper(moverToggleCommand(mover)) }}
+      onInterval={(interval) => { if (helperOn && mover.on) sendHelper(moverIntervalCommand(interval)) }}
+    />
     <textarea data-testid="remote-text" className="clip" rows={2} onChange={(e) => setText(e.target.value)} placeholder="Open Remote on your phone and type. Text lands here, or in the field the pointer focuses." />
     <div className="full-laptop" data-testid="full-laptop">
       <div className="full-laptop-row">
@@ -539,9 +590,30 @@ registerFeature({
       onMessage('remote:helper', (m) => {
         if (m.ask) ctx.send({ t: 'remote:helper', on: helperReady() })
       }),
+      onMessage('mover', (m) => {
+        if (m.ask) {
+          const state = moverReported.get()
+          ctx.send({ t: 'mover', on: state.on, interval: state.interval })
+          return
+        }
+        const cmd = moverCommandFrom(m)
+        if (!cmd) return
+        sendHelper({ t: 'mover', ...cmd })
+      }),
+      onMessage('sc:stop', () => { stopMouseMover() }),
     ]
+    const relay = {
+      send: (msg: { t: 'mover'; on: boolean; interval: MoverState['interval'] }) => ctx.send(msg),
+      connected: () => ctx.link.connected,
+    }
+    moverRelay = relay
+    const offLink = ctx.link.subscribe(() => {
+      if (!ctx.link.connected) stopMouseMover()
+    })
     return () => {
       offs.forEach((off) => off())
+      offLink()
+      if (moverRelay === relay) moverRelay = null
       window.removeEventListener('resize', onResize)
       window.clearTimeout(hideTimer)
     }

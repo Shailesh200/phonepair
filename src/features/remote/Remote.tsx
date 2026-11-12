@@ -4,8 +4,10 @@ import React, { useEffect, useRef, useState } from 'react'
 import type { CoreCtx } from '../../core/bus'
 import { useMessage } from '../../core/bus'
 import { Icon } from '../../core/icons'
+import { MoverControl } from './Mover'
 import { createRemoteSend, type RemoteSend } from './send'
 import { remotePageClass, remoteScrollClass, remoteStyles } from './styles'
+import { moverIntervalCommand, moverToggleCommand, readMoverState, type MoverState } from '../screen/mover'
 
 export type PadGesture = {
   pts: Map<number, { x: number; y: number }>
@@ -58,11 +60,19 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
   const stripRaf = useRef(0)
   const linked = ctx.link.remoteName || 'Connecting…'
   const [fullLaptop, setFullLaptop] = useState(false)
+  const [mover, setMover] = useState<MoverState>({ on: false, interval: null })
   const send = useSharedSend(ctx)
   useMessage('remote:helper', (m) => { if (typeof m.on === 'boolean') setFullLaptop(m.on) })
+  useMessage('mover', (m) => {
+    const next = readMoverState(m)
+    if (next) setMover(next)
+  })
 
   useEffect(() => {
-    if (ctx.link.status === 'connected') send.helper({ ask: true })
+    if (ctx.link.status === 'connected') {
+      send.helper({ ask: true })
+      send.mover({ ask: true })
+    }
   }, [ctx, ctx.link.status, send])
   useEffect(() => {
     const page = pageRef.current?.closest('.phone-page') as HTMLElement | null
@@ -218,6 +228,12 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
       <button type="button" className={remoteStyles.next} data-testid="next" onClick={() => send.nav('next')}>Next<Icon n="next" /></button>
     </div>
     <button type="button" className={remoteStyles.laser} data-testid="pointer" onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); point(true) }} onPointerUp={(e) => { point(false); try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* already released */ } }} onPointerCancel={() => point(false)} onBlur={() => point(false)} onLostPointerCapture={() => point(false)}>Pointer · hold to point</button>
+    <MoverControl
+      connected={fullLaptop}
+      state={mover}
+      onToggle={() => { if (fullLaptop) send.mover(moverToggleCommand(mover)) }}
+      onInterval={(interval) => { if (fullLaptop && mover.on) send.mover(moverIntervalCommand(interval)) }}
+    />
     <button type="button" className={remoteStyles.keyboard} data-testid="kb-toggle" onClick={() => setKb((v) => { if (!v) last.current = ''; return !v })}><Icon n="keyboard" />Keyboard</button>
     {kb && <form className={remoteStyles.form} onSubmit={(e) => { e.preventDefault(); send.key('Enter'); const input = e.currentTarget.elements[0] as HTMLInputElement; input.value = ''; last.current = '' }}>
       <input autoFocus data-testid="kb-input" className={remoteStyles.input} placeholder="Type here, it appears on the laptop" autoCapitalize="off" autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="send" onFocus={(e) => revealInput(e.currentTarget)} onChange={(e) => {

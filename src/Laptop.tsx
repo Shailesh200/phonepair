@@ -3,6 +3,7 @@ import { CoreCtx, getFeatures } from './core/bus'
 import { Logo, StatusPill } from './core/ui'
 import { QrCard } from './features/pairing/QrCard'
 import { useHostPairFlow } from './features/pairing/useHostPairFlow'
+import { MoverHeaderBadge } from './features/remote'
 
 export function Laptop({ ctx }: { ctx: CoreCtx }) {
   const flow = useHostPairFlow(ctx.link)
@@ -125,7 +126,7 @@ function Dashboard({ ctx, waitingPhone }: { ctx: CoreCtx; waitingPhone: boolean 
   const Files = files?.LaptopPanel as React.ComponentType<{ ctx: CoreCtx; children?: React.ReactNode }> | undefined
   const Screen = screen?.LaptopPanel
   return <div className="dash">
-    <header className="nav"><Logo /><div className="row-g"><StatusPill link={ctx.link} /><button className="btn ghost" data-testid="disconnect" onClick={() => ctx.link.disconnect()}>Disconnect</button></div></header>
+    <header className="nav"><Logo /><div className="row-g"><MoverHeaderBadge /><StatusPill link={ctx.link} /><button className="btn ghost" data-testid="disconnect" onClick={() => ctx.link.disconnect()}>Disconnect</button></div></header>
     {waitingPhone && <div className="banner warn dash-wait">Phone disconnected, waiting to reconnect</div>}
     <div className="grid">
       <div className="col">

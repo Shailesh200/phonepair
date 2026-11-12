@@ -12,10 +12,12 @@ declare module 'phonepair-helper/server' {
     btn(btn: 'left' | 'right', state: 'down' | 'up'): Promise<void>
     dbl(): Promise<void>
     release(): Promise<void>
+    nudge(): Promise<void>
   }
   export type RunningHelper = {
     port: number
     host: string
+    stopMover(): void
     close(): Promise<void>
   }
   export function startHelper(opts: {

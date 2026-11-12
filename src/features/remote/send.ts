@@ -12,6 +12,7 @@ export type RemotePayload =
   | { t: 'remote:key'; key: string }
   | { t: 'remote:pointer'; on: boolean }
   | { t: 'remote:helper'; ask?: boolean; on?: boolean }
+  | { t: 'mover'; ask?: boolean; on?: boolean; interval?: '30s' | '1m' | '5m' | null }
 
 export type RemoteSend = {
   /** Single outbound function. Every mode calls this and nothing else. */
@@ -24,6 +25,7 @@ export type RemoteSend = {
   key: (key: string) => void
   pointer: (on: boolean) => void
   helper: (body: { ask?: boolean; on?: boolean }) => void
+  mover: (body: { ask?: boolean; on?: boolean; interval?: '30s' | '1m' | '5m' | null }) => void
 }
 
 let channelsCreated = 0
@@ -47,5 +49,6 @@ export function createRemoteSend(send: (msg: Msg) => void): RemoteSend {
     key: (key) => emit({ t: 'remote:key', key }),
     pointer: (on) => emit({ t: 'remote:pointer', on }),
     helper: (body) => emit({ t: 'remote:helper', ...body }),
+    mover: (body) => emit({ t: 'mover', ...body }),
   }
 }

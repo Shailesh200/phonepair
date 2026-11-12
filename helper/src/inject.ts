@@ -1,5 +1,6 @@
 import { Button, Key, Point, keyboard, mouse, screen } from '@nut-tree-fork/nut-js'
 import { planKey } from './keys.js'
+import { nudgeTargets } from './mover.js'
 import type { Injector } from './server.js'
 import type { Mod } from './validate.js'
 
@@ -253,6 +254,14 @@ export function createNutInjector(): Injector {
     },
     release() {
       return run(() => pointer.release())
+    },
+    nudge() {
+      return run(async () => {
+        const pos = await mouse.getPosition()
+        const step = nudgeTargets({ x: pos.x, y: pos.y })
+        await mouse.setPosition(new Point(step.away.x, step.away.y))
+        await mouse.setPosition(new Point(step.home.x, step.home.y))
+      })
     },
   }
 }
