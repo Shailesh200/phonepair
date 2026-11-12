@@ -39,7 +39,7 @@ function ctx(): CoreCtx {
   }
 }
 
-const TESTIDS = ['rtab-trackpad', 'rtab-clicker', 'rtab-pointer', 'trackpad', 'scroll-strip', 'lclick', 'rclick', 'prev', 'next', 'kb-toggle', 'kb-input', 'pointer']
+const TESTIDS = ['trackpad', 'scroll-strip', 'lclick', 'rclick', 'prev', 'next', 'kb-toggle', 'kb-input', 'pointer']
 
 export async function runRemoteTests() {
   const remoteSrc = injected(typeof __REMOTE_SRC__ === 'string' ? __REMOTE_SRC__ : undefined, 'Remote.tsx')
@@ -108,7 +108,11 @@ export async function runRemoteTests() {
   expect(pad.raf === 0 && pad.accX === 0 && pad.accY === 0 && pad.scrX === 0 && pad.scrY === 0 && pad.moved === 0 && pad.multi === false, 'pointer toggle resets the frame and accumulators')
   expect(strip.raf === 0 && strip.acc === 0, 'pointer toggle resets the scroll strip')
   expect(cancelled.join(',') === '42,99', 'pointer toggle cancels pending frames')
-  expect(/const point = \(on: boolean\) => \{[\s\S]*clearPadGesture\(st\.current[\s\S]*send\.pointer\(on\)/.test(remoteSrc), 'the laser toggle clears the pad before it sends')
+  expect(/const point = \(on: boolean\) => \{[\s\S]*releasePad\(\)[\s\S]*send\.pointer\(on\)/.test(remoteSrc), 'the laser toggle clears the pad before it sends')
+  expect(remoteSrc.includes('onBlur={() => point(false)}'), 'blur releases the laser')
+  expect(remoteSrc.includes('onLostPointerCapture={() => point(false)}'), 'lost pointer capture releases the laser')
+  expect(/const releasePad = \(\) => \{[\s\S]*clearPadGesture\(st\.current/.test(remoteSrc), 'releasePad clears through clearPadGesture')
+  expect(/useEffect\(\(\) => \(\) => \{[\s\S]*releasePad\(\)[\s\S]*send\.pointer\(false\)/.test(remoteSrc), 'unmount clears the pad through the same path as the laser')
 
   expect(count(remoteSrc, 'createRemoteSend(') === 1, 'one send path is created')
   expect(count(remoteSrc, 'ctxRef.current.send') === 1, 'that path uses the shared connection')

@@ -20,7 +20,6 @@ await esbuild.build({
     __REMOTE_SRC__: JSON.stringify(readFileSync(join(here, 'Remote.tsx'), 'utf8')),
     __INDEX_SRC__: JSON.stringify(readFileSync(join(here, 'index.tsx'), 'utf8')),
     __SEND_SRC__: JSON.stringify(readFileSync(join(here, 'send.ts'), 'utf8')),
-    __MODE_SRC__: JSON.stringify(readFileSync(join(here, 'mode.ts'), 'utf8')),
   },
 })
 await import(pathToFileURL(outfile).href + '?t=' + Date.now())

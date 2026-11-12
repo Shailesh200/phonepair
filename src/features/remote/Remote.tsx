@@ -93,10 +93,14 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
       focusTimer.current = window.setTimeout(() => el.scrollIntoView({ block: 'nearest' }), 50)
     })
   }
+  const releasePad = () => {
+    const strip = { raf: stripRaf.current, acc: stripAcc.current }
+    clearPadGesture(st.current, (id) => cancelAnimationFrame(id), strip)
+    stripRaf.current = strip.raf
+    stripAcc.current = strip.acc
+  }
   useEffect(() => () => {
-    const s = st.current
-    if (s.raf) cancelAnimationFrame(s.raf)
-    if (stripRaf.current) cancelAnimationFrame(stripRaf.current)
+    releasePad()
     send.pointer(false)
   }, [send])
 
@@ -161,10 +165,7 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
     }
   }
   const point = (on: boolean) => {
-    const strip = { raf: stripRaf.current, acc: stripAcc.current }
-    clearPadGesture(st.current, (id) => cancelAnimationFrame(id), strip)
-    stripRaf.current = strip.raf
-    stripAcc.current = strip.acc
+    releasePad()
     setFingers([])
     setStripOn(false)
     send.pointer(on)
@@ -198,9 +199,6 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
 
   return <div className={remotePageClass(className)} data-remote-name={linked} ref={pageRef}>
     {fullLaptop ? <span className={remoteStyles.badge} data-testid="full-laptop-badge">Full laptop</span> : null}
-    <span hidden data-testid="rtab-trackpad" />
-    <span hidden data-testid="rtab-clicker" />
-    <span hidden data-testid="rtab-pointer" />
     <div id="pp-trackpad" ref={pad} className={remoteStyles.pad} data-testid="trackpad" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onContextMenu={(e) => e.preventDefault()}>
       <div className={remoteStyles.hint}>
         <Icon n="pointer" />
@@ -219,7 +217,7 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
       <button type="button" className={remoteStyles.prev} data-testid="prev" onClick={() => send.nav('prev')}><Icon n="back" />Prev</button>
       <button type="button" className={remoteStyles.next} data-testid="next" onClick={() => send.nav('next')}>Next<Icon n="next" /></button>
     </div>
-    <button type="button" className={remoteStyles.laser} data-testid="pointer" onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); point(true) }} onPointerUp={(e) => { point(false); try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* already released */ } }} onPointerCancel={() => point(false)}>Pointer · hold to point</button>
+    <button type="button" className={remoteStyles.laser} data-testid="pointer" onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); point(true) }} onPointerUp={(e) => { point(false); try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* already released */ } }} onPointerCancel={() => point(false)} onBlur={() => point(false)} onLostPointerCapture={() => point(false)}>Pointer · hold to point</button>
     <button type="button" className={remoteStyles.keyboard} data-testid="kb-toggle" onClick={() => setKb((v) => { if (!v) last.current = ''; return !v })}><Icon n="keyboard" />Keyboard</button>
     {kb && <form className={remoteStyles.form} onSubmit={(e) => { e.preventDefault(); send.key('Enter'); const input = e.currentTarget.elements[0] as HTMLInputElement; input.value = ''; last.current = '' }}>
       <input autoFocus data-testid="kb-input" className={remoteStyles.input} placeholder="Type here, it appears on the laptop" autoCapitalize="off" autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="send" onFocus={(e) => revealInput(e.currentTarget)} onChange={(e) => {
