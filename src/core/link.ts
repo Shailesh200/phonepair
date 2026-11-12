@@ -150,6 +150,7 @@ import {
   listenReclaimRecycleSkipsOpenSocket,
   shouldClearStaleRememberMainConnForRecovery,
   shouldListenReclaimRecyclePeer,
+  shouldRearmListenAfterServerReopen,
 } from '../remember/rememberRecoveryConn'
 import {
   hostNavigatorOfflineTooLong,
@@ -798,6 +799,27 @@ export class Link {
     void this.bootstrapRememberListen()
   }
 
+  private rearmListenForRecoveryAccept(peer?: Peer) {
+    const lp = peer ?? this.listenPeer
+    if (!lp || lp.destroyed) {
+      if (!this.listenBootstrapInFlight && Date.now() >= this.listenBackoffUntil) {
+        void this.bootstrapRememberListen()
+      }
+      return
+    }
+    if (this.isRememberConnOnListenPeer()) return
+    this.reloadRememberPhonesMap()
+    if (!lp.open || lp.disconnected) {
+      if (!this.ensureListenForceRunner().runnerBusy()) {
+        this.ensureListenForceRunner().hook(peerAsForceSignal(lp, 'listen'), false)
+      }
+      return
+    }
+    if (!this.ensureListenForceRunner().runnerBusy()) {
+      this.ensureListenForceRunner().hook(peerAsForceSignal(lp, 'listen'), false)
+    }
+  }
+
   private tickListenDuringRecovery(lp: Peer | null) {
     if (!this.hostRememberListenRecoveryArmed()) return
     if (!this.shouldHostSignalWorkNow()) return
@@ -805,7 +827,12 @@ export class Link {
     const dropAt = this.listenRecoveryDropAt
     const wrapped = lp && !lp.destroyed ? peerAsForceSignal(lp, 'listen') : null
     const serverOpenAt = wrapped?.signalPeerOpenAt?.() ?? null
-    if (!listenRecoveryAwaitingServerOpenSinceDrop(dropAt, serverOpenAt)) return
+    if (!listenRecoveryAwaitingServerOpenSinceDrop(dropAt, serverOpenAt)) {
+      if (shouldRearmListenAfterServerReopen(dropAt, serverOpenAt, this.isRememberConnOnListenPeer())) {
+        this.rearmListenForRecoveryAccept(lp ?? undefined)
+      }
+      return
+    }
     const missingPeer = !lp || lp.destroyed
     if (missingPeer) {
       if (!this.listenBootstrapInFlight && Date.now() >= this.listenBackoffUntil) {
@@ -878,7 +905,9 @@ export class Link {
     }
     if (!this.listenSignalUnverified()) {
       const lpHealthy = this.listenPeer
-      if (lpHealthy?.open && !lpHealthy.disconnected) return
+      if (lpHealthy?.open && !lpHealthy.disconnected) {
+        if (!(this.listenRecoveryMode && !this.isRememberConnOnListenPeer())) return
+      }
     }
     if (this.listenGaveUp) {
       if (this.listenOwnedBefore) this.clearRememberListenGiveUp()
@@ -1443,6 +1472,9 @@ export class Link {
         }
         if (plan.clearRecoveryModeAt != null) {
           this.scheduleListenRecoveryModeClearAt(plan.clearRecoveryModeAt)
+        }
+        if (shouldRearmListenAfterServerReopen(this.listenRecoveryDropAt, now, this.isRememberConnOnListenPeer())) {
+          this.rearmListenForRecoveryAccept(peer)
         }
       } else if (this.listenForceRunner?.isUnverifiedAfterDrop()) {
         this.listenForceSettleUntil = now + FORCE_LISTEN_SETTLE_MS

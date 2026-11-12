@@ -109,6 +109,25 @@ export function listenRecoveryAwaitingServerOpenSinceDrop(
   return serverOpenAt <= recoveryDropAt
 }
 
+/** Server socket reopened after the listen-id drop (new OPEN, not the pre-drop half-open). */
+export function listenRecoveryServerOpenAfterDrop(
+  recoveryDropAt: number | null,
+  serverOpenAt: number | null,
+): boolean {
+  if (recoveryDropAt == null || serverOpenAt == null) return false
+  return serverOpenAt > recoveryDropAt
+}
+
+/** Re-arm listen id registration so remembered phones can dial after server OPEN post-cut. */
+export function shouldRearmListenAfterServerReopen(
+  recoveryDropAt: number | null,
+  serverOpenAt: number | null,
+  rememberConnOnListen: boolean,
+): boolean {
+  if (rememberConnOnListen) return false
+  return listenRecoveryServerOpenAfterDrop(recoveryDropAt, serverOpenAt)
+}
+
 /** After recovery settle, listen forcing may run again (silent open sockets, cadence/tick). */
 /** `lost()` on the host must not arm listen-id recovery — only signal-peer drops do. */
 export function shouldBeginListenIdRecoveryOnDataConnClose(): boolean {

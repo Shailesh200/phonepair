@@ -5,8 +5,10 @@ import {
   listenForceTickBlockedByRecoveryMode,
   listenRecoveryReclaimIntervalMs,
   listenRecoveryAwaitingServerOpenSinceDrop,
+  listenRecoveryServerOpenAfterDrop,
   listenRecoveryReclaimSchedulingActive,
   listenRecoveryStaleOpenNeedsImmediateRecycle,
+  shouldRearmListenAfterServerReopen,
   listenReclaimRecycleSkipsConnectingPeer,
   listenReclaimRecycleSkipsOpenSocket,
   shouldBeginListenIdRecoveryOnDataConnClose,
@@ -58,6 +60,16 @@ describe('remember recovery conn hygiene', () => {
     assert.equal(listenRecoveryAwaitingServerOpenSinceDrop(1000, 999), true)
     assert.equal(listenRecoveryAwaitingServerOpenSinceDrop(1000, 1001), false)
     assert.equal(listenRecoveryAwaitingServerOpenSinceDrop(null, 500), false)
+  })
+
+  it('case11: after server OPEN post-cut, listen must re-arm until phone dial accepted', () => {
+    const dropAt = 20_000
+    const serverOpenAt = dropAt + 4500
+    assert.equal(listenRecoveryServerOpenAfterDrop(dropAt, serverOpenAt), true)
+    assert.equal(listenRecoveryServerOpenAfterDrop(dropAt, dropAt), false)
+    assert.equal(shouldRearmListenAfterServerReopen(dropAt, serverOpenAt, false), true)
+    assert.equal(shouldRearmListenAfterServerReopen(dropAt, serverOpenAt, true), false)
+    assert.equal(shouldRearmListenAfterServerReopen(dropAt, null, false), false)
   })
 
   it('stops reclaim polling after the 120s cap when OPEN never arrives', () => {
