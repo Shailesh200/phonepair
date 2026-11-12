@@ -96,7 +96,7 @@ test('window copy and builder ids stay fixed', () => {
   const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
   const html = readFileSync(new URL('../src/window.html', import.meta.url), 'utf8')
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
-  const remote = readFileSync(new URL('../../src/features/remote/index.tsx', import.meta.url), 'utf8')
+  const remote = readFileSync(new URL('../../src/features/remote/ConnectGuide.tsx', import.meta.url), 'utf8')
   assert.match(main, /systemPreferences\.isTrustedAccessibilityClient\(false\)/)
   assert.match(main, /packaged: app\.isPackaged/)
   assert.ok(main.includes('Allow PhonePair Helper in System Settings > Privacy & Security > Accessibility'))
