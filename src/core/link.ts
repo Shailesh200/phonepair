@@ -158,9 +158,11 @@ import {
 } from '../remember/listenRecoveryModePolicy'
 import {
   listenRecoveryAwaitingServerOpenSinceDrop,
+  listenRecoveryServerOpenAfterDrop,
   listenReclaimRecycleSkipsOpenSocket,
   shouldClearStaleRememberMainConnForRecovery,
   shouldListenReclaimRecyclePeer,
+  shouldForceHookOnRecoveryRearm,
   shouldOneShotRecoveryRearm,
   shouldRearmListenAfterServerReopen,
 } from '../remember/rememberRecoveryConn'
@@ -828,10 +830,16 @@ export class Link {
       return
     }
     if (lp && !lp.destroyed) {
-      if (planListenBootstrapPeer(lp) === 'reconnect-existing') {
+      const plan = planListenBootstrapPeer(lp)
+      const staleHalfOpen = plan === 'skip-open'
+        && dropAt != null
+        && serverOpenAt != null
+        && serverOpenAt <= dropAt
+      if (plan === 'reconnect-existing' || staleHalfOpen) {
         this.forceListenPeerSignalReconnect(lp)
         return
       }
+      if (plan === 'skip-open') return
       this.ensureListenForceRunner().rebindPeer()
       try { lp.destroy() } catch {}
     }
@@ -964,12 +972,18 @@ export class Link {
     }
     const lp = this.listenPeer
     if (lp && !lp.destroyed) {
+      const wrapped = peerAsForceSignal(lp, 'listen')
+      const serverOpenAt = wrapped.signalPeerOpenAt?.() ?? null
       if (
         !lp.open
         && this.listenSignalUnverified()
         && !this.ensureListenForceRunner().runnerBusy()
       ) {
-        this.forceListenPeerSignalReconnect(lp)
+        if (this.listenRecoveryMode && listenRecoveryServerOpenAfterDrop(this.listenRecoveryDropAt, serverOpenAt)) {
+          this.rearmListenForRecoveryAccept(lp)
+        } else {
+          this.forceListenPeerSignalReconnect(lp)
+        }
       }
       return
     }
@@ -1129,6 +1143,18 @@ export class Link {
     const lp = peer ?? this.listenPeer
     if (!lp || lp.destroyed || this.destroyed) return
     if (lp.open && !lp.disconnected) return
+    if (this.listenRecoveryActive()) {
+      const wrapped = peerAsForceSignal(lp, 'listen')
+      const serverOpenAt = wrapped.signalPeerOpenAt?.() ?? null
+      if (listenRecoveryServerOpenAfterDrop(this.listenRecoveryDropAt, serverOpenAt)) {
+        if (shouldForceHookOnRecoveryRearm(lp.open, lp.disconnected)) {
+          this.tryListenForceHook(lp)
+        } else {
+          this.reloadRememberPhonesMap()
+        }
+        return
+      }
+    }
     this.tryListenForceHook(lp)
   }
 
@@ -1597,6 +1623,11 @@ export class Link {
     })
     peer.on('error', (e: any) => {
       if (e?.type !== 'unavailable-id' || this.destroyed) return
+      if (this.listenRecoveryActive() && !peer.destroyed) {
+        ppDebugListenPeerReconnect()
+        this.forceListenPeerSignalReconnect(peer)
+        return
+      }
       ppDebugIncListenSocketUnavailableId()
       const t = Date.now()
       this.listenReclaimStartedAt = ensureListenReclaimStarted(
