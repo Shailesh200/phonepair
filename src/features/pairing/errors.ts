@@ -7,6 +7,12 @@ export const MSG_CODE_MISMATCH =
 export const MSG_CODE_EXPIRED =
   'This code has expired. Refresh the laptop page for a new one.'
 
+export const MSG_REMEMBER_UNREACHABLE =
+  "Couldn't reach your laptop. Use the code."
+
+export const MSG_REMEMBER_DENIED =
+  'This laptop no longer remembers this phone'
+
 const GUEST_PAIRED_KEY = 'pp-guest-paired-code'
 
 export function rememberGuestPairedCode(code: string) {

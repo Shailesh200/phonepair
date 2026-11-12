@@ -4,6 +4,7 @@ import type { Link } from '../../core/link'
 import { copyText } from '../../core/util'
 import type { QrCardPhase } from './useHostPairFlow'
 import { joinUrl } from './relay'
+import { pairCodeSpanChars } from './pairCodeDisplay'
 
 export function QrCard({
   link,
@@ -52,15 +53,16 @@ export function QrCard({
       <div
         className="code code-click"
         data-testid="pair-code"
+        data-pair-code-raw={code}
         role="button"
         tabIndex={0}
         aria-label={`Pairing code ${code}. Click to copy.`}
         onClick={copyCode}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copyCode() } }}
       >
-        {code.slice(0, 3).split('').map((c, i) => <span key={i}>{c}</span>)}
-        {code.length > 3 && <span className="code-sep" aria-hidden="true">·</span>}
-        {code.slice(3).split('').map((c, i) => <span key={i + 3}>{c}</span>)}
+        {pairCodeSpanChars(code).map((c, i) => (
+          <span key={i} className={i === 2 ? 'code-mid' : undefined}>{c}</span>
+        ))}
       </div>
       {isErr ? (
         <div className="qr-err" role="alert">

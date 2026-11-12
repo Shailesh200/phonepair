@@ -1,14 +1,24 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useReducer, useState } from 'react'
 import { CoreCtx, getFeatures } from './core/bus'
 import { Icon } from './core/icons'
 import type { Link } from './core/link'
-import { Logo } from './core/ui'
+import { ConnRelayNote, Logo } from './core/ui'
 import { ago, download, fmtSize } from './core/util'
 import { files, type FileItem } from './features/files'
 import { CodeEntry } from './features/pairing/CodeEntry'
 import { PhoneConnecting } from './features/pairing/PhoneConnecting'
 import { joinPath } from './features/pairing/relay'
+import type { SavedLaptop } from './remember/storage'
+import { MSG_REMEMBER_DENIED } from './features/pairing/errors'
+import { forgetGuestLaptop } from './remember'
+import { SavedLaptopsList } from './remember/ui'
+import { phoneShowsConnecting } from './remember/guestSessionGate'
 import { phoneHostLabel } from './features/pairing/session'
+
+function entryPath() {
+  const base = location.pathname.replace(/\/$/, '')
+  return base.endsWith('/phone') ? base : `${base}/phone`
+}
 
 const HINTS: Record<string, string> = {
   files: 'Photos, PDFs, anything',
@@ -105,10 +115,21 @@ function RecentList() {
   </section>
 }
 
-export function Phone({ ctx, page, setPage, onLeave }: { ctx: CoreCtx; page: string; setPage: (p: string) => void; onLeave: () => void }) {
+export function Phone({
+  ctx, page, setPage, onLeave, rememberMode, onRemember,
+}: {
+  ctx: CoreCtx
+  page: string
+  setPage: (p: string) => void
+  onLeave: () => void
+  rememberMode?: boolean
+  onRemember?: (lap: SavedLaptop) => void
+}) {
   const s = ctx.link.status
   const [dcIn, setDcIn] = useState<number | null>(null)
+  const [, bump] = useReducer((x: number) => x + 1, 0)
   const rtt = useRtt(ctx.link)
+  useEffect(() => ctx.link.subscribe(bump), [ctx.link])
 
   useEffect(() => { const h = () => setPage(history.state?.p || 'home'); window.addEventListener('popstate', h); return () => window.removeEventListener('popstate', h) }, [setPage])
   const back = () => { if (history.state?.p) history.back(); else setPage('home') }
@@ -126,11 +147,22 @@ export function Phone({ ctx, page, setPage, onLeave }: { ctx: CoreCtx; page: str
   }, [dcIn, ctx])
 
   if (s === 'error') {
+    const err = ctx.link.error || undefined
+    const listenId = ctx.link.rememberListenId
     return (
       <CodeEntry
-        error={ctx.link.error}
+        error={err}
         onClearError={() => {}}
         onCode={(c) => { location.assign(joinPath(c)) }}
+        onRemember={onRemember}
+        onForgetDenied={
+          err === MSG_REMEMBER_DENIED && listenId
+            ? () => {
+              forgetGuestLaptop(ctx, listenId)
+              location.assign(entryPath())
+            }
+            : undefined
+        }
       />
     )
   }
@@ -147,11 +179,14 @@ export function Phone({ ctx, page, setPage, onLeave }: { ctx: CoreCtx; page: str
       </div>
     )
   }
-  if (s !== 'connected' && s !== 'reconnecting') {
+  if (phoneShowsConnecting(ctx.link.guestSessionPaired, s)) {
     return (
       <PhoneConnecting
         link={ctx.link}
+        ctx={ctx}
+        rememberMode={rememberMode}
         onLeave={onLeave}
+        onRemember={onRemember}
         onRetry={() => ctx.link.redialGuest()}
       />
     )
@@ -172,26 +207,43 @@ export function Phone({ ctx, page, setPage, onLeave }: { ctx: CoreCtx; page: str
           <div className="home-strip">
             <div className="home-strip-l">
               <span className={'pulse' + (s === 'connected' ? '' : ' off')} aria-hidden="true"><span className="pulse-ring" /><span className="pulse-dot" /></span>
-              <p className="strip-meta">
-                <b data-testid="status">{hostLabel}</b>
-                <span>{detail}</span>
-              </p>
+              <div className="row-g strip-meta-wrap">
+                <p className="strip-meta">
+                  <b data-testid="status">{hostLabel}</b>
+                  <span>{detail}</span>
+                </p>
+                <ConnRelayNote link={ctx.link} />
+              </div>
             </div>
-            <button
-              type="button"
-              className="strip-disconnect"
-              aria-label="Disconnect"
-              data-testid="phone-disconnect"
-              onClick={() => setDcIn(5)}
-            >
-              Disconnect
-            </button>
+            <div className="home-strip-actions">
+              <button
+                type="button"
+                className="iconbtn"
+                aria-label="Remember this laptop"
+                data-testid="remember-laptop"
+                onClick={() => ctx.send({ t: 'remember:ask' })}
+              >
+                <Icon n="heart" />
+              </button>
+              <button
+                type="button"
+                className="strip-disconnect"
+                aria-label="Disconnect"
+                data-testid="phone-disconnect"
+                onClick={() => setDcIn(5)}
+              >
+                Disconnect
+              </button>
+            </div>
           </div>
         ) : (
           <div className="top">
             <button className="iconbtn" aria-label="Back" data-testid="back" onClick={back}><Icon n="back" /></button>
             <b className="ttl">{cur.title}</b>
-            <span className={'pill sm' + (s === 'connected' ? '' : ' warn')}>{s === 'connected' ? hostLabel : '…'}</span>
+            <div className="row-g status-row">
+              <span className={'pill sm' + (s === 'connected' ? '' : ' warn')}>{s === 'connected' ? hostLabel : '…'}</span>
+              <ConnRelayNote link={ctx.link} />
+            </div>
           </div>
         )}
         {dcIn !== null && dcIn > 0 && (
@@ -200,6 +252,7 @@ export function Phone({ ctx, page, setPage, onLeave }: { ctx: CoreCtx; page: str
         {s === 'reconnecting' && <div className="banner warn">Reconnecting to your laptop…</div>}
         {!cur && hero ? (
           <>
+            {onRemember && <SavedLaptopsList ctx={ctx} onPick={onRemember} />}
             <button type="button" className="send-hero" data-testid={`tile-${hero.id}`} onClick={() => ctx.openPage(hero.id)}>
               <span className="send-body">
                 <HomeGlyph id={hero.id} icon={hero.icon} hero />
@@ -235,6 +288,18 @@ function UndoBar({ seconds, onUndo }: { seconds: number; onUndo: () => void }) {
   )
 }
 
-export function PhoneEntry(props: { onCode: (c: string) => void; onHost?: () => void; error?: string }) {
-  return <CodeEntry {...props} />
+export function PhoneEntry(props: {
+  onCode: (c: string) => void
+  onHost?: () => void
+  onRemember?: (lap: SavedLaptop) => void
+  error?: string
+  onForgetDenied?: () => void
+  onClearRememberError?: () => void
+}) {
+  return (
+    <CodeEntry
+      {...props}
+      onClearError={props.onClearRememberError}
+    />
+  )
 }

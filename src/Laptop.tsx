@@ -1,8 +1,9 @@
 import React from 'react'
 import { CoreCtx, getFeatures } from './core/bus'
-import { Logo, StatusPill } from './core/ui'
+import { ConnRelayNote, Logo, StatusPill } from './core/ui'
 import { QrCard } from './features/pairing/QrCard'
 import { useHostPairFlow } from './features/pairing/useHostPairFlow'
+import { RememberPrompt, SavedPhonesPanel } from './remember/ui'
 
 export function Laptop({ ctx }: { ctx: CoreCtx }) {
   const flow = useHostPairFlow(ctx.link)
@@ -11,6 +12,7 @@ export function Laptop({ ctx }: { ctx: CoreCtx }) {
 
   return <div className="laptop">
     {flow.showDashboard ? <Dashboard ctx={ctx} waitingPhone={waitingPhone} /> : <Landing ctx={ctx} cardPhase={flow.cardPhase} />}
+    <RememberPrompt ctx={ctx} />
     {flow.showDashboard && feats.map((f) => f.LaptopOverlay && <f.LaptopOverlay key={f.id} ctx={ctx} />)}
   </div>
 }
@@ -26,6 +28,7 @@ function Landing({ ctx, cardPhase }: { ctx: CoreCtx; cardPhase: ReturnType<typeo
         <h1>Your phone.<br />On your laptop.</h1>
         <p className="lead">Scan the code. Send files, a clipboard, or a remote, right in the browser.</p>
       </div>
+      <RememberLandingExtras ctx={ctx} />
       <div className="stage-row">
         <StudioStage />
         <QrCard
@@ -53,6 +56,19 @@ function Landing({ ctx, cardPhase }: { ctx: CoreCtx; cardPhase: ReturnType<typeo
     </div>
     <p className="trust" id="privacy">Direct peer-to-peer · Encrypted · No sign-up · Free</p>
   </div>
+}
+
+function RememberLandingExtras({ ctx }: { ctx: CoreCtx }) {
+  return (
+    <>
+      <SavedPhonesPanel ctx={ctx} />
+      {ctx.link.rememberListenOtherTab && (
+        <p className="mut small remember-other-tab" data-testid="remember-other-tab">
+          Saved phones are connected in another tab.
+        </p>
+      )}
+    </>
+  )
 }
 
 function Feature({ title, hint, icon }: { title: string; hint: string; icon: 'files' | 'clip' | 'remote' | 'screen' }) {
@@ -125,8 +141,14 @@ function Dashboard({ ctx, waitingPhone }: { ctx: CoreCtx; waitingPhone: boolean 
   const Files = files?.LaptopPanel as React.ComponentType<{ ctx: CoreCtx; children?: React.ReactNode }> | undefined
   const Screen = screen?.LaptopPanel
   return <div className="dash">
-    <header className="nav"><Logo /><div className="row-g"><StatusPill link={ctx.link} /><button className="btn ghost" data-testid="disconnect" onClick={() => ctx.link.disconnect()}>Disconnect</button></div></header>
+    <header className="nav"><Logo /><div className="row-g"><StatusPill link={ctx.link} /><ConnRelayNote link={ctx.link} /><button className="btn ghost" data-testid="disconnect" onClick={() => ctx.link.disconnect()}>Disconnect</button></div></header>
     {waitingPhone && <div className="banner warn dash-wait">Phone disconnected, waiting to reconnect</div>}
+    {ctx.link.rememberListenOtherTab && (
+      <p className="mut small remember-other-tab" data-testid="remember-other-tab">
+        Saved phones are connected in another tab.
+      </p>
+    )}
+    <SavedPhonesPanel ctx={ctx} />
     <div className="grid">
       <div className="col">
         {Files ? <Files ctx={ctx}>{Screen ? <Screen ctx={ctx} /> : null}</Files> : null}

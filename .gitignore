@@ -4,3 +4,4 @@ deploy
 shots/*.webm
 .env*
 *.tsbuildinfo
+test-results/.last-run.json
