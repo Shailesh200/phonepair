@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { createBrowserKeepAwake } from './keepAwakeRun.ts'
+import { WAKE_LOCK_HIDE_SETTLE_MS, createBrowserKeepAwake } from './keepAwakeRun.ts'
 
 function flush() {
   return new Promise((resolve) => setImmediate(resolve))
@@ -298,12 +298,13 @@ describe('keep-awake visibility listener', () => {
     }
   })
 
-  it('plays video only when the wake lock is missing, fails, or is released', async () => {
+  it('plays video only when the wake lock is missing, fails, or cannot be re-acquired', async () => {
     const prevDoc = globalThis.document
     const nav = globalThis.navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<unknown> } | null }
     const prevLock = nav.wakeLock
     let plays = 0
     let onRelease: (() => void) | null = null
+    let requests = 0
     const doc = {
       hidden: false,
       body: { appendChild() {} },
@@ -328,27 +329,41 @@ describe('keep-awake visibility listener', () => {
     }
     Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: doc })
     const host = { helperConnected: () => false, sendHelper() {}, publish() {} }
+    let held: ReturnType<typeof createBrowserKeepAwake> | null = null
+    let denied: ReturnType<typeof createBrowserKeepAwake> | null = null
     try {
       nav.wakeLock = {
-        request: async () => ({
-          release: async () => {},
-          addEventListener(_type: string, fn: () => void) { onRelease = fn },
-        }),
+        request: async () => {
+          requests += 1
+          if (requests > 1) throw new Error('dropped')
+          return {
+            release: async () => {},
+            addEventListener(_type: string, fn: () => void) { onRelease = fn },
+          }
+        },
       }
-      const held = createBrowserKeepAwake(host)
+      held = createBrowserKeepAwake(host)
       await held.start('1m')
       assert.equal(plays, 0)
       onRelease?.()
       await flush()
-      await flush()
+      assert.equal(plays, 0)
+      const started = Date.now()
+      while (plays < 1 && Date.now() - started < 500) {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+      assert.equal(requests, 2)
       assert.equal(plays, 1)
 
       plays = 0
+      held.stop()
       nav.wakeLock = { request: async () => { throw new Error('denied') } }
-      const denied = createBrowserKeepAwake(host)
+      denied = createBrowserKeepAwake(host)
       await denied.start('1m')
       assert.equal(plays, 1)
     } finally {
+      held?.stop()
+      denied?.stop()
       Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: prevDoc })
       try { nav.wakeLock = prevLock } catch { Object.defineProperty(nav, 'wakeLock', { configurable: true, value: prevLock }) }
     }
@@ -408,6 +423,169 @@ describe('keep-awake visibility listener', () => {
       assert.deepEqual(released, ['old'])
       assert.equal(held, true)
     } finally {
+      Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: prevDoc })
+      try { nav.wakeLock = prevLock } catch { Object.defineProperty(nav, 'wakeLock', { configurable: true, value: prevLock }) }
+    }
+  })
+
+  it('does not flash Not supported when release fires before the tab is hidden', async () => {
+    const statuses: (string | null)[] = []
+    const listeners = new Set<() => void>()
+    const prevDoc = globalThis.document
+    const nav = globalThis.navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<unknown> } | null }
+    const prevLock = nav.wakeLock
+    const origSet = globalThis.setTimeout
+    const origClear = globalThis.clearTimeout
+    const armed = new Set<ReturnType<typeof setTimeout>>()
+    let patched = false
+    const patchTimers = () => {
+      if (patched) return
+      patched = true
+      globalThis.setTimeout = ((fn: TimerHandler, ms?: number, ...args: unknown[]) => {
+        const id = origSet(fn as (...a: unknown[]) => void, ms, ...(args as []))
+        if (ms === WAKE_LOCK_HIDE_SETTLE_MS) armed.add(id)
+        return id
+      }) as typeof setTimeout
+      globalThis.clearTimeout = ((id?: ReturnType<typeof setTimeout>) => {
+        if (id != null) armed.delete(id)
+        origClear(id as never)
+      }) as typeof clearTimeout
+    }
+    const unpatchTimers = () => {
+      if (!patched) return
+      patched = false
+      globalThis.setTimeout = origSet
+      globalThis.clearTimeout = origClear
+    }
+    let release: (() => void) | null = null
+    let requests = 0
+    const doc = {
+      hidden: false,
+      body: { appendChild() {} },
+      pictureInPictureElement: null as HTMLVideoElement | null,
+      createElement() {
+        return {
+          paused: true,
+          style: {} as { cssText?: string },
+          src: '',
+          srcObject: null as MediaStream | null,
+          setAttribute() {},
+          addEventListener() {},
+          removeAttribute() {},
+          pause() {},
+          play() { return new Promise(() => {}) },
+          remove() {},
+        }
+      },
+      addEventListener(_type: string, fn: () => void) { listeners.add(fn) },
+      removeEventListener(_type: string, fn: () => void) { listeners.delete(fn) },
+    }
+    Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: doc })
+    nav.wakeLock = {
+      request: () => {
+        requests += 1
+        return Promise.resolve({
+          release: async () => {},
+          addEventListener(_type: string, fn: () => void) { release = fn },
+        })
+      },
+    }
+    const awake = createBrowserKeepAwake({
+      helperConnected: () => false,
+      sendHelper() {},
+      publish(state) { statuses.push(state.status) },
+    })
+    try {
+      awake.attach()
+      await awake.start('1m')
+      assert.equal(statuses.at(-1), 'On (screen awake)')
+      assert.equal(requests, 1)
+      assert.equal(doc.hidden, false)
+
+      patchTimers()
+      release?.()
+      assert.equal(statuses.at(-1), 'On (screen awake)')
+      assert.equal(statuses.includes('Not supported'), false)
+      assert.equal(armed.size, 1)
+      assert.equal(requests, 1)
+
+      doc.hidden = true
+      for (const fn of listeners) fn()
+      assert.equal(statuses.at(-1), 'Paused, tab hidden')
+      assert.equal(statuses.includes('Not supported'), false)
+      assert.equal(armed.size, 0)
+      assert.equal(requests, 1)
+      assert.equal(listeners.size, 1)
+      unpatchTimers()
+      await flush()
+      assert.equal(statuses.at(-1), 'Paused, tab hidden')
+      assert.equal(statuses.includes('Not supported'), false)
+
+      doc.hidden = false
+      await awake.start('1m')
+      assert.equal(statuses.at(-1), 'On (screen awake)')
+      patchTimers()
+      release?.()
+      assert.equal(armed.size, 1)
+      assert.equal(statuses.at(-1), 'On (screen awake)')
+      awake.stop()
+      assert.equal(armed.size, 0)
+      assert.equal(awake.view().status, null)
+      assert.equal(statuses.includes('Not supported'), false)
+      unpatchTimers()
+      awake.detach()
+      awake.detach()
+      assert.equal(listeners.size, 0)
+    } finally {
+      for (const id of armed) origClear(id)
+      unpatchTimers()
+      awake.detach()
+      Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: prevDoc })
+      try { nav.wakeLock = prevLock } catch { Object.defineProperty(nav, 'wakeLock', { configurable: true, value: prevLock }) }
+    }
+  })
+
+  it('shows Not supported when wake lock is missing and video cannot play', async () => {
+    const statuses: (string | null)[] = []
+    const prevDoc = globalThis.document
+    const nav = globalThis.navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<unknown> } | null }
+    const prevLock = nav.wakeLock
+    const doc = {
+      hidden: false,
+      body: { appendChild() {} },
+      pictureInPictureElement: null as HTMLVideoElement | null,
+      createElement() {
+        return {
+          paused: true,
+          style: {} as { cssText?: string },
+          src: '',
+          srcObject: null as MediaStream | null,
+          setAttribute() {},
+          addEventListener() {},
+          removeAttribute() {},
+          pause() {},
+          play() { return Promise.reject(new Error('no media')) },
+          remove() {},
+        }
+      },
+      addEventListener() {},
+      removeEventListener() {},
+    }
+    Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: doc })
+    try { delete nav.wakeLock } catch { /* define below */ }
+    Object.defineProperty(nav, 'wakeLock', { configurable: true, value: undefined })
+    const awake = createBrowserKeepAwake({
+      helperConnected: () => false,
+      sendHelper() {},
+      publish(state) { statuses.push(state.status) },
+    })
+    try {
+      await awake.start('1m')
+      assert.equal(awake.view().status, 'Not supported')
+      assert.equal(statuses.at(-1), 'Not supported')
+      assert.equal(awake.view().mode, 'none')
+    } finally {
+      awake.stop()
       Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: prevDoc })
       try { nav.wakeLock = prevLock } catch { Object.defineProperty(nav, 'wakeLock', { configurable: true, value: prevLock }) }
     }

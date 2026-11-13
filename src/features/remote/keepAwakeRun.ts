@@ -12,6 +12,11 @@ import {
 } from './keepAwake.ts'
 import { TINY_MP4 } from './keepAwakeMedia.ts'
 
+/** Chrome fires the sentinel `release` event a few milliseconds before
+ * `document.hidden` becomes true. Hold the last good status until the next
+ * visibilitychange, or this long, before deciding the lock is really gone. */
+export const WAKE_LOCK_HIDE_SETTLE_MS = 50
+
 export type KeepAwakeHost = {
   helperConnected: () => boolean
   sendHelper: (msg: { t: 'mover'; on: boolean; interval?: MoverInterval }) => void
@@ -87,6 +92,21 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   let drawTimer: number | null = null
   let audio: { ctx: AudioContext; osc: OscillatorNode } | null = null
   let onVisible: (() => void) | null = null
+  let releaseTimer: ReturnType<typeof setTimeout> | null = null
+
+  function clearReleaseTimer() {
+    if (releaseTimer == null) return
+    clearTimeout(releaseTimer)
+    releaseTimer = null
+  }
+
+  function armReleaseTimer() {
+    clearReleaseTimer()
+    releaseTimer = setTimeout(() => {
+      releaseTimer = null
+      onVisibility()
+    }, WAKE_LOCK_HIDE_SETTLE_MS)
+  }
 
   function view(): KeepAwakeViewState {
     const helperConnected = host.helperConnected()
@@ -180,6 +200,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   }
 
   function releaseMedia() {
+    clearReleaseTimer()
     releaseWakeLock()
     stopAudio()
     session.wakeLockHeld = false
@@ -314,22 +335,19 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
         if (sentinel !== next) return
         sentinel = null
         session.wakeLockHeld = false
-        const recover = session.requested && !session.helperOn && !host.helperConnected() && !tabHidden()
-        if (recover) reacquiring = true
-        publish()
-        if (!recover) return
-        const held = epoch
-        void ensureVideo(held).then((playing) => {
-          if (held !== epoch) return
+        const active = session.requested && !session.helperOn && !host.helperConnected()
+        // Chrome delivers `release` before `document.hidden` flips. Deciding
+        // now reports "Not supported" for a few milliseconds, then "Paused".
+        // Hold the last good status until visibilitychange or the settle timer.
+        if (!active || tabHidden()) {
+          clearReleaseTimer()
           reacquiring = false
-          if (session.wakeLockHeld || tabHidden()) {
-            if (session.wakeLockHeld) stopVideo()
-            publish()
-            return
-          }
-          session.videoPlaying = playing
           publish()
-        })
+          return
+        }
+        reacquiring = true
+        armReleaseTimer()
+        publish()
       })
       return true
     } catch {
@@ -344,6 +362,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
 
   async function start(interval: MoverInterval) {
     const mine = ++epoch
+    clearReleaseTimer()
     reacquiring = false
     session.helperStopped = false
     session.interval = interval
@@ -473,6 +492,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   }
 
   function onVisibility() {
+    clearReleaseTimer()
     session.tabHidden = tabHidden()
     const again = session.requested && !session.helperOn && !host.helperConnected() && !session.tabHidden
     reacquiring = again
