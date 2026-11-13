@@ -9,6 +9,7 @@ import { Phone, PhoneEntry } from './Phone'
 import './features'
 import { forgetGuestLaptopLocal, type SavedLaptop } from './remember'
 import { rememberEntryError } from './remember/entryError'
+import { MSG_REMEMBER_DENIED } from './features/pairing/errors'
 import { joinPairSession } from './features/session/client'
 
 type AppRoute =

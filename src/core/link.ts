@@ -1,3 +1,4 @@
+import Peer, { DataConnection, MediaConnection } from 'peerjs'
 import { endPairSession } from '../features/session/client.ts'
 import { hostAcceptsAnotherPhone } from '../features/session/limit.ts'
 
