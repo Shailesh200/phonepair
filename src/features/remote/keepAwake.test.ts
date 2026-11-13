@@ -8,6 +8,8 @@ import {
   deriveStatus,
   createKeepAwakeLinkWatch,
   keepAwakeSwitchOn,
+  formatClockMs,
+  keepAwakeClockText,
   keepAwakeTimingText,
   parseCustomMin,
   readKeepAwakeChoice,
@@ -388,6 +390,10 @@ describe('keep-awake relay', () => {
     const line = keepAwakeTimingText({ status: 'On (screen awake)', autoStop: '30m', endsAt: ends }, ends - 14 * 60 * 1000)
     assert.ok(line?.startsWith('Ends '))
     assert.match(line || '', /14m left/)
+    assert.equal(formatClockMs(0), '00:00')
+    assert.equal(formatClockMs(65_000), '01:05')
+    assert.equal(keepAwakeClockText({ run: 'running', autoStop: 'never', endsAt: null, startedAt: 1_000 }, 61_000), '01:00')
+    assert.equal(keepAwakeClockText({ run: 'paused', autoStop: '30m', endsAt: null, frozenRemain: 90_000 }, 0), '01:30')
     assert.equal(parseCustomMin(45), 45)
     assert.equal(parseCustomMin('90'), 90)
     assert.equal(parseCustomMin(1.5), null)

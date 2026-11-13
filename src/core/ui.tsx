@@ -1,4 +1,4 @@
-import React, { useEffect, useReducer, useRef } from 'react'
+import React, { useEffect, useReducer, useRef, useState } from 'react'
 import { Icon } from './icons'
 import { copyText, linkify } from './util'
 import type { CoreCtx } from './bus'
@@ -33,4 +33,36 @@ export function ConnRelayNote({ link }: { link: Link }) {
 /** Renders the relay footnote when the active data path uses TURN (testid conn-relay). */
 export function connRelayNoteVisible(connViaRelay: boolean | null): boolean {
   return connViaRelay === true
+}
+
+export function MoreMenu({ label, testId, items }: {
+  label: string
+  testId: string
+  items: { id: string; label: string; onClick: () => void }[]
+}) {
+  const [open, setOpen] = useState(false)
+  const root = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
+    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+  return <div className="pp-more" ref={root}>
+    <button type="button" className="iconbtn" data-testid={testId} aria-haspopup="menu" aria-expanded={open} aria-label={label} onClick={() => setOpen((v) => !v)}>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="12" cy="19" r="1.7" /></svg>
+    </button>
+    {open ? <div className="pp-more-menu" role="menu">
+      {items.map((item) => (
+        <button key={item.id} type="button" role="menuitem" data-testid={`${testId}-${item.id}`} onClick={() => { setOpen(false); item.onClick() }}>{item.label}</button>
+      ))}
+    </div> : null}
+  </div>
 }

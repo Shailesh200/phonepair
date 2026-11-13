@@ -250,9 +250,12 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
     <MoverControl
       state={mover}
       qa={qaHooksEnabled(browserSearch())}
-      onToggle={() => {
-        send.mover(moverToggleCommand(mover))
+      onStart={() => {
+        if (mover.run === 'paused') send.mover({ resume: true })
+        else send.mover(moverToggleCommand(mover))
       }}
+      onPause={() => send.mover({ pause: true })}
+      onStop={() => send.mover({ on: false })}
       onDuration={(preset) => {
         if (mover.on) send.mover({ on: true, interval: '3s', autoStop: preset })
         else send.mover({ autoStop: preset })

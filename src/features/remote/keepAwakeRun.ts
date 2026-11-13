@@ -29,6 +29,10 @@ type Session = {
   autoStop: AutoStop
   customMin: number | null
   endsAt: number | null
+  userPaused: boolean
+  startedAt: number | null
+  frozenRemain: number | null
+  elapsedMs: number | null
   helperOn: boolean
   localEngaged: boolean
   pending: boolean
@@ -70,6 +74,10 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     autoStop: saved.autoStop,
     customMin: saved.customMin,
     endsAt: null,
+    userPaused: false,
+    startedAt: null,
+    frozenRemain: null,
+    elapsedMs: null,
     helperOn: false,
     localEngaged: false,
     pending: false,
@@ -110,7 +118,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
       failed,
     })
     const status = deriveStatus({
-      requested: session.requested,
+      requested: session.requested && !session.userPaused,
       helperConnected,
       helperReportedOn: session.helperOn,
       wakeLockHeld: session.wakeLockHeld,
@@ -131,6 +139,10 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
       autoStop: session.autoStop,
       customMin: session.customMin,
       endsAt: session.endsAt,
+      run: session.userPaused ? 'paused' : session.requested ? 'running' : 'off',
+      startedAt: session.startedAt,
+      frozenRemain: session.frozenRemain,
+      elapsedMs: session.elapsedMs,
     }
   }
 
@@ -370,6 +382,10 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     reacquiring = false
     session.helperStopped = false
     session.interval = interval
+    session.userPaused = false
+    session.startedAt = Date.now()
+    session.frozenRemain = null
+    session.elapsedMs = null
     session.requested = true
     session.localEngaged = true
     session.helperOn = false
@@ -404,6 +420,10 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     lastGood = null
     session.helperStopped = false
     session.requested = false
+    session.userPaused = false
+    session.startedAt = null
+    session.frozenRemain = null
+    session.elapsedMs = null
     session.helperOn = false
     session.localEngaged = false
     session.pending = false
@@ -412,6 +432,34 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     releaseMedia()
     if (opts?.tellHelper !== false) host.sendHelper({ t: 'mover', on: false })
     publish()
+  }
+
+  function pause() {
+    if (!session.requested || session.userPaused) return
+    session.userPaused = true
+    session.frozenRemain = session.endsAt == null ? null : Math.max(0, session.endsAt - Date.now())
+    session.elapsedMs = session.startedAt == null ? 0 : Date.now() - session.startedAt
+    clearClock()
+    releaseMedia()
+    host.sendHelper({ t: 'mover', on: false })
+    publish()
+  }
+
+  function resume() {
+    if (!session.userPaused) return
+    const remain = session.frozenRemain
+    const started = session.startedAt
+    const elapsed = session.elapsedMs ?? 0
+    session.userPaused = false
+    void start(session.interval).then(() => {
+      if (!session.requested || session.userPaused) return
+      if (session.autoStop === 'never' && started != null) session.startedAt = Date.now() - elapsed
+      if (remain != null) {
+        const ms = clock.armHold(remain)
+        session.endsAt = ms == null ? null : Date.now() + ms
+      }
+      publish()
+    })
   }
 
   function setAutoStop(preset: AutoStop, customMin?: number | null) {
@@ -561,6 +609,8 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     view,
     start,
     stop,
+    pause,
+    resume,
     setAutoStop,
     afterToggle,
     noteHelperReport,

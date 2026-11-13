@@ -1,6 +1,6 @@
 import React, { useRef } from 'react'
 import { Logo } from '../../core/ui'
-import { CodeBoxes } from './CodeBoxes'
+import { CodeBoxes } from './CodeBoxes.tsx'
 import { MSG_REMEMBER_DENIED, MSG_REMEMBER_UNREACHABLE } from './errors'
 import { lastLaptopSession } from './session'
 import { SavedLaptopsList } from '../../remember/ui'

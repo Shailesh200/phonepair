@@ -52,6 +52,10 @@ export type KeepAwakeViewState = {
   customMin: number | null
   /** Epoch ms when a finite run ends. Null when off or until stopped. */
   endsAt: number | null
+  run?: 'off' | 'running' | 'paused'
+  startedAt?: number | null
+  frozenRemain?: number | null
+  elapsedMs?: number | null
 }
 
 export const KEEP_AWAKE_IDLE: KeepAwakeViewState = {
@@ -310,8 +314,51 @@ export function createAutoStopClock(opts: {
       }, ms)
       return ms
     },
+    /** Arm an exact leftover, used when a paused run resumes. */
+    armHold(ms: number): number | null {
+      clear()
+      if (!Number.isFinite(ms) || ms <= 0) return null
+      const gen = generation
+      id = opts.setTimer(() => {
+        if (gen !== generation) return
+        id = null
+        opts.onFire()
+      }, ms)
+      return ms
+    },
     clear,
   }
+}
+
+export function formatClockMs(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  const mm = String(m).padStart(2, '0')
+  const ss = String(s).padStart(2, '0')
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
+}
+
+/** Countdown while a length is running. Elapsed time while it runs until stopped. */
+export function keepAwakeClockText(state: {
+  run?: 'off' | 'running' | 'paused'
+  autoStop: AutoStop
+  endsAt: number | null
+  startedAt?: number | null
+  frozenRemain?: number | null
+  elapsedMs?: number | null
+}, now: number): string {
+  if (state.run === 'paused') {
+    if (state.autoStop === 'never') return formatClockMs(state.elapsedMs ?? 0)
+    return formatClockMs(state.frozenRemain ?? 0)
+  }
+  if (state.run === 'running') {
+    if (state.autoStop === 'never') return formatClockMs(state.startedAt == null ? 0 : now - state.startedAt)
+    if (state.endsAt == null) return formatClockMs(0)
+    return formatClockMs(state.endsAt - now)
+  }
+  return state.autoStop === 'never' ? '00:00' : formatClockMs(autoStopDelayMs(state.autoStop, 1, null) ?? 0)
 }
 
 function searchParams(search: string) {
@@ -380,6 +427,8 @@ export type RelayCommand =
   | { on: false; autoStop?: AutoStop; customMin?: number }
   | { on: true; interval: MoverInterval; autoStop?: AutoStop; customMin?: number }
   | { autoStop: AutoStop; customMin?: number }
+  | { pause: true }
+  | { resume: true }
 
 function withCustom(cmd: RelayCommand, msg: Record<string, unknown>): RelayCommand {
   const customMin = parseCustomMin(msg.customMin)
@@ -391,6 +440,8 @@ export function readRelayCommand(value: unknown): RelayCommand | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const msg = value as Record<string, unknown>
   if (msg.ask === true) return null
+  if (msg.pause === true) return { pause: true }
+  if (msg.resume === true) return { resume: true }
   const autoStop = isAutoStop(msg.autoStop) ? msg.autoStop : undefined
   if (msg.on === false) {
     const cmd: RelayCommand = autoStop ? { on: false, autoStop } : { on: false }

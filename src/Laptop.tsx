@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react'
 import { CoreCtx, getFeatures } from './core/bus'
-import { ConnRelayNote, Logo, StatusPill } from './core/ui'
+import { ConnRelayNote, Logo, MoreMenu, StatusPill } from './core/ui'
+import { copyText } from './core/util'
 import { QrCard } from './features/pairing/QrCard'
 import { useHostPairFlow } from './features/pairing/useHostPairFlow'
 import { hostShowsPairedView } from './features/pairing/hostSignalReconnect'
 import { createReconnectEscape, endLaptopPair } from './features/pairing/reconnectEscape'
-import { MoverHeaderBadge, stopMouseMover } from './features/remote'
+import { KeepAwakeCard, MoverHeaderBadge, stopMouseMover } from './features/remote'
 import { RememberPrompt, SavedPhonesPanel } from './remember/ui'
 
 function endPair(ctx: CoreCtx) {
@@ -52,6 +53,7 @@ function Landing({ ctx, cardPhase }: { ctx: CoreCtx; cardPhase: ReturnType<typeo
         <p className="lead">Scan the code. Send files, a clipboard, or a remote, right in the browser.</p>
       </div>
       <RememberLandingExtras ctx={ctx} />
+      <KeepAwakeCard />
       <div className="stage-row">
         <StudioStage />
         <QrCard
@@ -155,6 +157,18 @@ function StudioStage() {
   </div>
 }
 
+function SessionMenu({ ctx, onDisconnect }: { ctx: CoreCtx; onDisconnect: () => void }) {
+  const code = ctx.link.code
+  const origin = typeof location === 'undefined' ? '' : location.origin
+  const link = `${origin}/j/${code}`
+  return <MoreMenu label="Session" testId="session-menu" items={[
+    { id: 'code', label: `Code ${code}`, onClick: () => { void copyText(code).then((ok) => ctx.toast(ok ? 'Code copied' : code)) } },
+    { id: 'link', label: 'Copy join link', onClick: () => { void copyText(link).then((ok) => ctx.toast(ok ? 'Join link copied' : link)) } },
+    { id: 'saved', label: 'Saved phones', onClick: () => document.getElementById('saved-devices')?.scrollIntoView({ block: 'nearest' }) },
+    { id: 'disconnect', label: 'Disconnect', onClick: onDisconnect },
+  ]} />
+}
+
 function Dashboard({ ctx, waitingPhone, pairDifferent }: { ctx: CoreCtx; waitingPhone: boolean; pairDifferent: boolean }) {
   const feats = getFeatures().filter((f) => f.LaptopPanel)
   const files = feats.find((f) => f.id === 'files')
@@ -164,13 +178,14 @@ function Dashboard({ ctx, waitingPhone, pairDifferent }: { ctx: CoreCtx; waiting
   const Files = files?.LaptopPanel as React.ComponentType<{ ctx: CoreCtx; children?: React.ReactNode }> | undefined
   const Screen = screen?.LaptopPanel
   return <div className="dash">
-    <header className="nav"><Logo /><div className="row-g"><MoverHeaderBadge /><StatusPill link={ctx.link} /><ConnRelayNote link={ctx.link} /><button className="btn ghost" data-testid="disconnect" onClick={() => endPair(ctx)}>Disconnect</button></div></header>
+    <header className="nav"><Logo /><div className="row-g"><MoverHeaderBadge /><StatusPill link={ctx.link} /><ConnRelayNote link={ctx.link} /><SessionMenu ctx={ctx} onDisconnect={() => endPair(ctx)} /></div></header>
     {waitingPhone && <div className="banner warn dash-wait" data-testid="reconnecting-banner">Reconnecting…{pairDifferent ? <button type="button" data-testid="reconnect-pair-different" onClick={() => endPair(ctx)}>Pair a different phone</button> : null}</div>}
     {ctx.link.rememberListenOtherTab && (
       <p className="mut small remember-other-tab" data-testid="remember-other-tab">
         Saved phones are connected in another tab.
       </p>
     )}
+    <KeepAwakeCard />
     <SavedPhonesPanel ctx={ctx} />
     <div className="grid">
       <div className="col dash-remote">{rest.filter((f) => f.laptopColumn === 'left').map(panel)}</div>

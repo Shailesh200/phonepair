@@ -237,6 +237,29 @@ export function deviceName(): string {
 }
 export const isPhoneUA = () => /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
 
+const HOST_CODE_KEY = 'pp-code'
+
+/** Lock, Home, and a closed tab all fire pagehide. Only Disconnect ends the pair. */
+export function pageHideEndsPair(): boolean {
+  return false
+}
+
+export function loadHostCode(make: () => string): string {
+  let saved = ''
+  try { saved = sessionStorage.getItem(HOST_CODE_KEY) || '' } catch { /* private mode */ }
+  if (!saved) {
+    try { saved = localStorage.getItem(HOST_CODE_KEY) || '' } catch { /* private mode */ }
+  }
+  const code = saved || make()
+  rememberHostCode(code)
+  return code
+}
+
+export function rememberHostCode(code: string) {
+  try { sessionStorage.setItem(HOST_CODE_KEY, code) } catch { /* private mode */ }
+  try { localStorage.setItem(HOST_CODE_KEY, code) } catch { /* private mode */ }
+}
+
 type Listener = () => void
 type MsgHandler = (m: any) => void
 type CallHandler = (c: MediaConnection) => void
@@ -1176,6 +1199,9 @@ export class Link {
         this.documentHiddenAt = Date.now()
         return
       }
+      if (this.role === 'guest' && !this.destroyed && this.status !== 'error' && !this.conn?.open) {
+        this.applyGuestSignalRecoveryRedial()
+      }
       this.noteRestoreSignal(Date.now())
       if (this.documentHiddenAt != null) {
         const hiddenMs = Date.now() - this.documentHiddenAt
@@ -1901,7 +1927,7 @@ export class Link {
     this.peer?.destroy()
     this.peer = null
     this.code = newPairCode()
-    sessionStorage.setItem('pp-code', this.code)
+    rememberHostCode(this.code)
     this.retry = 0
     this.everConnected = false
     this.set({ status: 'starting', error: '', remoteName: '' })

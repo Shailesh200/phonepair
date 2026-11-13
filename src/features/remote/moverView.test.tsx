@@ -56,7 +56,7 @@ describe('mouse mover control', () => {
     assert.deepEqual(moverToggleCommand({ on: false, interval: '5m' }), { on: true, interval: '3s' })
     assert.deepEqual(moverToggleCommand({ on: true, interval: '5m' }), { on: false })
 
-    const hands = { onToggle() {}, onDuration() {}, onCustomMinutes() {} }
+    const hands = { onStart() {}, onPause() {}, onStop() {}, onDuration() {}, onCustomMinutes() {} }
     const blank = { customMin: null, endsAt: null }
     const screen = markup(React.createElement(MoverControl, {
       ...hands,
@@ -64,8 +64,10 @@ describe('mouse mover control', () => {
     }))
     assert.match(screen, /class="pp-mover-main"/)
     assert.match(screen, /data-state="on"/)
-    assert.match(screen, /aria-checked="true"/)
-    assert.equal(/data-testid="mover-toggle"[^>]*disabled/.test(screen), false)
+    assert.match(screen, /data-testid="mover-pause"/)
+    assert.match(screen, /data-testid="mover-stop"/)
+    assert.equal(screen.includes('mover-start'), false)
+    assert.match(screen, /data-testid="mover-clock"/)
     assert.match(screen, /data-testid="mover-status"/)
     assert.match(screen, /On \(screen awake\)/)
     assert.equal(screen.includes('On (real mouse)'), false)
@@ -87,8 +89,8 @@ describe('mouse mover control', () => {
       state: { on: false, interval: null, status: null, mode: 'none', autoStop: 'never', ...blank },
     }))
     assert.match(off, /data-state="off"/)
-    assert.match(off, /aria-checked="false"/)
-    assert.equal(/data-testid="mover-toggle"[^>]*disabled/.test(off), false)
+    assert.match(off, /data-testid="mover-start"/)
+    assert.equal(off.includes('mover-pause'), false)
     assert.equal(off.includes('mover-interval-'), false)
     assert.equal(off.includes('mover-timing'), false)
     assert.match(off, /aria-pressed="true"[^>]*data-testid="mover-duration-never"/)
@@ -104,7 +106,7 @@ describe('mouse mover control', () => {
       state: { on: true, interval: '3s', status: 'On (real mouse)', mode: 'helper', autoStop: '1h', ...blank, endsAt: Date.now() + 60 * 60 * 1000 },
     }))
     assert.match(on, /data-state="on"/)
-    assert.match(on, /aria-checked="true"/)
+    assert.match(on, /data-testid="mover-pause"/)
     assert.match(on, /data-testid="mover-badge"/)
     assert.match(on, /data-testid="mover-status"/)
     assert.match(on, /On \(real mouse\)/)
@@ -130,7 +132,7 @@ describe('mouse mover control', () => {
       state: { on: false, interval: '1m', status: 'Helper not running', mode: 'none', autoStop: 'never', ...blank },
     }))
     assert.match(quit, /data-state="unsupported"/)
-    assert.match(quit, /aria-checked="false"/)
+    assert.match(quit, /data-testid="mover-start"/)
     assert.match(quit, /data-testid="mover-status"[^>]*>Helper not running</)
     assert.match(quit, /class="pp-mover-badge"/)
     assert.match(quit, /aria-pressed="true"[^>]*data-testid="mover-duration-never"/)
@@ -166,14 +168,14 @@ describe('mouse mover control', () => {
   it('places Keep awake between the pointer and the keyboard on the phone', () => {
     const html = markup(React.createElement(Remote, { ctx: ctx() }))
     const pointer = html.indexOf('data-testid="pointer"')
-    const toggle = html.indexOf('data-testid="mover-toggle"')
+    const toggle = html.indexOf('data-testid="mover-start"')
     const keyboard = html.indexOf('data-testid="kb-toggle"')
     assert.ok(pointer >= 0 && toggle > pointer && keyboard > toggle, html)
     assert.equal(html.includes('data-testid="kb-input"'), false)
     assert.match(html, /Keep awake/)
     assert.match(html, /class="pp-mover-main"/)
     assert.match(html, /data-state="off"/)
-    assert.equal(/data-testid="mover-toggle"[^>]*disabled/.test(html), false)
+    assert.match(html, /data-testid="mover-start"/)
     assert.equal(html.includes('Connect laptop control first'), false)
     assert.equal(html.includes('data-mode'), false)
     assert.equal(html.includes('mover-debug-mode'), false)
@@ -186,7 +188,7 @@ describe('mouse mover control', () => {
     assert.match(src, /useMessage\('mover'/)
     assert.match(src, /readMoverState/)
     assert.equal(src.includes('setMover(true)'), false)
-    assert.match(src, /onToggle=\{\(\) => \{\s*send\.mover\(moverToggleCommand\(mover\)\)/)
+    assert.match(src, /onStart=\{\(\) => \{/)
     const moverSrc = readFileSync(join(process.cwd(), 'src/features/remote/Mover.tsx'), 'utf8')
     assert.match(moverSrc, /onBlur=\{commitDraft\}/)
     assert.equal(/onChange=\{[^}]*onCustomMinutes/.test(moverSrc), false)

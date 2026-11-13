@@ -168,7 +168,7 @@ export function SavedPhonesPanel({ ctx }: { ctx: CoreCtx }) {
     (p) => getDeviceMeta(p.id).lastConnectedMs ?? null,
   )
   return (
-    <div className="remember-panel card" data-testid="saved-phones">
+    <div className="remember-panel card" id="saved-devices" data-testid="saved-phones">
       <h4>Connected devices</h4>
       <ul className="remember-list pp-list">
         {phones.map((p) => (
@@ -205,7 +205,7 @@ export function SavedLaptopsList({
     (lap) => getDeviceMeta(lap.listenId).lastConnectedMs ?? null,
   )
   return (
-    <div className="remember-saved">
+    <div className="remember-saved" id="saved-laptops">
       <p className="mut saved-h">Connected devices</p>
       <ul className="remember-list pp-list" data-testid="saved-laptops">
         {ordered.map((lap) => (

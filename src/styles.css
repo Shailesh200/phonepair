@@ -566,6 +566,27 @@ body:has(.pg.remote){
   min-width: 0;
 }
 .pp-mover-label { font-weight: 600; font-size: var(--fs-14); flex: 1 1 auto; min-width: 0; }
+.pp-mover-clock { font-variant-numeric: tabular-nums; font-weight: 650; font-size: 28px; letter-spacing: -0.03em; line-height: 1; width: 100%; }
+.pp-mover-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); width: 100%; }
+.pp-mover-actions button, .pp-mover-pip {
+  appearance: none; -webkit-appearance: none; min-height: 44px; padding: 0 var(--space-4);
+  border-radius: var(--radius-pill); border: 1px solid var(--line-strong); background: var(--surface-2);
+  color: var(--ink); font-size: var(--fs-14); font-weight: 650;
+}
+.pp-awake { margin: 0 auto 18px; width: min(720px, calc(100% - 32px)); }
+.landing .pp-awake { margin-top: 8px; }
+.pp-more { position: relative; }
+.pp-more-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; min-width: 180px;
+  display: flex; flex-direction: column; padding: 6px; border-radius: 14px;
+  background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-sm);
+}
+.pp-more-menu button {
+  appearance: none; text-align: left; min-height: 44px; padding: 0 12px; border: 0; border-radius: 10px;
+  background: transparent; color: var(--ink); font: inherit; font-weight: 600;
+}
+.pp-more-menu button:hover { background: var(--surface-2); }
+.dash .nav .row-g { justify-content: flex-end; max-width: 100%; }
 .pp-mover .pp-switch {
   appearance: none;
   -webkit-appearance: none;
@@ -607,7 +628,7 @@ body:has(.pg.remote){
   background: var(--surface);
   box-shadow: var(--shadow-sm);
 }
-.pp-mover-interval { display: flex; gap: var(--space-1); margin-left: auto; flex: none; }
+.pp-mover-interval { display: flex; flex-wrap: wrap; gap: var(--space-1); width: 100%; }
 .pp-mover-interval button {
   appearance: none;
   -webkit-appearance: none;

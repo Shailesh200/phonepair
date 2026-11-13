@@ -6,7 +6,7 @@ import { Remote } from './Remote'
 import { MoverControl } from './Mover'
 import { Icon } from '../../core/icons'
 import { CopyBtn } from '../../core/ui'
-import { ConnectGuide } from './ConnectGuide'
+import { ConnectGuide } from './ConnectGuide.tsx'
 import { helperProbeTimeout, settleHelperProbe, type HelperProbeSocket } from './helperProbe'
 import {
   moverStopsOn,
@@ -50,6 +50,27 @@ function readHelperMover(data: unknown) {
 
 export function stopMouseMover() {
   awake.stop()
+}
+
+export function KeepAwakeCard() {
+  const mover = moverReported.use()
+  return <section className="card pad pp-awake" data-testid="keep-awake-card">
+    <h3 className="h-row">Keep awake</h3>
+    <MoverControl
+      state={mover}
+      qa={qaHooksEnabled(browserSearch())}
+      showPip={pictureInPictureEnabled()}
+      onStart={() => {
+        if (mover.run === 'paused') awake.resume()
+        else awake.afterToggle(moverToggleCommand({ on: false, interval: mover.interval }), false)
+      }}
+      onPause={() => awake.pause()}
+      onStop={() => awake.stop()}
+      onDuration={(preset) => awake.setAutoStop(preset)}
+      onCustomMinutes={(minutes) => awake.setAutoStop('custom', minutes)}
+      onPip={() => { void awake.pip() }}
+    />
+  </section>
 }
 
 export function MoverHeaderBadge() {
@@ -456,20 +477,8 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
     ctx.send({ t: 'remote:helper', on: link.status === 'connected' })
   }, [ctx, ctx.link.status, link.status])
 
-  const mover = moverReported.use()
   return <div className="card pad" data-testid="remote-panel">
     <h3 className="h-row"><span><Icon n="keyboard" /> Phone keyboard</span>{text ? <CopyBtn text={text} ctx={ctx} label="Copy" /> : null}</h3>
-    <MoverControl
-      state={mover}
-      qa={qaHooksEnabled(browserSearch())}
-      showPip={pictureInPictureEnabled()}
-      onToggle={() => {
-        awake.afterToggle(moverToggleCommand(mover), false)
-      }}
-      onDuration={(preset) => awake.setAutoStop(preset)}
-      onCustomMinutes={(minutes) => awake.setAutoStop('custom', minutes)}
-      onPip={() => { void awake.pip() }}
-    />
     <textarea data-testid="remote-text" className="clip" rows={2} onChange={(e) => setText(e.target.value)} placeholder="Open Remote on your phone and type. Text lands here, or in the field the pointer focuses." />
     <div className="full-laptop" data-testid="full-laptop">
       <ConnectGuide
@@ -577,6 +586,8 @@ registerFeature({
         }
         const cmd = readRelayCommand(m)
         if (!cmd) return
+        if ('pause' in cmd) { awake.pause(); return }
+        if ('resume' in cmd) { awake.resume(); return }
         if (!('on' in cmd)) {
           awake.setAutoStop(cmd.autoStop, cmd.customMin)
           return

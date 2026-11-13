@@ -8,7 +8,7 @@ describe('laptop mouse mover commands', () => {
     const src = readFileSync(join(process.cwd(), 'src/features/remote/index.tsx'), 'utf8')
     const run = readFileSync(join(process.cwd(), 'src/features/remote/keepAwakeRun.ts'), 'utf8')
     const mover = readFileSync(join(process.cwd(), 'src/features/screen/mover.ts'), 'utf8')
-    assert.match(src, /awake\.afterToggle\(moverToggleCommand\(mover\), false\)/)
+    assert.match(src, /awake\.afterToggle\(moverToggleCommand\(\{ on: false, interval: mover\.interval \}\), false\)/)
     assert.match(run, /sendHelper\(\{ t: 'mover', on: true, interval \}\)/)
     assert.equal(src.includes('moverIntervalCommand'), false)
     assert.equal(mover.includes('moverIntervalCommand'), false)

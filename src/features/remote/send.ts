@@ -19,7 +19,7 @@ export type RemotePayload =
   | { t: 'remote:key'; key: string }
   | { t: 'remote:pointer'; on: boolean }
   | { t: 'remote:helper'; ask?: boolean; on?: boolean }
-  | { t: 'mover'; ask?: boolean; on?: boolean; interval?: MoverInterval | null; autoStop?: AutoStop; customMin?: number }
+  | { t: 'mover'; ask?: boolean; on?: boolean; interval?: MoverInterval | null; autoStop?: AutoStop; customMin?: number; pause?: boolean; resume?: boolean }
 
 export type RemoteSend = {
   /** Single outbound function. Every mode calls this and nothing else. */
@@ -32,7 +32,7 @@ export type RemoteSend = {
   key: (key: string) => void
   pointer: (on: boolean) => void
   helper: (body: { ask?: boolean; on?: boolean }) => void
-  mover: (body: { ask?: boolean; on?: boolean; interval?: MoverInterval | null; autoStop?: AutoStop; customMin?: number }) => void
+  mover: (body: { ask?: boolean; on?: boolean; interval?: MoverInterval | null; autoStop?: AutoStop; customMin?: number; pause?: boolean; resume?: boolean }) => void
 }
 
 let channelsCreated = 0

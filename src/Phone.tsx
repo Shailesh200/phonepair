@@ -2,7 +2,8 @@ import React, { useEffect, useReducer, useState } from 'react'
 import { CoreCtx, getFeatures } from './core/bus'
 import { Icon } from './core/icons'
 import type { Link } from './core/link'
-import { ConnRelayNote, Logo } from './core/ui'
+import { ConnRelayNote, Logo, MoreMenu } from './core/ui'
+import { copyText } from './core/util'
 import { ago, download, fmtSize } from './core/util'
 import { files, type FileItem } from './features/files'
 import { CodeEntry } from './features/pairing/CodeEntry'
@@ -225,15 +226,11 @@ export function Phone({
               >
                 <Icon n="heart" />
               </button>
-              <button
-                type="button"
-                className="strip-disconnect"
-                aria-label="Disconnect"
-                data-testid="phone-disconnect"
-                onClick={() => setDcIn(5)}
-              >
-                Disconnect
-              </button>
+              <MoreMenu label="Session" testId="phone-menu" items={[
+                { id: 'link', label: 'Copy join link', onClick: () => { void copyText(`${location.origin}${joinPath(ctx.link.code)}`).then((ok) => ctx.toast(ok ? 'Join link copied' : ctx.link.code)) } },
+                { id: 'saved', label: 'Saved laptops', onClick: () => document.getElementById('saved-laptops')?.scrollIntoView({ block: 'nearest' }) },
+                { id: 'disconnect', label: 'Disconnect', onClick: () => setDcIn(5) },
+              ]} />
             </div>
           </div>
         ) : (

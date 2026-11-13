@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
-import { Link, newCode, cleanCode, isPhoneUA } from './core/link'
+import { Link, newCode, cleanCode, isPhoneUA, loadHostCode, pageHideEndsPair } from './core/link'
 import { entryPath, hostEntryPath, joinPath, syncRelayFromUrl } from './features/pairing/relay'
 import { CoreCtx, Role, dispatch, dispatchCall, getFeatures } from './core/bus'
 import { uid } from './core/util'
@@ -42,7 +42,7 @@ export default function App() {
   useEffect(() => {
     if (!route.role) return
     let code = route.code
-    if (route.role === 'host') { code = sessionStorage.getItem('pp-code') || newCode(); sessionStorage.setItem('pp-code', code) }
+    if (route.role === 'host') code = loadHostCode(newCode)
     const l = route.role === 'guest' && route.remember
       ? new Link('guest', '', { rememberGuest: route.remember })
       : new Link(route.role, code)
@@ -51,8 +51,12 @@ export default function App() {
     l.start()
     ;(window as any).__pp = l
     const bye = () => pointerOffBeforeDestroy((m) => l.send(m), () => l.destroy())
-    window.addEventListener('pagehide', bye)
-    return () => { unsub(); window.removeEventListener('pagehide', bye); bye() }
+    if (pageHideEndsPair()) window.addEventListener('pagehide', bye)
+    return () => {
+      if (pageHideEndsPair()) window.removeEventListener('pagehide', bye)
+      unsub()
+      bye()
+    }
   }, [route])
 
   useEffect(() => {
