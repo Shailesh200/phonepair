@@ -661,7 +661,6 @@ body:has(.pg.remote){
   color: var(--muted);
 }
 .pp-mover[data-state="disconnected"] .pp-mover-hint,
-.pp-mover[data-interval="off"] .pp-mover-hint,
 .pp-mover[data-timing="on"] .pp-mover-hint { display: block; }
 .pp-mover-custom {
   display: flex;

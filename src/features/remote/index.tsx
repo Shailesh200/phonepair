@@ -457,7 +457,6 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
   }, [ctx, ctx.link.status, link.status])
 
   const mover = moverReported.use()
-  const helperOn = link.status === 'connected'
   return <div className="card pad" data-testid="remote-panel">
     <h3 className="h-row"><span><Icon n="keyboard" /> Phone keyboard</span>{text ? <CopyBtn text={text} ctx={ctx} label="Copy" /> : null}</h3>
     <MoverControl
@@ -465,8 +464,7 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
       qa={qaHooksEnabled(browserSearch())}
       showPip={pictureInPictureEnabled()}
       onToggle={() => {
-        if (helperOn) sendHelper({ t: 'mover', ...moverToggleCommand(mover) })
-        awake.afterToggle(moverToggleCommand(mover), helperOn)
+        awake.afterToggle(moverToggleCommand(mover), false)
       }}
       onDuration={(preset) => awake.setAutoStop(preset)}
       onCustomMinutes={(minutes) => awake.setAutoStop('custom', minutes)}
@@ -590,11 +588,6 @@ registerFeature({
           return
         }
         if (cmd.autoStop) awake.setAutoStop(cmd.autoStop, cmd.customMin)
-        if (helperReady()) {
-          sendHelper({ t: 'mover', on: true, interval: cmd.interval })
-          awake.noteInterval(cmd.interval)
-          return
-        }
         void awake.start(cmd.interval)
       }),
     ]

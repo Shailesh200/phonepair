@@ -49,7 +49,7 @@ function useSharedSend(ctx: CoreCtx) {
 }
 
 export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string }) {
-  const [kb, setKb] = useState(true)
+  const [kb, setKb] = useState(false)
   const [fingers, setFingers] = useState<{ id: number; x: number; y: number }[]>([])
   const [stripOn, setStripOn] = useState(false)
   const pad = useRef<HTMLDivElement>(null)
@@ -251,13 +251,11 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
       state={mover}
       qa={qaHooksEnabled(browserSearch())}
       onToggle={() => {
-        const cmd = moverToggleCommand(mover)
-        send.mover({ ...cmd, autoStop: mover.autoStop, ...(mover.customMin != null ? { customMin: mover.customMin } : {}) })
+        send.mover(moverToggleCommand(mover))
       }}
       onDuration={(preset) => {
-        const extra = mover.customMin != null ? { customMin: mover.customMin } : {}
-        if (mover.on) send.mover({ on: true, interval: '3s', autoStop: preset, ...extra })
-        else send.mover({ autoStop: preset, ...extra })
+        if (mover.on) send.mover({ on: true, interval: '3s', autoStop: preset })
+        else send.mover({ autoStop: preset })
       }}
       onCustomMinutes={(minutes) => {
         if (mover.on) send.mover({ on: true, interval: '3s', autoStop: 'custom', customMin: minutes })
@@ -266,7 +264,7 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
     />
     <button type="button" className={remoteStyles.keyboard} data-testid="kb-toggle" onClick={() => setKb((v) => { if (!v) last.current = ''; return !v })}><Icon n="keyboard" />Keyboard</button>
     {kb && <form className={remoteStyles.form} onSubmit={(e) => { e.preventDefault(); send.key('Enter'); const input = e.currentTarget.elements[0] as HTMLInputElement; input.value = ''; last.current = '' }}>
-      <input autoFocus data-testid="kb-input" className={remoteStyles.input} placeholder="Type here, it appears on the laptop" autoCapitalize="off" autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="send" onFocus={(e) => revealInput(e.currentTarget)} onChange={(e) => {
+      <input data-testid="kb-input" className={remoteStyles.input} placeholder="Type here, it appears on the laptop" autoCapitalize="off" autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="send" onFocus={(e) => revealInput(e.currentTarget)} onChange={(e) => {
         const v = e.target.value
         const p = last.current
         let i = 0

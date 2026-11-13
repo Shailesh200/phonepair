@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { KEEP_AWAKE_CHOICE_KEY } from './keepAwake.ts'
 import { createBrowserKeepAwake } from './keepAwakeRun.ts'
 
 function flush() {
@@ -409,6 +410,60 @@ describe('keep-awake visibility listener', () => {
       assert.equal(held, true)
     } finally {
       Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: prevDoc })
+      try { nav.wakeLock = prevLock } catch { Object.defineProperty(nav, 'wakeLock', { configurable: true, value: prevLock }) }
+    }
+  })
+})
+
+describe('keep-awake saved length', () => {
+  it('restores 30m after a refresh', () => {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+    const data = new Map<string, string>([[KEEP_AWAKE_CHOICE_KEY, JSON.stringify({ autoStop: '30m', customMin: null })]])
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => data.get(key) ?? null,
+        setItem: (key: string, value: string) => { data.set(key, value) },
+        removeItem: (key: string) => { data.delete(key) },
+      },
+    })
+    try {
+      const awake = createBrowserKeepAwake({
+        helperConnected: () => false,
+        sendHelper() {},
+        publish() {},
+      })
+      assert.equal(awake.view().autoStop, '30m')
+    } finally {
+      if (previous) Object.defineProperty(globalThis, 'localStorage', previous)
+      else delete (globalThis as { localStorage?: unknown }).localStorage
+    }
+  })
+
+  it('holds the screen when a connected helper never answers a 3s nudge', async () => {
+    const sent: { t: string; on?: boolean; interval?: string }[] = []
+    let requested = 0
+    const nav = globalThis.navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<unknown> } | null }
+    const prevLock = nav.wakeLock
+    nav.wakeLock = {
+      request: async () => {
+        requested += 1
+        return { release: async () => {}, addEventListener() {} }
+      },
+    }
+    try {
+      const awake = createBrowserKeepAwake({
+        helperConnected: () => true,
+        sendHelper(msg) { sent.push(msg) },
+        publish() {},
+      })
+      await awake.start('3s')
+      assert.deepEqual(sent, [{ t: 'mover', on: true, interval: '3s' }])
+      assert.equal(requested, 1)
+      assert.equal(awake.view().status, 'On (screen awake)')
+      awake.noteHelperReport({ on: true, interval: '3s' })
+      assert.equal(awake.view().status, 'On (real mouse)')
+    } finally {
       try { nav.wakeLock = prevLock } catch { Object.defineProperty(nav, 'wakeLock', { configurable: true, value: prevLock }) }
     }
   })

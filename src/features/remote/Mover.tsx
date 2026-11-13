@@ -26,12 +26,26 @@ export function MoverControl({ state, qa = false, showPip = false, onToggle, onD
   const on = keepAwakeSwitchOn(state.status)
   const debug = qaDebugText(qa, state.mode)
   const [now, setNow] = useState(() => Date.now())
+  const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(state.customMin == null ? '' : String(state.customMin))
   const timing = keepAwakeTimingText(state, now)
+  const showCustom = editing || state.autoStop === 'custom'
 
   useEffect(() => {
+    if (editing) return
     setDraft(state.customMin == null ? '' : String(state.customMin))
-  }, [state.customMin])
+  }, [state.customMin, editing])
+
+  const commitDraft = () => {
+    const minutes = parseCustomMin(draft)
+    if (minutes == null) {
+      setDraft(state.customMin == null ? '' : String(state.customMin))
+      setEditing(false)
+      return
+    }
+    onCustomMinutes(minutes)
+    setEditing(false)
+  }
 
   useEffect(() => {
     if (!on || state.endsAt == null) return
@@ -58,12 +72,20 @@ export function MoverControl({ state, qa = false, showPip = false, onToggle, onD
             type="button"
             aria-pressed={state.autoStop === preset}
             data-testid={`mover-duration-${preset}`}
-            onClick={() => onDuration(preset)}
+            onClick={() => {
+              if (preset !== 'custom') {
+                setEditing(false)
+                onDuration(preset)
+                return
+              }
+              setEditing(true)
+              if (state.customMin != null) onCustomMinutes(state.customMin)
+            }}
           >{AUTO_STOP_LABEL[preset]}</button>
         ))}
       </div>
     </div>
-    {state.autoStop === 'custom' ? (
+    {showCustom ? (
       <label className="pp-mover-custom">
         Minutes
         <input
@@ -73,10 +95,12 @@ export function MoverControl({ state, qa = false, showPip = false, onToggle, onD
           inputMode="numeric"
           data-testid="mover-custom-min"
           value={draft}
-          onChange={(e) => {
-            setDraft(e.target.value)
-            const minutes = parseCustomMin(e.target.value)
-            if (minutes != null) onCustomMinutes(minutes)
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commitDraft}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return
+            e.preventDefault()
+            commitDraft()
           }}
         />
       </label>

@@ -10,7 +10,6 @@ import { Remote } from './Remote'
 import {
   moverBadgeText,
   moverCommandFrom,
-  moverIntervalCommand,
   moverStopsOn,
   moverToggleCommand,
   moverView,
@@ -56,7 +55,6 @@ describe('mouse mover control', () => {
     assert.deepEqual(moverToggleCommand({ on: false, interval: null }), { on: true, interval: '3s' })
     assert.deepEqual(moverToggleCommand({ on: false, interval: '5m' }), { on: true, interval: '3s' })
     assert.deepEqual(moverToggleCommand({ on: true, interval: '5m' }), { on: false })
-    assert.deepEqual(moverIntervalCommand('30s'), { on: true, interval: '30s' })
 
     const hands = { onToggle() {}, onDuration() {}, onCustomMinutes() {} }
     const blank = { customMin: null, endsAt: null }
@@ -169,8 +167,9 @@ describe('mouse mover control', () => {
     const html = markup(React.createElement(Remote, { ctx: ctx() }))
     const pointer = html.indexOf('data-testid="pointer"')
     const toggle = html.indexOf('data-testid="mover-toggle"')
-    const keyboard = html.indexOf('data-testid="kb-input"')
+    const keyboard = html.indexOf('data-testid="kb-toggle"')
     assert.ok(pointer >= 0 && toggle > pointer && keyboard > toggle, html)
+    assert.equal(html.includes('data-testid="kb-input"'), false)
     assert.match(html, /Keep awake/)
     assert.match(html, /class="pp-mover-main"/)
     assert.match(html, /data-state="off"/)
@@ -187,6 +186,10 @@ describe('mouse mover control', () => {
     assert.match(src, /useMessage\('mover'/)
     assert.match(src, /readMoverState/)
     assert.equal(src.includes('setMover(true)'), false)
+    assert.match(src, /onToggle=\{\(\) => \{\s*send\.mover\(moverToggleCommand\(mover\)\)/)
+    const moverSrc = readFileSync(join(process.cwd(), 'src/features/remote/Mover.tsx'), 'utf8')
+    assert.match(moverSrc, /onBlur=\{commitDraft\}/)
+    assert.equal(/onChange=\{[^}]*onCustomMinutes/.test(moverSrc), false)
   })
 
   it('leaves keep-awake on when screen control ends, and stops it on unpair', () => {

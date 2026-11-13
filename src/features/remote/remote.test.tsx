@@ -70,7 +70,7 @@ function ctx(): CoreCtx {
   }
 }
 
-const TESTIDS = ['trackpad', 'scroll-strip', 'lclick', 'rclick', 'prev', 'next', 'kb-toggle', 'kb-input', 'pointer']
+const TESTIDS = ['trackpad', 'scroll-strip', 'lclick', 'rclick', 'prev', 'next', 'kb-toggle', 'pointer']
 
 export async function runRemoteTests() {
   const remoteSrc = injected(typeof __REMOTE_SRC__ === 'string' ? __REMOTE_SRC__ : undefined, 'Remote.tsx')
@@ -82,7 +82,7 @@ export async function runRemoteTests() {
   expect(html.includes('pp-remote-pad') && html.includes('pp-remote-clicker') && html.includes('pp-remote-laser'), 'spec class hooks')
   expect(!html.includes('role="tablist"'), 'one screen has no mode tabs')
   expect(!remoteSrc.includes('localStorage') && !remoteSrc.includes('phonepair.remote.mode'), 'layout does not persist a mode')
-  const order = ['data-testid="trackpad"', 'data-testid="lclick"', 'data-testid="rclick"', 'class="pp-remote-clicker"', 'data-testid="prev"', 'data-testid="next"', 'class="pp-remote-laser"', 'data-testid="pointer"', 'data-testid="kb-toggle"', 'data-testid="kb-input"']
+  const order = ['data-testid="trackpad"', 'data-testid="lclick"', 'data-testid="rclick"', 'class="pp-remote-clicker"', 'data-testid="prev"', 'data-testid="next"', 'class="pp-remote-laser"', 'data-testid="pointer"', 'data-testid="kb-toggle"']
   let at = -1
   for (const bit of order) {
     const found = html.indexOf(bit)
@@ -92,7 +92,10 @@ export async function runRemoteTests() {
   for (const id of TESTIDS) expect(html.includes(`data-testid="${id}"`), 'keeps ' + id)
   expect(html.includes('Swipe to move · tap to click'), 'trackpad hint')
   expect(html.includes('Pointer · hold to point'), 'hold-to-point laser')
-  expect(html.includes('Type here, it appears on the laptop'), 'keyboard placeholder')
+  expect(!html.includes('data-testid="kb-input"'), 'keyboard stays closed')
+  expect(remoteSrc.includes('const [kb, setKb] = useState(false)'), 'keyboard hidden until opened')
+  expect(!remoteSrc.includes('autoFocus'), 'type field does not take focus')
+  expect(remoteSrc.includes('Type here, it appears on the laptop'), 'keyboard placeholder')
 
   const before = remoteChannelsCreated()
   renderToStaticMarkup(React.createElement(Remote, { ctx: ctx() }))

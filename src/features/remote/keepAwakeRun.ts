@@ -378,14 +378,9 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     session.tabHidden = tabHidden()
     clearClock()
     publish()
-    if (host.helperConnected()) {
-      session.pending = false
-      session.localEngaged = false
-      host.sendHelper({ t: 'mover', on: true, interval })
-      if (mine === epoch) armClock()
-      publish()
-      return
-    }
+    // An installed helper that only accepts 30s, 1m, or 5m drops 3s and stays silent.
+    // Hold the screen here until a helper report takes over.
+    if (host.helperConnected()) host.sendHelper({ t: 'mover', on: true, interval })
     startAudio()
     const locked = await acquireWakeLock(mine)
     if (mine !== epoch) return
@@ -426,10 +421,6 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     saveKeepAwakeChoice({ autoStop: session.autoStop, customMin: session.customMin })
     armIfRunning()
     publish()
-  }
-
-  function noteInterval(interval: MoverInterval) {
-    session.interval = interval
   }
 
   function afterToggle(cmd: MoverCommand, helperTold: boolean) {
@@ -571,7 +562,6 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     start,
     stop,
     setAutoStop,
-    noteInterval,
     afterToggle,
     noteHelperReport,
     onHelperDisconnected,

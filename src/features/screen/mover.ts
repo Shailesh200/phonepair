@@ -59,10 +59,6 @@ export function moverToggleCommand(state: MoverState): MoverCommand {
   return { on: true, interval: MOVER_DEFAULT_INTERVAL }
 }
 
-export function moverIntervalCommand(interval: MoverInterval): MoverCommand {
-  return { on: true, interval }
-}
-
 /** Screen control ending does not stop keep-awake. Unpair, disconnect, socket close, the toggle, and helper quit do. */
 export function moverStopsOn(reason: 'sc:stop' | 'endControl' | 'unpair' | 'disconnect' | 'socket-close' | 'toggle' | 'quit'): boolean {
   return reason !== 'sc:stop' && reason !== 'endControl'
