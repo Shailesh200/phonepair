@@ -34,9 +34,25 @@ export function iceDisconnectedRedialDelayMs(disconnectedSince: number, now: num
   return remaining > 0 ? remaining : 0
 }
 
-/** Hold an app payload (clipboard included) until the data channel is actually usable. */
+/** True when a send cannot go on the live channel yet. */
 export function shouldQueueOutbound(opts: { live: boolean; connOpen: boolean; transportDead: boolean }): boolean {
   return !opts.live || !opts.connOpen || opts.transportDead
+}
+
+/** Live clipboard only. Mover, keep-awake, and remote input are not held. */
+export function isClipboardPayload(m: unknown): boolean {
+  if (!m || typeof m !== 'object') return false
+  const t = (m as { t?: unknown }).t
+  return typeof t === 'string' && t.startsWith('clip:')
+}
+
+/**
+ * While the channel cannot take a send, keep the latest clipboard item and drop anything else.
+ * A newer clip replaces the one already held.
+ */
+export function enqueueOutbound(queue: unknown[], message: unknown): unknown[] {
+  if (!isClipboardPayload(message)) return queue
+  return [message]
 }
 
 /** Grace to use right now. Inside the post-restore window this is 1s, otherwise 13s. */

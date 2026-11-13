@@ -136,6 +136,7 @@ import {
   iceDisconnectedRedialDelayMs,
   iceGraceMsAfterRestore,
   isDataConnIceOfferer,
+  enqueueOutbound,
   shouldQueueOutbound,
   iceTransportRecovered,
   shouldActOnIceNetworkChange,
@@ -2709,8 +2710,7 @@ export class Link {
   }
 
   private queueOutbound(m: any) {
-    this.outbound.push(m)
-    if (this.outbound.length > 20) this.outbound.shift()
+    this.outbound = enqueueOutbound(this.outbound, m)
   }
 
   private flushOutbound() {
@@ -2719,7 +2719,7 @@ export class Link {
     if (!batch.length) return
     this.outbound = []
     for (const m of batch) {
-      try { this.conn.send(m) } catch { this.outbound.push(m) }
+      try { this.conn.send(m) } catch { this.outbound = enqueueOutbound(this.outbound, m) }
     }
   }
 

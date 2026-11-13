@@ -6,6 +6,7 @@ import {
   ICE_DISCONNECTED_GRACE_MS,
   ICE_POST_RESTORE_GRACE_MS,
   iceDisconnectedRedialDelayMs,
+  enqueueOutbound,
   iceGraceMsAfterRestore,
   shouldQueueOutbound,
   shouldRedialAfterDisconnectedGrace,
@@ -61,5 +62,40 @@ describe('connected stall after restore', () => {
     } finally {
       mock.timers.reset()
     }
+  })
+
+  it('does not replay mover, input, or keep-awake sent while the transport is down', () => {
+    const down = { live: true, connOpen: true, transportDead: true }
+    const up = { live: true, connOpen: true, transportDead: false }
+    let queued: unknown[] = []
+    for (const message of [
+      { t: 'mover', on: false },
+      { t: 'remote:click', btn: 'left' },
+      { t: 'remote:key', key: 'Enter' },
+    ]) {
+      if (shouldQueueOutbound(down)) queued = enqueueOutbound(queued, message)
+    }
+    assert.deepEqual(queued, [])
+    const replayed: unknown[] = []
+    if (!shouldQueueOutbound(up)) replayed.push(...queued.splice(0))
+    assert.deepEqual(replayed, [])
+    const link = readFileSync(join(process.cwd(), 'src/core/link.ts'), 'utf8')
+    assert.match(link, /enqueueOutbound\(this\.outbound, m\)/)
+    assert.doesNotMatch(link, /outbound\.length > 20/)
+  })
+
+  it('delivers only the latest clip when two are queued while down', () => {
+    const older = { t: 'clip:set', text: 'older', commit: true }
+    const newer = { t: 'clip:set', text: 'newer', commit: true }
+    let queued: unknown[] = []
+    queued = enqueueOutbound(queued, older)
+    queued = enqueueOutbound(queued, { t: 'mover', on: true, interval: '1m' })
+    queued = enqueueOutbound(queued, newer)
+    assert.deepEqual(queued, [newer])
+    const delivered: unknown[] = []
+    if (!shouldQueueOutbound({ live: true, connOpen: true, transportDead: false })) {
+      delivered.push(...queued.splice(0))
+    }
+    assert.deepEqual(delivered, [newer])
   })
 })
