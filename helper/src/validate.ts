@@ -176,7 +176,7 @@ export type MoverOnMsg = { t: 'mover'; on: true; interval: MoverInterval }
 export type MoverOffMsg = { t: 'mover'; on: false }
 export type MoverMsg = MoverOnMsg | MoverOffMsg
 
-/** on/off. An on command must use 30s, 1m, or 5m. Anything else is rejected. */
+/** on/off. An on command must use 3s, 30s, 1m, or 5m. Anything else is rejected. */
 export function parseMover(value: unknown): Parsed<MoverMsg> {
   if (!isRecord(value) || value.t !== 'mover') return { ok: false }
   if (value.on === false) return { ok: true, msg: { t: 'mover', on: false } }

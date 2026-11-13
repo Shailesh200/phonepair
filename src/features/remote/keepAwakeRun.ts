@@ -7,6 +7,9 @@ import {
   currentTimeScale,
   deriveStatus,
   keepAwakeSwitchOn,
+  loadKeepAwakeChoice,
+  parseCustomMin,
+  saveKeepAwakeChoice,
   type AutoStop,
   type KeepAwakeViewState,
 } from './keepAwake.ts'
@@ -24,6 +27,8 @@ type Session = {
   requested: boolean
   interval: MoverInterval
   autoStop: AutoStop
+  customMin: number | null
+  endsAt: number | null
   helperOn: boolean
   localEngaged: boolean
   pending: boolean
@@ -58,10 +63,13 @@ function tabHidden() {
 
 export function createBrowserKeepAwake(host: KeepAwakeHost) {
   const caps = detectCaps()
+  const saved = loadKeepAwakeChoice()
   const session: Session = {
     requested: false,
-    interval: '1m',
-    autoStop: 'never',
+    interval: '3s',
+    autoStop: saved.autoStop,
+    customMin: saved.customMin,
+    endsAt: null,
     helperOn: false,
     localEngaged: false,
     pending: false,
@@ -121,6 +129,8 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
       status,
       mode,
       autoStop: session.autoStop,
+      customMin: session.customMin,
+      endsAt: session.endsAt,
     }
   }
 
@@ -135,6 +145,18 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     scale: currentTimeScale(),
     onFire: () => { stop({ tellHelper: true }) },
   })
+  clock.select(session.autoStop, session.customMin)
+
+  function armClock() {
+    const ms = clock.arm()
+    session.endsAt = ms == null ? null : Date.now() + ms
+    return ms
+  }
+
+  function clearClock() {
+    clock.clear()
+    session.endsAt = null
+  }
 
   function releaseWakeLock() {
     const current = sentinel
@@ -339,7 +361,8 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   }
 
   function armIfRunning() {
-    if (session.requested && !session.pending) clock.arm()
+    if (session.requested && !session.pending) armClock()
+    else if (!session.requested) session.endsAt = null
   }
 
   async function start(interval: MoverInterval) {
@@ -353,13 +376,13 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     session.pending = true
     session.settled = false
     session.tabHidden = tabHidden()
-    clock.clear()
+    clearClock()
     publish()
     if (host.helperConnected()) {
       session.pending = false
       session.localEngaged = false
       host.sendHelper({ t: 'mover', on: true, interval })
-      if (mine === epoch) clock.arm()
+      if (mine === epoch) armClock()
       publish()
       return
     }
@@ -376,7 +399,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     session.pending = false
     session.settled = true
     session.localEngaged = true
-    clock.arm()
+    armClock()
     publish()
   }
 
@@ -390,15 +413,17 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     session.localEngaged = false
     session.pending = false
     session.settled = false
-    clock.clear()
+    clearClock()
     releaseMedia()
     if (opts?.tellHelper !== false) host.sendHelper({ t: 'mover', on: false })
     publish()
   }
 
-  function setAutoStop(preset: AutoStop) {
+  function setAutoStop(preset: AutoStop, customMin?: number | null) {
     session.autoStop = preset
-    clock.select(preset)
+    if (customMin !== undefined) session.customMin = parseCustomMin(customMin)
+    clock.select(preset, session.customMin)
+    saveKeepAwakeChoice({ autoStop: session.autoStop, customMin: session.customMin })
     armIfRunning()
     publish()
   }
@@ -429,7 +454,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
       session.pending = false
       session.settled = true
       releaseMedia()
-      clock.arm()
+      armClock()
       publish()
       return
     }
@@ -440,7 +465,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     session.localEngaged = false
     session.pending = false
     session.settled = false
-    clock.clear()
+    clearClock()
     releaseMedia()
     publish()
   }
@@ -459,7 +484,7 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     session.requested = false
     session.pending = false
     session.settled = false
-    clock.clear()
+    clearClock()
     releaseMedia()
     publish()
   }

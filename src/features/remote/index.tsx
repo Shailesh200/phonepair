@@ -9,7 +9,6 @@ import { CopyBtn } from '../../core/ui'
 import { ConnectGuide } from './ConnectGuide'
 import { helperProbeTimeout, settleHelperProbe, type HelperProbeSocket } from './helperProbe'
 import {
-  moverIntervalCommand,
   moverStopsOn,
   moverToggleCommand,
   readMoverState,
@@ -469,11 +468,8 @@ function LaptopPanel({ ctx }: { ctx: CoreCtx }) {
         if (helperOn) sendHelper({ t: 'mover', ...moverToggleCommand(mover) })
         awake.afterToggle(moverToggleCommand(mover), helperOn)
       }}
-      onInterval={(interval) => {
-        if (helperOn && mover.on) sendHelper({ t: 'mover', ...moverIntervalCommand(interval) })
-        awake.noteInterval(interval)
-      }}
-      onAutoStop={(preset) => awake.setAutoStop(preset)}
+      onDuration={(preset) => awake.setAutoStop(preset)}
+      onCustomMinutes={(minutes) => awake.setAutoStop('custom', minutes)}
       onPip={() => { void awake.pip() }}
     />
     <textarea data-testid="remote-text" className="clip" rows={2} onChange={(e) => setText(e.target.value)} placeholder="Open Remote on your phone and type. Text lands here, or in the field the pointer focuses." />
@@ -584,16 +580,16 @@ registerFeature({
         const cmd = readRelayCommand(m)
         if (!cmd) return
         if (!('on' in cmd)) {
-          awake.setAutoStop(cmd.autoStop)
+          awake.setAutoStop(cmd.autoStop, cmd.customMin)
           return
         }
         if (!cmd.on) {
           if (helperReady()) sendHelper({ t: 'mover', on: false })
           awake.stop({ tellHelper: !helperReady() })
-          if (cmd.autoStop) awake.setAutoStop(cmd.autoStop)
+          if (cmd.autoStop) awake.setAutoStop(cmd.autoStop, cmd.customMin)
           return
         }
-        if (cmd.autoStop) awake.setAutoStop(cmd.autoStop)
+        if (cmd.autoStop) awake.setAutoStop(cmd.autoStop, cmd.customMin)
         if (helperReady()) {
           sendHelper({ t: 'mover', on: true, interval: cmd.interval })
           awake.noteInterval(cmd.interval)

@@ -76,6 +76,18 @@ test('a nudge returns home, and skips the return when the user moved the cursor'
   assert.deepEqual(moved, [[11, 22]])
 })
 
+test('3s is the nudge interval the page sends', () => {
+  const { clock, nudges, mover } = harness()
+  assert.deepEqual(mover.start('3s'), { on: true, interval: '3s' })
+  clock.tick(2_999)
+  assert.equal(nudges.length, 0)
+  clock.tick(1)
+  assert.equal(nudges.length, 1)
+  clock.tick(3_000)
+  assert.equal(nudges.length, 2)
+  assert.equal(clock.pending(), 1)
+})
+
 test('fake timers: 30s, 1m, and 5m nudge on that interval and nothing else is accepted', () => {
   const { clock, nudges, mover } = harness()
   assert.equal(mover.start('10s'), null)

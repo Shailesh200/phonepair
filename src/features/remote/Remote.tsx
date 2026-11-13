@@ -7,7 +7,7 @@ import { Icon } from '../../core/icons'
 import { MoverControl } from './Mover'
 import { createRemoteSend, type RemoteSend } from './send'
 import { remotePageClass, remoteScrollClass, remoteStyles } from './styles'
-import { moverIntervalCommand, moverToggleCommand, readMoverState } from '../screen/mover'
+import { moverToggleCommand, readMoverState } from '../screen/mover'
 import { KEEP_AWAKE_IDLE, browserSearch, qaHooksEnabled, readRelayReport, type KeepAwakeViewState } from './keepAwake'
 
 export type PadGesture = {
@@ -252,14 +252,16 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
       qa={qaHooksEnabled(browserSearch())}
       onToggle={() => {
         const cmd = moverToggleCommand(mover)
-        send.mover({ ...cmd, autoStop: mover.autoStop })
+        send.mover({ ...cmd, autoStop: mover.autoStop, ...(mover.customMin != null ? { customMin: mover.customMin } : {}) })
       }}
-      onInterval={(interval) => {
-        if (mover.mode === 'helper' && mover.on) send.mover({ ...moverIntervalCommand(interval), autoStop: mover.autoStop })
+      onDuration={(preset) => {
+        const extra = mover.customMin != null ? { customMin: mover.customMin } : {}
+        if (mover.on) send.mover({ on: true, interval: '3s', autoStop: preset, ...extra })
+        else send.mover({ autoStop: preset, ...extra })
       }}
-      onAutoStop={(preset) => {
-        if (mover.on) send.mover({ on: true, interval: mover.interval ?? '1m', autoStop: preset })
-        else send.mover({ autoStop: preset })
+      onCustomMinutes={(minutes) => {
+        if (mover.on) send.mover({ on: true, interval: '3s', autoStop: 'custom', customMin: minutes })
+        else send.mover({ autoStop: 'custom', customMin: minutes })
       }}
     />
     <button type="button" className={remoteStyles.keyboard} data-testid="kb-toggle" onClick={() => setKb((v) => { if (!v) last.current = ''; return !v })}><Icon n="keyboard" />Keyboard</button>

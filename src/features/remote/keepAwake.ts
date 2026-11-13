@@ -18,25 +18,27 @@ export const KEEP_AWAKE_STATUSES = [
 ] as const
 export type KeepAwakeStatus = (typeof KEEP_AWAKE_STATUSES)[number]
 
-export const AUTO_STOPS = ['15m', '30m', '1h', '2h', 'never'] as const
+export const AUTO_STOPS = ['15m', '30m', '1h', 'custom', 'never'] as const
 export type AutoStop = (typeof AUTO_STOPS)[number]
 
-export const AUTO_STOP_MS: Record<Exclude<AutoStop, 'never'>, number> = {
+export const AUTO_STOP_MS: Record<'15m' | '30m' | '1h', number> = {
   '15m': 15 * 60 * 1000,
   '30m': 30 * 60 * 1000,
   '1h': 60 * 60 * 1000,
-  '2h': 2 * 60 * 60 * 1000,
 }
 
 export const AUTO_STOP_LABEL: Record<AutoStop, string> = {
   '15m': '15m',
   '30m': '30m',
   '1h': '1h',
-  '2h': '2h',
+  custom: 'Custom',
   never: 'Until stopped',
 }
 
-export const NUDGE_INTERVAL_HINT = 'Interval applies to laptop nudges.'
+/** Custom run length, in whole minutes. */
+export const CUSTOM_MIN_MAX = 24 * 60
+
+export const KEEP_AWAKE_CHOICE_KEY = 'phonepair.keepAwake.duration'
 
 export const TIME_SCALE_MIN = 1
 export const TIME_SCALE_MAX = 600
@@ -47,6 +49,9 @@ export type KeepAwakeViewState = {
   status: KeepAwakeStatus | null
   mode: KeepAwakeMode
   autoStop: AutoStop
+  customMin: number | null
+  /** Epoch ms when a finite run ends. Null when off or until stopped. */
+  endsAt: number | null
 }
 
 export const KEEP_AWAKE_IDLE: KeepAwakeViewState = {
@@ -55,6 +60,8 @@ export const KEEP_AWAKE_IDLE: KeepAwakeViewState = {
   status: null,
   mode: 'none',
   autoStop: 'never',
+  customMin: null,
+  endsAt: null,
 }
 
 export function isKeepAwakeMode(value: unknown): value is KeepAwakeMode {
@@ -71,7 +78,63 @@ export function keepAwakeSwitchOn(status: KeepAwakeStatus | null): boolean {
 }
 
 export function isAutoStop(value: unknown): value is AutoStop {
-  return value === '15m' || value === '30m' || value === '1h' || value === '2h' || value === 'never'
+  return value === '15m' || value === '30m' || value === '1h' || value === 'custom' || value === 'never'
+}
+
+export function parseCustomMin(value: unknown): number | null {
+  const n = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN
+  if (!Number.isInteger(n) || n < 1 || n > CUSTOM_MIN_MAX) return null
+  return n
+}
+
+export function readKeepAwakeChoice(raw: string | null): { autoStop: AutoStop; customMin: number | null } {
+  const empty = { autoStop: 'never' as const, customMin: null }
+  if (!raw) return empty
+  try {
+    const parsed = JSON.parse(raw) as { autoStop?: unknown; customMin?: unknown }
+    if (!isAutoStop(parsed.autoStop)) return empty
+    return { autoStop: parsed.autoStop, customMin: parseCustomMin(parsed.customMin) }
+  } catch {
+    return empty
+  }
+}
+
+export function loadKeepAwakeChoice(): { autoStop: AutoStop; customMin: number | null } {
+  try {
+    const ls = globalThis.localStorage
+    return readKeepAwakeChoice(ls ? ls.getItem(KEEP_AWAKE_CHOICE_KEY) : null)
+  } catch {
+    return { autoStop: 'never', customMin: null }
+  }
+}
+
+export function saveKeepAwakeChoice(choice: { autoStop: AutoStop; customMin: number | null }) {
+  try {
+    globalThis.localStorage?.setItem(KEEP_AWAKE_CHOICE_KEY, JSON.stringify({
+      autoStop: choice.autoStop,
+      customMin: choice.customMin,
+    }))
+  } catch { /* private mode */ }
+}
+
+/** Countdown in the old nudge-hint slot. Null while keep-awake is off. */
+export function keepAwakeTimingText(
+  state: Pick<KeepAwakeViewState, 'status' | 'autoStop' | 'endsAt'>,
+  now: number,
+): string | null {
+  if (!keepAwakeSwitchOn(state.status)) return null
+  if (state.autoStop === 'never') return 'Until you stop it'
+  if (state.endsAt == null || !Number.isFinite(state.endsAt)) return null
+  const leftMs = state.endsAt - now
+  if (leftMs <= 0) return 'Ending now'
+  const totalMin = Math.ceil(leftMs / 60_000)
+  const end = new Date(state.endsAt)
+  let hour = end.getHours()
+  const ap = hour >= 12 ? 'PM' : 'AM'
+  hour = hour % 12 || 12
+  const minute = String(end.getMinutes()).padStart(2, '0')
+  const left = totalMin < 60 ? `${totalMin}m` : `${Math.floor(totalMin / 60)}h ${String(totalMin % 60).padStart(2, '0')}m`
+  return `Ends ${hour}:${minute} ${ap} · ${left} left`
 }
 
 export type ModeInput = {
@@ -199,9 +262,14 @@ export function nudgeIntervalEnabled(mode: KeepAwakeMode, on: boolean): boolean 
   return mode === 'helper' && on
 }
 
-export function autoStopDelayMs(preset: AutoStop, scale: number): number | null {
+export function autoStopDelayMs(preset: AutoStop, scale: number, customMin?: number | null): number | null {
   if (preset === 'never') return null
   const factor = scale >= TIME_SCALE_MIN ? scale : TIME_SCALE_MIN
+  if (preset === 'custom') {
+    const mins = parseCustomMin(customMin)
+    if (mins == null) return null
+    return Math.round(mins * 60 * 1000 / factor)
+  }
   return Math.round(AUTO_STOP_MS[preset] / factor)
 }
 
@@ -212,6 +280,7 @@ export function createAutoStopClock(opts: {
   onFire: () => void
 }) {
   let preset: AutoStop = 'never'
+  let customMin: number | null = null
   let id: number | null = null
   let generation = 0
   const clear = () => {
@@ -223,14 +292,15 @@ export function createAutoStopClock(opts: {
   return {
     preset() { return preset },
     /** Remember the preset and cancel a running timer. */
-    select(next: AutoStop) {
+    select(next: AutoStop, minutes?: number | null) {
       preset = next
+      if (minutes !== undefined) customMin = parseCustomMin(minutes)
       clear()
     },
-    /** Arm from now. `never` arms nothing and returns null. One timer at a time. */
+    /** Arm from now. `never` and an empty custom length arm nothing. One timer at a time. */
     arm(): number | null {
       clear()
-      const ms = autoStopDelayMs(preset, opts.scale)
+      const ms = autoStopDelayMs(preset, opts.scale, customMin)
       if (ms == null) return null
       const gen = generation
       id = opts.setTimer(() => {
@@ -307,9 +377,14 @@ export function currentTimeScale(): number {
 }
 
 export type RelayCommand =
-  | { on: false; autoStop?: AutoStop }
-  | { on: true; interval: MoverInterval; autoStop?: AutoStop }
-  | { autoStop: AutoStop }
+  | { on: false; autoStop?: AutoStop; customMin?: number }
+  | { on: true; interval: MoverInterval; autoStop?: AutoStop; customMin?: number }
+  | { autoStop: AutoStop; customMin?: number }
+
+function withCustom(cmd: RelayCommand, msg: Record<string, unknown>): RelayCommand {
+  const customMin = parseCustomMin(msg.customMin)
+  return customMin == null ? cmd : { ...cmd, customMin }
+}
 
 /** Phone command the laptop may run. Asks and unknown intervals are dropped. */
 export function readRelayCommand(value: unknown): RelayCommand | null {
@@ -317,11 +392,17 @@ export function readRelayCommand(value: unknown): RelayCommand | null {
   const msg = value as Record<string, unknown>
   if (msg.ask === true) return null
   const autoStop = isAutoStop(msg.autoStop) ? msg.autoStop : undefined
-  if (msg.on === false) return autoStop ? { on: false, autoStop } : { on: false }
-  if (msg.on === true && isMoverInterval(msg.interval)) {
-    return autoStop ? { on: true, interval: msg.interval, autoStop } : { on: true, interval: msg.interval }
+  if (msg.on === false) {
+    const cmd: RelayCommand = autoStop ? { on: false, autoStop } : { on: false }
+    return withCustom(cmd, msg)
   }
-  if (msg.on == null && autoStop) return { autoStop }
+  if (msg.on === true && isMoverInterval(msg.interval)) {
+    const cmd: RelayCommand = autoStop
+      ? { on: true, interval: msg.interval, autoStop }
+      : { on: true, interval: msg.interval }
+    return withCustom(cmd, msg)
+  }
+  if (msg.on == null && autoStop) return withCustom({ autoStop }, msg)
   return null
 }
 
@@ -332,6 +413,8 @@ export type RelayReport = {
   status: KeepAwakeStatus | null
   mode: KeepAwakeMode
   autoStop: AutoStop
+  customMin: number | null
+  endsAt: number | null
 }
 
 /** Laptop -> phone. `on` follows the honest status, not a click. */
@@ -345,6 +428,8 @@ export function relayReport(state: KeepAwakeViewState): RelayReport {
     status,
     mode: state.mode,
     autoStop: state.autoStop,
+    customMin: state.customMin,
+    endsAt: on ? state.endsAt : null,
   }
 }
 
@@ -355,6 +440,8 @@ export function readRelayReport(value: unknown): KeepAwakeViewState | null {
   const msg = value as Record<string, unknown>
   const mode = isKeepAwakeMode(msg.mode) ? msg.mode : 'none'
   const autoStop = isAutoStop(msg.autoStop) ? msg.autoStop : 'never'
+  const customMin = parseCustomMin(msg.customMin)
+  const endsAt = base.on && typeof msg.endsAt === 'number' && Number.isFinite(msg.endsAt) ? msg.endsAt : null
   let status: KeepAwakeStatus | null = isKeepAwakeStatus(msg.status) ? msg.status : null
   if (!base.on && status !== 'Helper not running') status = null
   if (status === 'On (real mouse)' && mode !== 'helper') status = null
@@ -364,6 +451,8 @@ export function readRelayReport(value: unknown): KeepAwakeViewState | null {
     status,
     mode,
     autoStop,
+    customMin,
+    endsAt,
   }
 }
 

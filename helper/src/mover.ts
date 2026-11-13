@@ -1,9 +1,10 @@
-/** One mouse-mover timer. Intervals are only 30s, 1m, and 5m. */
+/** One mouse-mover timer. The page sends 3s. 30s, 1m, and 5m still run for an older page. */
 
-export const MOVER_INTERVALS = ['30s', '1m', '5m'] as const
+export const MOVER_INTERVALS = ['3s', '30s', '1m', '5m'] as const
 export type MoverInterval = (typeof MOVER_INTERVALS)[number]
 
 export const MOVER_MS: Record<MoverInterval, number> = {
+  '3s': 3_000,
   '30s': 30_000,
   '1m': 60_000,
   '5m': 300_000,
@@ -17,7 +18,7 @@ export type MoverState = {
 export type TimerHandle = ReturnType<typeof setInterval>
 
 export function isMoverInterval(value: unknown): value is MoverInterval {
-  return value === '30s' || value === '1m' || value === '5m'
+  return value === '3s' || value === '30s' || value === '1m' || value === '5m'
 }
 
 /** Read position, step +1px/+2px, then the original point to return to. */
@@ -51,7 +52,7 @@ export async function performNudge(mouse: {
 
 export type Mover = {
   state(): MoverState
-  /** Start or restart the single timer. Null when `interval` is not 30s, 1m, or 5m. */
+  /** Start or restart the single timer. Null unless the interval is 3s, 30s, 1m, or 5m. */
   start(interval: unknown): MoverState | null
   stop(): MoverState
 }

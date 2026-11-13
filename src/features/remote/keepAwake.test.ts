@@ -8,6 +8,9 @@ import {
   deriveStatus,
   createKeepAwakeLinkWatch,
   keepAwakeSwitchOn,
+  keepAwakeTimingText,
+  parseCustomMin,
+  readKeepAwakeChoice,
   KEEPAWAKE_LINK_GRACE_MS,
   keepAwakeLinkEffect,
   qaDebugText,
@@ -99,6 +102,8 @@ describe('keep-awake status', () => {
       status: 'Helper not running',
       mode: 'none',
       autoStop: 'never',
+      customMin: null,
+      endsAt: null,
     })
     assert.equal(quit.on, false)
     assert.equal(quit.status, 'Helper not running')
@@ -108,6 +113,8 @@ describe('keep-awake status', () => {
       status: 'Helper not running',
       mode: 'none',
       autoStop: 'never',
+      customMin: null,
+      endsAt: null,
     })
   })
 })
@@ -191,7 +198,9 @@ describe('keep-awake auto-stop', () => {
     assert.equal(autoStopDelayMs('15m', 1), 15 * 60 * 1000)
     assert.equal(autoStopDelayMs('30m', 1), 30 * 60 * 1000)
     assert.equal(autoStopDelayMs('1h', 1), 60 * 60 * 1000)
-    assert.equal(autoStopDelayMs('2h', 1), 2 * 60 * 60 * 1000)
+    assert.equal(autoStopDelayMs('custom', 1, 120), 2 * 60 * 60 * 1000)
+    assert.equal(autoStopDelayMs('custom', 1, null), null)
+    assert.equal(autoStopDelayMs('custom', 1, 0), null)
     assert.equal(autoStopDelayMs('15m', 60), 15 * 1000)
     assert.equal(autoStopDelayMs('1h', 60), 60 * 1000)
   })
@@ -229,7 +238,7 @@ describe('keep-awake auto-stop', () => {
     }
   })
 
-  it('switching to 2h drops the earlier preset and fires at 120s scaled', () => {
+  it('switching to a custom length drops the earlier preset and fires at that scaled time', () => {
     mock.timers.enable({ apis: ['setTimeout'] })
     try {
       let fired = 0
@@ -243,7 +252,7 @@ describe('keep-awake auto-stop', () => {
       assert.equal(clock.arm(), 60_000)
       mock.timers.tick(59_000)
       assert.equal(fired, 0)
-      clock.select('2h')
+      clock.select('custom', 120)
       assert.equal(clock.arm(), 120_000)
       mock.timers.tick(119_999)
       assert.equal(fired, 0)
@@ -263,7 +272,7 @@ describe('keep-awake auto-stop', () => {
       scale: 60,
       onFire() { sent.push({ t: 'mover', on: false }) },
     })
-    clock.select('2h')
+    clock.select('custom', 120)
     assert.equal(clock.arm(), 2 * 60 * 1000)
     assert.equal(sent.length, 0)
     const pending = scheduled
@@ -318,7 +327,9 @@ describe('keep-awake relay', () => {
     assert.deepEqual(readRelayCommand({ on: false }), { on: false })
     assert.deepEqual(readRelayCommand({ on: true, interval: '5m', autoStop: '1h' }), { on: true, interval: '5m', autoStop: '1h' })
     assert.deepEqual(readRelayCommand({ autoStop: '15m' }), { autoStop: '15m' })
-    assert.deepEqual(readRelayCommand({ on: false, autoStop: '2h' }), { on: false, autoStop: '2h' })
+    assert.deepEqual(readRelayCommand({ on: false, autoStop: '2h' }), { on: false })
+    assert.deepEqual(readRelayCommand({ autoStop: 'custom', customMin: 45 }), { autoStop: 'custom', customMin: 45 })
+    assert.deepEqual(readRelayCommand({ autoStop: 'custom', customMin: 0 }), { autoStop: 'custom' })
 
     const awake = relayReport({
       on: true,
@@ -326,6 +337,8 @@ describe('keep-awake relay', () => {
       status: 'On (screen awake)',
       mode: 'wakeLock',
       autoStop: '30m',
+      customMin: null,
+      endsAt: 1_700_000_000_000,
     })
     assert.deepEqual(readRelayReport(awake), {
       on: true,
@@ -333,6 +346,8 @@ describe('keep-awake relay', () => {
       status: 'On (screen awake)',
       mode: 'wakeLock',
       autoStop: '30m',
+      customMin: null,
+      endsAt: 1_700_000_000_000,
     })
 
     const real = relayReport({
@@ -341,6 +356,8 @@ describe('keep-awake relay', () => {
       status: 'On (real mouse)',
       mode: 'helper',
       autoStop: 'never',
+      customMin: null,
+      endsAt: null,
     })
     assert.equal(readRelayReport(real)?.status, 'On (real mouse)')
     assert.equal(readRelayReport(real)?.mode, 'helper')
@@ -360,8 +377,25 @@ describe('keep-awake relay', () => {
       status: null,
       mode: 'wakeLock',
       autoStop: '15m',
+      customMin: null,
+      endsAt: null,
     })
     assert.equal(readRelayReport({ t: 'mover', ask: true }), null)
+
+    const ends = Date.UTC(2026, 10, 13, 12, 0, 0)
+    assert.equal(keepAwakeTimingText({ status: null, autoStop: '30m', endsAt: ends }, ends - 14 * 60 * 1000), null)
+    assert.equal(keepAwakeTimingText({ status: 'On (screen awake)', autoStop: 'never', endsAt: null }, ends), 'Until you stop it')
+    const line = keepAwakeTimingText({ status: 'On (screen awake)', autoStop: '30m', endsAt: ends }, ends - 14 * 60 * 1000)
+    assert.ok(line?.startsWith('Ends '))
+    assert.match(line || '', /14m left/)
+    assert.equal(parseCustomMin(45), 45)
+    assert.equal(parseCustomMin('90'), 90)
+    assert.equal(parseCustomMin(1.5), null)
+    assert.equal(parseCustomMin(24 * 60 + 1), null)
+    assert.deepEqual(readKeepAwakeChoice(null), { autoStop: 'never', customMin: null })
+    assert.deepEqual(readKeepAwakeChoice('{"autoStop":"30m","customMin":45}'), { autoStop: '30m', customMin: 45 })
+    assert.deepEqual(readKeepAwakeChoice('{"autoStop":"2h"}'), { autoStop: 'never', customMin: null })
+    assert.deepEqual(readKeepAwakeChoice('{'), { autoStop: 'never', customMin: null })
     assert.deepEqual(readRelayCommand({ t: 'mover', on: false }), { on: false })
   })
 })

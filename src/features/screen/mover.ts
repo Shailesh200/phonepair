@@ -1,7 +1,8 @@
 /** Mouse-mover messages, next to the `sc` messages.
  *
  * Phone -> laptop, and laptop -> helper:
- * - `{t:'mover', on:true, interval:'30s'|'1m'|'5m'}` starts or restarts the nudge.
+ * - `{t:'mover', on:true, interval:'3s'}` starts or restarts the nudge.
+ *   Older helpers still report `30s`, `1m`, or `5m`; those reports still parse.
  * - `{t:'mover', on:false}` stops it.
  * - `{t:'mover', ask:true}` asks the laptop for the last helper report.
  *
@@ -10,7 +11,7 @@
  *   The indicator follows this report. A click does not flip it early.
  */
 
-export const MOVER_INTERVALS = ['30s', '1m', '5m'] as const
+export const MOVER_INTERVALS = ['3s', '30s', '1m', '5m'] as const
 export type MoverInterval = (typeof MOVER_INTERVALS)[number]
 
 export type MoverState = {
@@ -19,10 +20,11 @@ export type MoverState = {
 }
 
 export const MOVER_HINT = 'Connect laptop control first.'
-export const MOVER_DEFAULT_INTERVAL: MoverInterval = '1m'
+/** The page always asks for a nudge every 3 seconds. */
+export const MOVER_DEFAULT_INTERVAL: MoverInterval = '3s'
 
 export function isMoverInterval(value: unknown): value is MoverInterval {
-  return value === '30s' || value === '1m' || value === '5m'
+  return value === '3s' || value === '30s' || value === '1m' || value === '5m'
 }
 
 export function moverBadgeText(interval: MoverInterval): string {
@@ -54,7 +56,7 @@ export type MoverCommand =
 /** What a toggle click asks for. The switch stays put until a report arrives. */
 export function moverToggleCommand(state: MoverState): MoverCommand {
   if (state.on) return { on: false }
-  return { on: true, interval: state.interval ?? MOVER_DEFAULT_INTERVAL }
+  return { on: true, interval: MOVER_DEFAULT_INTERVAL }
 }
 
 export function moverIntervalCommand(interval: MoverInterval): MoverCommand {

@@ -178,7 +178,8 @@ test('button drags are left or right, down or up, and double-click is empty', ()
   assert.equal(parseInput({ t: 'shell', command: 'open' }).ok, false)
 })
 
-test('mover commands are on/off and only 30s, 1m, or 5m', () => {
+test('mover commands are on/off and only 3s, 30s, 1m, or 5m', () => {
+  assert.deepEqual(parseMover({ t: 'mover', on: true, interval: '3s' }).msg, { t: 'mover', on: true, interval: '3s' })
   assert.deepEqual(parseMover({ t: 'mover', on: true, interval: '30s' }).msg, { t: 'mover', on: true, interval: '30s' })
   assert.deepEqual(parseMover({ t: 'mover', on: true, interval: '1m' }).msg, { t: 'mover', on: true, interval: '1m' })
   assert.deepEqual(parseMover({ t: 'mover', on: true, interval: '5m' }).msg, { t: 'mover', on: true, interval: '5m' })
