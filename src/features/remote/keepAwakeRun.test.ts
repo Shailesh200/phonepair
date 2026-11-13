@@ -369,6 +369,72 @@ describe('keep-awake visibility listener', () => {
     }
   })
 
+  it('makes at most one extra wake-lock request when the lock is revoked again', async () => {
+    const prevDoc = globalThis.document
+    const nav = globalThis.navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<unknown> } | null }
+    const prevLock = nav.wakeLock
+    let plays = 0
+    let requests = 0
+    const doc = {
+      hidden: false,
+      body: { appendChild() {} },
+      pictureInPictureElement: null as HTMLVideoElement | null,
+      createElement() {
+        const el = {
+          paused: true,
+          style: {} as { cssText?: string },
+          src: '',
+          srcObject: null as MediaStream | null,
+          setAttribute() {},
+          addEventListener() {},
+          removeAttribute() {},
+          pause() { el.paused = true },
+          play() { plays += 1; el.paused = false; return Promise.resolve() },
+          remove() {},
+        }
+        return el
+      },
+      addEventListener() {},
+      removeEventListener() {},
+    }
+    Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: doc })
+    nav.wakeLock = {
+      request: async () => {
+        requests += 1
+        return {
+          release: async () => {},
+          addEventListener(_type: string, fn: () => void) {
+            queueMicrotask(() => fn())
+          },
+        }
+      },
+    }
+    const awake = createBrowserKeepAwake({
+      helperConnected: () => false,
+      sendHelper() {},
+      publish() {},
+    })
+    try {
+      await awake.start('1m')
+      assert.equal(requests, 1)
+      assert.equal(plays, 0)
+      const started = Date.now()
+      while ((requests < 2 || plays < 1) && Date.now() - started < 500) {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+      assert.equal(requests, 2)
+      assert.equal(plays, 1)
+      assert.equal(awake.view().status, 'On (screen awake)')
+      await new Promise((resolve) => setTimeout(resolve, WAKE_LOCK_HIDE_SETTLE_MS + 40))
+      assert.equal(requests, 2)
+      assert.equal(plays, 1)
+    } finally {
+      awake.stop()
+      Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: prevDoc })
+      try { nav.wakeLock = prevLock } catch { Object.defineProperty(nav, 'wakeLock', { configurable: true, value: prevLock }) }
+    }
+  })
+
   it('releases an older wake lock when a newer request wins', async () => {
     const prevDoc = globalThis.document
     const nav = globalThis.navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<unknown> } | null }

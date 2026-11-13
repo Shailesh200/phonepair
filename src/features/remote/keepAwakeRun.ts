@@ -17,6 +17,10 @@ import { TINY_MP4 } from './keepAwakeMedia.ts'
  * visibilitychange, or this long, before deciding the lock is really gone. */
 export const WAKE_LOCK_HIDE_SETTLE_MS = 50
 
+/** Battery saver revokes a fresh lock immediately. Another request inside this
+ * window would loop with the settle timer, so the next release uses video. */
+export const WAKE_LOCK_REACQUIRE_GAP_MS = 2000
+
 export type KeepAwakeHost = {
   helperConnected: () => boolean
   sendHelper: (msg: { t: 'mover'; on: boolean; interval?: MoverInterval }) => void
@@ -93,6 +97,12 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   let audio: { ctx: AudioContext; osc: OscillatorNode } | null = null
   let onVisible: (() => void) | null = null
   let releaseTimer: ReturnType<typeof setTimeout> | null = null
+  let lastReacquireAt = 0
+  let settleToVideo = false
+
+  function reacquireRevokedSoon() {
+    return lastReacquireAt > 0 && Date.now() - lastReacquireAt < WAKE_LOCK_REACQUIRE_GAP_MS
+  }
 
   function clearReleaseTimer() {
     if (releaseTimer == null) return
@@ -317,7 +327,21 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     } catch { /* autoplay policy, or no audio device */ }
   }
 
-  async function acquireWakeLock(mine: number): Promise<boolean> {
+  function useVideoFallback(mine: number) {
+    void ensureVideo(mine).then((playing) => {
+      if (mine !== epoch) return
+      reacquiring = false
+      if (tabHidden() || session.wakeLockHeld) {
+        if (session.wakeLockHeld) stopVideo()
+        publish()
+        return
+      }
+      session.videoPlaying = playing
+      publish()
+    })
+  }
+
+  async function acquireWakeLock(mine: number, reacquire = false): Promise<boolean> {
     if (!session.wakeLockApi || typeof navigator === 'undefined' || !navigator.wakeLock) return false
     const seq = ++wakeSeq
     try {
@@ -330,6 +354,8 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
       sentinel = next
       if (older && older !== next) void older.release().catch(() => undefined)
       session.wakeLockHeld = true
+      // Stamp before the release listener. Battery saver can revoke in the same turn.
+      if (reacquire) lastReacquireAt = Date.now()
       stopVideo()
       next.addEventListener('release', () => {
         if (sentinel !== next) return
@@ -341,10 +367,13 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
         // Hold the last good status until visibilitychange or the settle timer.
         if (!active || tabHidden()) {
           clearReleaseTimer()
+          settleToVideo = false
           reacquiring = false
           publish()
           return
         }
+        // A lock we just won and already lost is not worth requesting again.
+        settleToVideo = reacquireRevokedSoon()
         reacquiring = true
         armReleaseTimer()
         publish()
@@ -363,6 +392,8 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   async function start(interval: MoverInterval) {
     const mine = ++epoch
     clearReleaseTimer()
+    lastReacquireAt = 0
+    settleToVideo = false
     reacquiring = false
     session.helperStopped = false
     session.interval = interval
@@ -402,6 +433,8 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   function stop(opts?: { tellHelper?: boolean }) {
     epoch += 1
     reacquiring = false
+    lastReacquireAt = 0
+    settleToVideo = false
     lastGood = null
     session.helperStopped = false
     session.requested = false
@@ -492,6 +525,8 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
   }
 
   function onVisibility() {
+    const videoOnly = settleToVideo
+    settleToVideo = false
     clearReleaseTimer()
     session.tabHidden = tabHidden()
     const again = session.requested && !session.helperOn && !host.helperConnected() && !session.tabHidden
@@ -499,32 +534,29 @@ export function createBrowserKeepAwake(host: KeepAwakeHost) {
     publish()
     if (!again) return
     const mine = epoch
-    void acquireWakeLock(mine).then((locked) => {
+    if (videoOnly) {
+      useVideoFallback(mine)
+      return
+    }
+    void acquireWakeLock(mine, true).then((locked) => {
       if (mine !== epoch) return
       if (tabHidden()) {
         reacquiring = false
         publish()
         return
       }
-      session.wakeLockHeld = locked
-      if (locked) {
+      // A revoke that already ran owns the settle. Don't put the lock back.
+      if (locked && sentinel != null) {
+        session.wakeLockHeld = true
         reacquiring = false
         stopVideo()
         publish()
         return
       }
+      if (locked) return
+      session.wakeLockHeld = false
       publish()
-      void ensureVideo(mine).then((playing) => {
-        if (mine !== epoch) return
-        reacquiring = false
-        if (tabHidden() || session.wakeLockHeld) {
-          if (session.wakeLockHeld) stopVideo()
-          publish()
-          return
-        }
-        session.videoPlaying = playing
-        publish()
-      })
+      useVideoFallback(mine)
     })
   }
 
