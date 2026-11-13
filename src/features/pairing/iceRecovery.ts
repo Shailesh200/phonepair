@@ -2,6 +2,11 @@ export type LinkRole = 'host' | 'guest'
 
 /** Redial 13s after ICE first goes disconnected (3s unhealthy + 10s grace). */
 export const ICE_DISCONNECTED_GRACE_MS = 13_000
+/**
+ * After a signalling restore the pre-drop data channel often stays `.open` while ICE is
+ * disconnected, so the UI already says Connected. Don't wait out the full 13s before redial.
+ */
+export const ICE_POST_RESTORE_GRACE_MS = 1_000
 
 export function isDataConnIceOfferer(role: LinkRole): boolean {
   return role === 'guest'
@@ -27,6 +32,24 @@ export function iceGraceFireAt(disconnectedSince: number, graceMs = ICE_DISCONNE
 export function iceDisconnectedRedialDelayMs(disconnectedSince: number, now: number, graceMs = ICE_DISCONNECTED_GRACE_MS): number {
   const remaining = iceGraceFireAt(disconnectedSince, graceMs) - now
   return remaining > 0 ? remaining : 0
+}
+
+/** Hold an app payload (clipboard included) until the data channel is actually usable. */
+export function shouldQueueOutbound(opts: { live: boolean; connOpen: boolean; transportDead: boolean }): boolean {
+  return !opts.live || !opts.connOpen || opts.transportDead
+}
+
+/** Grace to use right now. Inside the post-restore window this is 1s, otherwise 13s. */
+export function iceGraceMsAfterRestore(opts: {
+  now: number
+  restoreSignalAt: number | null
+  postRestoreWindowMs?: number
+}): number {
+  const windowMs = opts.postRestoreWindowMs ?? 30_000
+  if (opts.restoreSignalAt != null && opts.now - opts.restoreSignalAt >= 0 && opts.now - opts.restoreSignalAt <= windowMs) {
+    return ICE_POST_RESTORE_GRACE_MS
+  }
+  return ICE_DISCONNECTED_GRACE_MS
 }
 
 export function shouldRedialAfterDisconnectedGrace(

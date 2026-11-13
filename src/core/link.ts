@@ -134,7 +134,9 @@ import {
 import {
   canGuestIceRedial,
   iceDisconnectedRedialDelayMs,
+  iceGraceMsAfterRestore,
   isDataConnIceOfferer,
+  shouldQueueOutbound,
   iceTransportRecovered,
   shouldActOnIceNetworkChange,
   shouldAbandonOpenDataConn,
@@ -254,6 +256,8 @@ export class Link {
   private msgHandlers = new Set<MsgHandler>()
   private callHandlers = new Set<CallHandler>()
   private lastSeen = 0
+  /** App payloads held while the open data channel's ICE is dead, flushed on a live conn. */
+  private outbound: any[] = []
   private timers: number[] = []
   private retry = 0
   private destroyed = false
@@ -1372,13 +1376,15 @@ export class Link {
     if (!isDataConnIceOfferer(this.role) || this.destroyed) return
     if (!shouldArmIceGraceTimer(!!this.iceRedialTimer, this.iceDisconnectedAt)) return
     const since = this.iceDisconnectedAt!
-    const delay = iceDisconnectedRedialDelayMs(since, Date.now())
+    const now = Date.now()
+    const graceMs = iceGraceMsAfterRestore({ now, restoreSignalAt: this.lastRestoreSignalAt })
+    const delay = Math.min(iceDisconnectedRedialDelayMs(since, now), iceDisconnectedRedialDelayMs(since, now, graceMs))
     this.iceRedialTimer = window.setTimeout(() => {
       this.iceRedialTimer = null
       if (this.destroyed) return
       const pcNow = this.conn ? this.peerConnectionOf(this.conn) : null
       const state = pcNow?.iceConnectionState ?? 'disconnected'
-      if (shouldRedialAfterDisconnectedGrace(since, state, Date.now())) {
+      if (shouldRedialAfterDisconnectedGrace(since, state, Date.now(), graceMs)) {
         this.scheduleGuestIceRedial()
       }
     }, delay)
@@ -1390,6 +1396,7 @@ export class Link {
     if (iceTransportRecovered(state)) {
       this.clearIceGraceTimer()
       this.iceDisconnectedAt = null
+      this.flushOutbound()
       return
     }
     if (state === 'disconnected' && this.iceDisconnectedAt == null) this.iceDisconnectedAt = now
@@ -2186,6 +2193,7 @@ export class Link {
       }
       this.syncConnProbeEligibleForSession()
       this.onDataConnBackSignal(Date.now())
+      this.flushOutbound()
     }
     if (c.open) onOpen(); else c.on('open', onOpen)
     c.on('data', (m: any) => {
@@ -2384,6 +2392,7 @@ export class Link {
     }
     this.wireIceRecovery(c)
     void this.refreshConnRelay()
+    this.flushOutbound()
   }
 
   private attachRememberGuest(c: DataConnection) {
@@ -2690,12 +2699,47 @@ export class Link {
   get connected() { return this.status === 'connected' && !!this.conn?.open }
   get rememberListenId() { return this.rememberGuestAuth?.listenId }
 
+  private connTransportDead(): boolean {
+    const pc = this.conn ? this.peerConnectionOf(this.conn) : null
+    if (!pc) return false
+    const ice = pc.iceConnectionState
+    const connState = pc.connectionState
+    return ice === 'disconnected' || ice === 'failed' || ice === 'closed'
+      || connState === 'disconnected' || connState === 'failed' || connState === 'closed'
+  }
+
+  private queueOutbound(m: any) {
+    this.outbound.push(m)
+    if (this.outbound.length > 20) this.outbound.shift()
+  }
+
+  private flushOutbound() {
+    if (!this.rememberGuestLive() || !this.conn?.open || this.connTransportDead()) return
+    const batch = this.outbound
+    if (!batch.length) return
+    this.outbound = []
+    for (const m of batch) {
+      try { this.conn.send(m) } catch { this.outbound.push(m) }
+    }
+  }
+
   send(m: any) {
-    if (!this.rememberGuestLive()) return
+    if (shouldQueueOutbound({
+      live: this.rememberGuestLive(),
+      connOpen: !!this.conn?.open,
+      transportDead: this.connTransportDead(),
+    })) {
+      this.queueOutbound(m)
+      return
+    }
     const guestPen = this.authPending?.conn === this.conn ? this.authPending : null
     const hostPen = this.rememberHostAuth.authPending?.conn === this.conn ? this.rememberHostAuth.authPending : null
-    if (!shouldLinkSend(this.conn, guestPen || hostPen)) return
-    try { this.conn!.send(m) } catch {}
+    if (!shouldLinkSend(this.conn, guestPen || hostPen)) {
+      this.queueOutbound(m)
+      return
+    }
+    this.flushOutbound()
+    try { this.conn!.send(m) } catch { this.queueOutbound(m) }
   }
 
   call(stream: MediaStream, kind: string) {
@@ -2725,6 +2769,7 @@ export class Link {
     if (this.role === 'guest') this.sessionPaired = false
     const c = this.conn
     this.conn = null
+    this.outbound = []
     window.setTimeout(() => { try { c?.close() } catch {} }, 200)
   }
 
