@@ -5,11 +5,12 @@ import type { CoreCtx } from '../../core/bus'
 import { useMessage } from '../../core/bus'
 import { Icon } from '../../core/icons'
 import { MoverControl } from './Mover'
-import { createRemoteSend, type RemoteSend } from './send'
+import { createRemoteSend, type RemoteSend, showPointerLaser } from './send'
 import { remotePageClass, remoteScrollClass, remoteStyles } from './styles'
 import {
   DEFAULT_REMOTE_TOOLBAR_MODE,
   remotePointerLaserOnForMode,
+  remoteResyncPointerLaserOn,
   remoteTapSendsClick,
   remoteToolbarShowsClicks,
   remoteToolbarShowsNav,
@@ -198,21 +199,35 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
     setToolbarMode(next)
   }
   useEffect(() => {
-    const leavePage = () => {
+    const suspendRemote = () => {
       point(false)
       releasePad()
       for (const id of ['lclick', 'rclick', 'prev', 'next']) pageRef.current?.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)?.blur()
     }
-    const onHide = () => { if (document.visibilityState === 'hidden') leavePage() }
-    document.addEventListener('visibilitychange', onHide)
-    document.addEventListener('freeze', leavePage)
-    window.addEventListener('pagehide', leavePage)
-    return () => {
-      document.removeEventListener('visibilitychange', onHide)
-      document.removeEventListener('freeze', leavePage)
-      window.removeEventListener('pagehide', leavePage)
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        suspendRemote()
+        return
+      }
+      if (
+        remoteResyncPointerLaserOn({
+          mode: toolbarMode,
+          visibilityState: document.visibilityState,
+          linkConnected: showPointerLaser(ctx.link.status),
+        })
+      ) {
+        point(true)
+      }
     }
-  }, [send])
+    document.addEventListener('visibilitychange', onVisibility)
+    document.addEventListener('freeze', suspendRemote)
+    window.addEventListener('pagehide', suspendRemote)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      document.removeEventListener('freeze', suspendRemote)
+      window.removeEventListener('pagehide', suspendRemote)
+    }
+  }, [send, toolbarMode, ctx.link.status])
 
   const onStripDown = (e: React.PointerEvent) => {
     e.stopPropagation()

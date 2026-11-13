@@ -1,7 +1,7 @@
 /* Phone remote page. Selectors stay stronger than the shell stylesheet. */
-.pg.remote { gap: 0; padding-top: 16px; }
+.pg.remote { gap: 0; padding-top: 10px; }
 
-.pg.remote .remote-mode { flex: 0 0 auto; margin-top: 12px; }
+.pg.remote .remote-mode { flex: 0 0 auto; margin-top: 8px; }
 .pg.remote .seg { background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; padding: 4px; display: flex; }
 .pg.remote .seg button { flex: 1 1 50%; font-weight: 600; font-size: 15px; padding: 10px 0; border-radius: 10px; color: var(--muted); border: none; background: transparent; }
 .pg.remote .seg button.on { background: var(--surface); color: var(--ink); box-shadow: none; }
@@ -12,7 +12,7 @@
   flex: 1 1 auto;
   height: auto;
   min-height: 160px;
-  margin-top: 10px;
+  margin-top: 8px;
   border-radius: 24px;
   overflow: hidden;
   background-color: var(--surface);
@@ -68,7 +68,7 @@
 .pg.remote .pad-scroll svg { width: 16px; height: 16px; color: var(--mut); }
 .pg.remote .pad-scroll.on { background: rgba(42, 28, 22, 0.08); color: var(--accent); }
 
-.pg.remote .clicks { margin-top: var(--space-4); }
+.pg.remote .clicks { margin-top: 10px; }
 .pg.remote .clicks .btn {
   min-height: 56px;
   height: 56px;
@@ -79,7 +79,7 @@
 
 .pg.remote .nav2,
 .pg.remote .pp-remote-clicker,
-.pg.remote .pp-remote-laser { margin-top: var(--space-4); }
+.pg.remote .pp-remote-laser { margin-top: 10px; }
 .pg.remote .nav2 .btn {
   min-height: 78px;
   height: 78px;
@@ -94,7 +94,7 @@
 
 .pg.remote .kb-btn.btn {
   width: 100%;
-  margin-top: var(--space-4);
+  margin-top: 10px;
   min-height: 52px;
   height: 52px;
   border-radius: 16px;
@@ -201,15 +201,16 @@
 .phone-page:has(.pg.remote) > .pg.remote {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   min-height: 0;
-  height: var(--vvh, 100dvh);
-  max-height: 100%;
+  height: auto;
+  max-height: none;
   overflow-y: hidden;
 }
 .phone-page:has(.pg.remote) .pad-area { min-height: 0; }
 .pg.remote .pp-mover {
   flex: 0 0 auto;
-  margin-top: var(--space-4);
+  margin-top: 10px;
   padding: var(--space-3);
   background: var(--surface);
   border: 1px solid var(--line);

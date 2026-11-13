@@ -18,3 +18,14 @@ export function remotePointerLaserOnForMode(mode: RemoteToolbarMode): boolean {
 export function remoteTapSendsClick(mode: RemoteToolbarMode): boolean {
   return mode === 'cursor'
 }
+
+/** After a hidden/frozen page, re-send laser on only when still in pointer mode and link is live. */
+export function remoteResyncPointerLaserOn(opts: {
+  mode: RemoteToolbarMode
+  visibilityState: DocumentVisibilityState
+  linkConnected: boolean
+}): boolean {
+  if (opts.visibilityState === 'hidden') return false
+  if (!opts.linkConnected) return false
+  return remotePointerLaserOnForMode(opts.mode)
+}
