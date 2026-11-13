@@ -152,12 +152,16 @@ export function isSignalRestoreNotice(t: unknown): boolean {
   return t === SIGNAL_RESTORE_NOTICE
 }
 
-/** Payload { t:'signal:restore', at:number } — no ids or secrets. */
+/** True for `{ t:'signal:restore' }` with optional host `at` (guest must not use `at` for timing). */
+export function isValidSignalRestoreNotice(m: unknown): boolean {
+  return !!m && typeof m === 'object' && (m as { t?: unknown }).t === SIGNAL_RESTORE_NOTICE
+}
+
+/** Legacy parse — validates shape only; `at` is ignored on the guest for arming. */
 export function parseSignalRestoreNotice(m: unknown): number | null {
-  if (!m || typeof m !== 'object') return null
-  const row = m as { t?: unknown; at?: unknown }
-  if (row.t !== SIGNAL_RESTORE_NOTICE) return null
-  return typeof row.at === 'number' && Number.isFinite(row.at) ? row.at : null
+  if (!isValidSignalRestoreNotice(m)) return null
+  const at = (m as { at?: unknown }).at
+  return typeof at === 'number' && Number.isFinite(at) ? at : null
 }
 
 export function buildSignalRestoreNotice(at: number) {

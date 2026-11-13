@@ -23,6 +23,7 @@ import {
   shouldArmPostRestoreStaleDataRebuild,
   shouldGuestInitiatePostRestoreStaleDataRebuild,
   buildSignalRestoreNotice,
+  isValidSignalRestoreNotice,
   parseSignalRestoreNotice,
   restoreSignalsCoalesce,
   shouldSendHostSignalRestoreNotice,
@@ -576,6 +577,7 @@ describe('post-restore stale data rebuild', () => {
     }), false)
     const msg = buildSignalRestoreNotice(restore)
     assert.equal(parseSignalRestoreNotice(msg), restore)
+    assert.equal(isValidSignalRestoreNotice({ t: SIGNAL_RESTORE_NOTICE }), true)
     assert.equal(parseSignalRestoreNotice({ t: SIGNAL_RESTORE_NOTICE }), null)
     assert.equal(parseSignalRestoreNotice({ t: 'clip:set', at: restore }), null)
     assert.equal(shouldArmPostRestoreStaleDataRebuild({
@@ -601,9 +603,52 @@ describe('post-restore stale data rebuild', () => {
   })
 
   it('old peer ignores unknown restore payloads', () => {
-    assert.equal(parseSignalRestoreNotice(null), null)
-    assert.equal(parseSignalRestoreNotice({ t: 'hello' }), null)
+    assert.equal(isValidSignalRestoreNotice(null), false)
+    assert.equal(isValidSignalRestoreNotice({ t: 'hello' }), false)
+    assert.equal(isValidSignalRestoreNotice({ t: SIGNAL_RESTORE_NOTICE, at: 'nope' }), true)
     assert.equal(parseSignalRestoreNotice({ t: SIGNAL_RESTORE_NOTICE, at: 'nope' }), null)
+  })
+
+  it('guest arms on receipt time when host at is skewed ±5 minutes', () => {
+    mock.timers.enable({ apis: ['Date'] })
+    const guestNow = 5_000_000
+    mock.timers.setTime(guestNow)
+    const connEstablished = guestNow - 120_000
+    const receiptAt = guestNow
+    const hostFiveMinBehind = guestNow - 5 * 60_000
+    const hostFiveMinAhead = guestNow + 5 * 60_000
+    for (const hostAt of [hostFiveMinBehind, hostFiveMinAhead]) {
+      assert.equal(isValidSignalRestoreNotice(buildSignalRestoreNotice(hostAt)), true)
+    }
+    assert.equal(shouldArmPostRestoreStaleDataRebuild({
+      connOpen: true,
+      restoreSignalAt: receiptAt,
+      connEstablishedAt: connEstablished,
+      armedForRestore: null,
+      now: receiptAt + 50,
+    }), true)
+    // Phone clock ahead of host: using host `at` misses the 30s post-restore window.
+    assert.equal(shouldArmPostRestoreStaleDataRebuild({
+      connOpen: true,
+      restoreSignalAt: hostFiveMinBehind,
+      connEstablishedAt: connEstablished,
+      armedForRestore: null,
+      now: guestNow + 50,
+    }), false)
+    mock.timers.reset()
+  })
+
+  it('host notice at receipt time coalesces with guest local restore', () => {
+    const guestLocalRestore = 20_000
+    const hostNoticeReceipt = guestLocalRestore + 900
+    assert.equal(restoreSignalsCoalesce(guestLocalRestore, hostNoticeReceipt), true)
+    assert.equal(shouldArmPostRestoreStaleDataRebuild({
+      connOpen: true,
+      restoreSignalAt: hostNoticeReceipt,
+      connEstablishedAt: 5000,
+      armedForRestore: guestLocalRestore,
+      now: hostNoticeReceipt + 10,
+    }), false)
   })
 
 })

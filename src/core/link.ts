@@ -63,7 +63,7 @@ import {
   connProbeBlockedByRecentTraffic,
   connProbeMayAbandonAfterFail,
   connProbeRetryDelayMs,
-  parseSignalRestoreNotice,
+  isValidSignalRestoreNotice,
   planTickOpenConnTraffic,
   restoreSignalsCoalesce,
   shouldArmPostRestoreStaleDataRebuild,
@@ -574,11 +574,12 @@ export class Link {
     }
   }
 
-  private onPeerSignalRestoreNotice(at: number) {
+  private onPeerSignalRestoreNotice() {
     if (this.role !== 'guest') return
+    const receivedAt = Date.now()
     ppDebugIncHostRestoreNoticeRx()
-    this.ensureGuestRestoreClockForStaleRebuild(at)
-    this.armPostRestoreStaleDataRebuild(at)
+    this.ensureGuestRestoreClockForStaleRebuild(receivedAt)
+    this.armPostRestoreStaleDataRebuild(receivedAt)
   }
 
   private armPostRestoreStaleDataRebuild(restoreAt: number) {
@@ -2254,9 +2255,8 @@ export class Link {
         return
       }
       if (m.t === 'pong') return
-      const restoreAt = parseSignalRestoreNotice(m)
-      if (restoreAt != null) {
-        this.onPeerSignalRestoreNotice(restoreAt)
+      if (isValidSignalRestoreNotice(m)) {
+        this.onPeerSignalRestoreNotice()
         return
       }
     }
