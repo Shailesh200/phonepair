@@ -7,6 +7,8 @@ export type PpDebugConnProbe = {
   probeMsLast: number | null
   stalledWsKilled: number
   staleDataRebuild: number
+  hostRestoreNoticeRx: number
+  hostRestoreNoticeTx: number
 }
 
 export function ensurePpDebugConnProbe(): PpDebugConnProbe {
@@ -19,6 +21,8 @@ export function ensurePpDebugConnProbe(): PpDebugConnProbe {
       probeMsLast: null,
       stalledWsKilled: 0,
       staleDataRebuild: 0,
+      hostRestoreNoticeRx: 0,
+      hostRestoreNoticeTx: 0,
     }
   }
   return d.connProbe
@@ -44,4 +48,12 @@ export function ppDebugIncStalledWsKilled(): void {
 
 export function ppDebugIncStaleDataRebuild(): void {
   ensurePpDebugConnProbe().staleDataRebuild += 1
+}
+
+export function ppDebugIncHostRestoreNoticeTx(): void {
+  ensurePpDebugConnProbe().hostRestoreNoticeTx += 1
+}
+
+export function ppDebugIncHostRestoreNoticeRx(): void {
+  ensurePpDebugConnProbe().hostRestoreNoticeRx += 1
 }

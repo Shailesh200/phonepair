@@ -143,6 +143,49 @@ export function isConnProbeControlType(t: unknown): boolean {
 
 /** Brief grace after signalling restore before forcing a fresh data conn. */
 export const POST_RESTORE_STALE_DATA_REBUILD_MS = 800
+/** Host and guest restore times within this window share one stale-data rebuild. */
+export const RESTORE_SIGNAL_COALESCE_MS = 2000
+
+export const SIGNAL_RESTORE_NOTICE = 'signal:restore' as const
+
+export function isSignalRestoreNotice(t: unknown): boolean {
+  return t === SIGNAL_RESTORE_NOTICE
+}
+
+/** True for `{ t:'signal:restore' }` with optional host `at` (guest must not use `at` for timing). */
+export function isValidSignalRestoreNotice(m: unknown): boolean {
+  return !!m && typeof m === 'object' && (m as { t?: unknown }).t === SIGNAL_RESTORE_NOTICE
+}
+
+/** Legacy parse — validates shape only; `at` is ignored on the guest for arming. */
+export function parseSignalRestoreNotice(m: unknown): number | null {
+  if (!isValidSignalRestoreNotice(m)) return null
+  const at = (m as { at?: unknown }).at
+  return typeof at === 'number' && Number.isFinite(at) ? at : null
+}
+
+export function buildSignalRestoreNotice(at: number) {
+  return { t: SIGNAL_RESTORE_NOTICE, at }
+}
+
+export function restoreSignalsCoalesce(
+  a: number,
+  b: number,
+  windowMs = RESTORE_SIGNAL_COALESCE_MS,
+): boolean {
+  return Math.abs(a - b) < windowMs
+}
+
+export function shouldSendHostSignalRestoreNotice(opts: {
+  role: 'host' | 'guest'
+  connOpen: boolean
+  sessionPaired: boolean
+  connEstablishedAt: number | null
+  restoreSignalAt: number
+}): boolean {
+  if (opts.role !== 'host' || !opts.connOpen || !opts.sessionPaired) return false
+  return connEstablishedBeforeRestore(opts.connEstablishedAt, opts.restoreSignalAt)
+}
 
 /** Open data conn survived from before signalling came back — probe ping/pong can lie. */
 export function connEstablishedBeforeRestore(
@@ -163,7 +206,12 @@ export function shouldArmPostRestoreStaleDataRebuild(opts: {
   if (!opts.connOpen) return false
   if (opts.restoreSignalAt == null) return false
   if (opts.now - opts.restoreSignalAt > DATA_CONN_PROBE_POST_RESTORE_MS) return false
-  if (opts.armedForRestore === opts.restoreSignalAt) return false
+  if (
+    opts.armedForRestore != null
+    && restoreSignalsCoalesce(opts.armedForRestore, opts.restoreSignalAt)
+  ) {
+    return false
+  }
   return connEstablishedBeforeRestore(opts.connEstablishedAt, opts.restoreSignalAt)
 }
 
@@ -205,5 +253,6 @@ export function shouldDispatchConnKeepalive(opts: {
 }): boolean {
   if (!opts.connOpen) return false
   if (isConnProbeControlType(opts.t)) return true
+  if (isSignalRestoreNotice(opts.t)) return true
   return !opts.rememberGuestAuth || opts.status === 'connected'
 }
