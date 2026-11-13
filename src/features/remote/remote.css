@@ -1,8 +1,9 @@
 /* Phone remote page. Selectors stay stronger than the shell stylesheet. */
 .pg.remote { gap: 0; padding-top: 16px; }
 
-.pg.remote .seg { background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; padding: 4px; }
-.pg.remote .seg button { font-weight: 600; font-size: 15px; padding: 10px 0; border-radius: 10px; color: var(--muted); }
+.pg.remote .remote-mode { flex: 0 0 auto; margin-top: 12px; }
+.pg.remote .seg { background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; padding: 4px; display: flex; }
+.pg.remote .seg button { flex: 1 1 50%; font-weight: 600; font-size: 15px; padding: 10px 0; border-radius: 10px; color: var(--muted); border: none; background: transparent; }
 .pg.remote .seg button.on { background: var(--surface); color: var(--ink); box-shadow: none; }
 
 .pg.remote .pad-area {
@@ -10,8 +11,8 @@
   display: block;
   flex: 1 1 auto;
   height: auto;
-  min-height: 140px;
-  margin-top: 14px;
+  min-height: 160px;
+  margin-top: 10px;
   border-radius: 24px;
   overflow: hidden;
   background-color: var(--surface);
@@ -228,6 +229,7 @@
     justify-content: flex-start;
   }
 }
+.pg.remote .remote-mode,
 .pg.remote .seg,
 .pg.remote .clicks,
 .pg.remote .nav2,
@@ -261,6 +263,7 @@
     align-items: stretch;
     padding-top: 8px;
   }
+  .pg.remote .remote-mode,
   .pg.remote .seg { grid-column: 1 / -1; grid-row: 1; }
   .pg.remote .pad-area,
   .pg.remote .clicker-help {

@@ -165,10 +165,10 @@ describe('mouse mover control', () => {
 
   it('places Keep awake between the pointer and the keyboard on the phone', () => {
     const html = markup(React.createElement(Remote, { ctx: ctx() }))
-    const pointer = html.indexOf('data-testid="pointer"')
+    const mode = html.indexOf('data-testid="remote-mode-cursor"')
     const toggle = html.indexOf('data-testid="mover-toggle"')
     const keyboard = html.indexOf('data-testid="kb-input"')
-    assert.ok(pointer >= 0 && toggle > pointer && keyboard > toggle, html)
+    assert.ok(mode >= 0 && toggle > mode && keyboard > toggle, html)
     assert.match(html, /Keep awake/)
     assert.match(html, /class="pp-mover-main"/)
     assert.match(html, /data-state="off"/)

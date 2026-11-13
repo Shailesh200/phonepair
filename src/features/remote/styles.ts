@@ -5,6 +5,7 @@
 export const remoteStyles = {
   page: 'pg remote pp-remote',
   badge: 'tag ok',
+  mode: 'seg remote-mode',
   pad: 'pp-remote-pad pad-area',
   hint: 'pad-hint',
   finger: 'touch-dot',

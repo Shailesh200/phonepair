@@ -7,6 +7,14 @@ import { Icon } from '../../core/icons'
 import { MoverControl } from './Mover'
 import { createRemoteSend, type RemoteSend } from './send'
 import { remotePageClass, remoteScrollClass, remoteStyles } from './styles'
+import {
+  DEFAULT_REMOTE_TOOLBAR_MODE,
+  remotePointerLaserOnForMode,
+  remoteTapSendsClick,
+  remoteToolbarShowsClicks,
+  remoteToolbarShowsNav,
+  type RemoteToolbarMode,
+} from './remoteToolbar'
 import { moverIntervalCommand, moverToggleCommand, readMoverState } from '../screen/mover'
 import { KEEP_AWAKE_IDLE, browserSearch, qaHooksEnabled, readRelayReport, type KeepAwakeViewState } from './keepAwake'
 
@@ -49,6 +57,7 @@ function useSharedSend(ctx: CoreCtx) {
 }
 
 export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string }) {
+  const [toolbarMode, setToolbarMode] = useState<RemoteToolbarMode>(DEFAULT_REMOTE_TOOLBAR_MODE)
   const [kb, setKb] = useState(true)
   const [fingers, setFingers] = useState<{ id: number; x: number; y: number }[]>([])
   const [stripOn, setStripOn] = useState(false)
@@ -173,7 +182,7 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
     s.pts.delete(e.pointerId)
     setFingers((fs) => fs.filter((f) => f.id !== e.pointerId))
     if (s.pts.size === 0) {
-      if (!s.multi && s.moved < 10 && Date.now() - s.down < 350) send.click('left')
+      if (!s.multi && s.moved < 10 && Date.now() - s.down < 350 && remoteTapSendsClick(toolbarMode)) send.click('left')
       s.multi = false
     }
   }
@@ -183,11 +192,16 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
     setStripOn(false)
     send.pointer(on)
   }
+  const setMode = (next: RemoteToolbarMode) => {
+    if (next === toolbarMode) return
+    point(remotePointerLaserOnForMode(next))
+    setToolbarMode(next)
+  }
   useEffect(() => {
     const leavePage = () => {
       point(false)
       releasePad()
-      for (const id of ['lclick', 'rclick']) pageRef.current?.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)?.blur()
+      for (const id of ['lclick', 'rclick', 'prev', 'next']) pageRef.current?.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)?.blur()
     }
     const onHide = () => { if (document.visibilityState === 'hidden') leavePage() }
     document.addEventListener('visibilitychange', onHide)
@@ -228,6 +242,26 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
 
   return <div className={remotePageClass(className)} data-remote-name={linked} ref={pageRef}>
     {fullLaptop ? <span className={remoteStyles.badge} data-testid="full-laptop-badge">Full laptop</span> : null}
+    <div className={remoteStyles.mode} role="group" aria-label="Remote mode">
+      <button
+        type="button"
+        className={toolbarMode === 'cursor' ? 'on' : ''}
+        data-testid="remote-mode-cursor"
+        aria-pressed={toolbarMode === 'cursor'}
+        onClick={() => setMode('cursor')}
+      >
+        Cursor
+      </button>
+      <button
+        type="button"
+        className={toolbarMode === 'pointer' ? 'on' : ''}
+        data-testid="remote-mode-pointer"
+        aria-pressed={toolbarMode === 'pointer'}
+        onClick={() => setMode('pointer')}
+      >
+        Pointer
+      </button>
+    </div>
     <div id="pp-trackpad" ref={pad} className={remoteStyles.pad} data-testid="trackpad" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onContextMenu={(e) => e.preventDefault()}>
       <div className={remoteStyles.hint}>
         <Icon n="pointer" />
@@ -238,15 +272,14 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v18" /><path d="m8 7 4-4 4 4" /><path d="m8 17 4 4 4-4" /></svg>
       </div>
     </div>
-    <div className={remoteStyles.clicks}>
+    {remoteToolbarShowsClicks(toolbarMode) ? <div className={remoteStyles.clicks}>
       <button type="button" className={remoteStyles.left} data-testid="lclick" onClick={() => send.click('left')}>Left click</button>
       <button type="button" className={remoteStyles.right} data-testid="rclick" onClick={() => send.click('right')}>Right click</button>
-    </div>
-    <div className={remoteStyles.clicker}>
+    </div> : null}
+    {remoteToolbarShowsNav(toolbarMode) ? <div className={remoteStyles.clicker}>
       <button type="button" className={remoteStyles.prev} data-testid="prev" onClick={() => send.nav('prev')}><Icon n="back" />Prev</button>
       <button type="button" className={remoteStyles.next} data-testid="next" onClick={() => send.nav('next')}>Next<Icon n="next" /></button>
-    </div>
-    <button type="button" className={remoteStyles.laser} data-testid="pointer" onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); point(true) }} onPointerUp={(e) => { point(false); try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* already released */ } }} onPointerCancel={() => point(false)} onBlur={() => point(false)} onLostPointerCapture={() => point(false)}>Pointer · hold to point</button>
+    </div> : null}
     <MoverControl
       state={mover}
       qa={qaHooksEnabled(browserSearch())}
@@ -264,7 +297,7 @@ export function Remote({ ctx, className }: { ctx: CoreCtx; className?: string })
     />
     <button type="button" className={remoteStyles.keyboard} data-testid="kb-toggle" onClick={() => setKb((v) => { if (!v) last.current = ''; return !v })}><Icon n="keyboard" />Keyboard</button>
     {kb && <form className={remoteStyles.form} onSubmit={(e) => { e.preventDefault(); send.key('Enter'); const input = e.currentTarget.elements[0] as HTMLInputElement; input.value = ''; last.current = '' }}>
-      <input autoFocus data-testid="kb-input" className={remoteStyles.input} placeholder="Type here, it appears on the laptop" autoCapitalize="off" autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="send" onFocus={(e) => revealInput(e.currentTarget)} onChange={(e) => {
+      <input data-testid="kb-input" className={remoteStyles.input} placeholder="Type here, it appears on the laptop" autoCapitalize="off" autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="send" onFocus={(e) => revealInput(e.currentTarget)} onChange={(e) => {
         const v = e.target.value
         const p = last.current
         let i = 0

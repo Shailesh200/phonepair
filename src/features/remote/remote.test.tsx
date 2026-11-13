@@ -6,7 +6,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { CoreCtx } from '../../core/bus'
 import { Laptop } from '../../Laptop'
 import '../../features'
+import './remoteToolbar.test.ts'
 import { clearPadGesture, Remote } from './Remote'
+import { DEFAULT_REMOTE_TOOLBAR_MODE, remoteToolbarShowsClicks, remoteToolbarShowsNav } from './remoteToolbar'
 import { createRemoteSend, navKey, pointerOffBeforeDestroy, remoteChannelsCreated, showPointerLaser } from './send'
 
 declare const __REMOTE_SRC__: string
@@ -70,7 +72,7 @@ function ctx(): CoreCtx {
   }
 }
 
-const TESTIDS = ['trackpad', 'scroll-strip', 'lclick', 'rclick', 'prev', 'next', 'kb-toggle', 'kb-input', 'pointer']
+const TESTIDS_ALWAYS = ['trackpad', 'scroll-strip', 'lclick', 'rclick', 'kb-toggle', 'kb-input', 'remote-mode-cursor', 'remote-mode-pointer']
 
 export async function runRemoteTests() {
   const remoteSrc = injected(typeof __REMOTE_SRC__ === 'string' ? __REMOTE_SRC__ : undefined, 'Remote.tsx')
@@ -79,19 +81,26 @@ export async function runRemoteTests() {
 
   const html = renderToStaticMarkup(React.createElement(Remote, { ctx: ctx(), className: 'skin' }))
   expect(html.includes('class="pg remote pp-remote skin"'), 'className styling hook')
-  expect(html.includes('pp-remote-pad') && html.includes('pp-remote-clicker') && html.includes('pp-remote-laser'), 'spec class hooks')
+  expect(html.includes('pp-remote-pad') && html.includes('remote-mode'), 'spec class hooks')
+  expect(html.includes('role="group"') && html.includes('aria-label="Remote mode"'), 'mode toggle group')
   expect(!html.includes('role="tablist"'), 'one screen has no mode tabs')
   expect(!remoteSrc.includes('localStorage') && !remoteSrc.includes('phonepair.remote.mode'), 'layout does not persist a mode')
-  const order = ['data-testid="trackpad"', 'data-testid="lclick"', 'data-testid="rclick"', 'class="pp-remote-clicker"', 'data-testid="prev"', 'data-testid="next"', 'class="pp-remote-laser"', 'data-testid="pointer"', 'data-testid="kb-toggle"', 'data-testid="kb-input"']
+  expect(html.includes('data-testid="remote-mode-cursor"') && html.includes('aria-pressed="true"'), 'defaults to cursor mode')
+  expect(!html.includes('data-testid="prev"'), 'nav hidden in default cursor mode')
+  expect(html.includes('data-testid="lclick"'), 'click buttons in cursor mode')
+  expect(!html.includes(' autoFocus'), 'keyboard does not autofocus on open')
+  expect(DEFAULT_REMOTE_TOOLBAR_MODE === 'cursor' && remoteToolbarShowsClicks('cursor') && !remoteToolbarShowsNav('cursor'), 'default mode wiring')
+  const order = ['data-testid="remote-mode-cursor"', 'data-testid="trackpad"', 'data-testid="lclick"', 'data-testid="kb-toggle"', 'data-testid="kb-input"']
   let at = -1
   for (const bit of order) {
     const found = html.indexOf(bit)
     expect(found > at, 'screen order ' + bit + ' in ' + html)
     at = found
   }
-  for (const id of TESTIDS) expect(html.includes(`data-testid="${id}"`), 'keeps ' + id)
+  for (const id of TESTIDS_ALWAYS) expect(html.includes(`data-testid="${id}"`), 'keeps ' + id)
   expect(html.includes('Swipe to move · tap to click'), 'trackpad hint')
-  expect(html.includes('Pointer · hold to point'), 'hold-to-point laser')
+  expect(!html.includes('Pointer · hold to point'), 'no hold-to-point laser button')
+  expect(html.includes('data-testid="remote-mode-pointer"'), 'pointer mode toggle')
   expect(html.includes('Type here, it appears on the laptop'), 'keyboard placeholder')
 
   const before = remoteChannelsCreated()
@@ -140,8 +149,7 @@ export async function runRemoteTests() {
   expect(strip.raf === 0 && strip.acc === 0, 'pointer toggle resets the scroll strip')
   expect(cancelled.join(',') === '42,99', 'pointer toggle cancels pending frames')
   expect(/const point = \(on: boolean\) => \{[\s\S]*releasePad\(\)[\s\S]*send\.pointer\(on\)/.test(remoteSrc), 'the laser toggle clears the pad before it sends')
-  expect(remoteSrc.includes('onBlur={() => point(false)}'), 'blur releases the laser')
-  expect(remoteSrc.includes('onLostPointerCapture={() => point(false)}'), 'lost pointer capture releases the laser')
+  expect(remoteSrc.includes('setMode(') && remoteSrc.includes('remotePointerLaserOnForMode'), 'mode toggle drives the laser')
   expect(/const releasePad = \(\) => \{[\s\S]*clearPadGesture\(st\.current/.test(remoteSrc), 'releasePad clears through clearPadGesture')
   expect(/useEffect\(\(\) => \(\) => \{[\s\S]*releasePad\(\)[\s\S]*send\.pointer\(false\)/.test(remoteSrc), 'unmount clears the pad through the same path as the laser')
   expect(/const leavePage = \(\) => \{[\s\S]*point\(false\)[\s\S]*releasePad\(\)[\s\S]*lclick[\s\S]*rclick/.test(remoteSrc), 'leaving the page turns the laser off, releases the pad, and clears held clicks')
