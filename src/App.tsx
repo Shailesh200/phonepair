@@ -9,7 +9,7 @@ import { Phone, PhoneEntry } from './Phone'
 import './features'
 import { forgetGuestLaptopLocal, type SavedLaptop } from './remember'
 import { rememberEntryError } from './remember/entryError'
-import { MSG_REMEMBER_DENIED } from './features/pairing/errors'
+import { joinPairSession } from './features/session/client'
 
 type AppRoute =
   | { role: null; code: '' }
@@ -91,6 +91,7 @@ export default function App() {
     const offM = ctx.link.onMessage((m) => dispatch(m, ctx))
     const offC = ctx.link.onCall((c) => dispatchCall(c, ctx))
     const cleanups = getFeatures().map((f) => f.init?.(ctx))
+    void joinPairSession(ctx.link.code, ctx.role, ctx.role === 'host' ? 'Laptop' : 'Phone')
     return () => { offM(); offC(); cleanups.forEach((c) => typeof c === 'function' && c()) }
   }, [ctx])
 

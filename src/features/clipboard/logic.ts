@@ -1,6 +1,7 @@
 // Live clipboard: history rows, permission checks, and copy/paste fallbacks.
 import { createStore } from '../../core/bus'
 import { uid } from '../../core/util'
+import { notifyPair } from '../session/client'
 
 export type Device = 'phone' | 'laptop'
 export type Entry = { id: string; text: string; device: Device; ts: number }
@@ -84,6 +85,8 @@ export function commitClip(ctx: SendCtx, text: string) {
   clip.set(text)
   if (!text.trim()) { ctx.send({ t: 'clip:set', text, commit: false, device }); return }
   ctx.send({ t: 'clip:set', text, commit: true, ts, device })
+  const code = (ctx as { link?: { code?: string } }).link?.code
+  if (code) void notifyPair(code, 'Clipboard', 'New clipboard text')
   history.set((h) => pushHistory(h, text, device, ts))
 }
 

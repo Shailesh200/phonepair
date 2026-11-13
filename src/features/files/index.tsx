@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { createStore, registerFeature, onMessage, CoreCtx } from '../../core/bus'
 import { Icon } from '../../core/icons'
 import { download, fmtSize, uid } from '../../core/util'
+import { notifyPair } from '../session/client'
 
 export type FileItem = { id: string; dir: 'in' | 'out'; name: string; size: number; mime: string; url?: string; progress: number; ts: number }
 export const files = createStore<FileItem[]>([])
@@ -19,6 +20,7 @@ async function sendOne(ctx: CoreCtx, f: Blob, name: string, id: string) {
   const c = ctx.link.conn
   if (!c?.open) throw new Error('Not connected')
   ctx.send({ t: 'file:start', id, name, size: f.size, mime: f.type || 'application/octet-stream' })
+  void notifyPair(ctx.link.code, 'File', name)
   const dc: RTCDataChannel | undefined = (c as any).dataChannel
   let last = 0
   for (let off = 0, seq = 0; off < f.size; off += CHUNK, seq++) {

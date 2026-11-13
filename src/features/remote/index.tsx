@@ -55,7 +55,6 @@ export function stopMouseMover() {
 export function KeepAwakeCard() {
   const mover = moverReported.use()
   return <section className="card pad pp-awake" data-testid="keep-awake-card">
-    <h3 className="h-row">Keep awake</h3>
     <MoverControl
       state={mover}
       qa={qaHooksEnabled(browserSearch())}

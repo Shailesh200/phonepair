@@ -1,4 +1,5 @@
-import Peer, { DataConnection, MediaConnection } from 'peerjs'
+import { endPairSession } from '../features/session/client.ts'
+import { hostAcceptsAnotherPhone } from '../features/session/limit.ts'
 
 import type { Role } from './bus'
 import { newPairCode, normalizePairCode, peerIdForCode } from '../features/pairing/code'
@@ -260,6 +261,11 @@ export function rememberHostCode(code: string) {
   try { localStorage.setItem(HOST_CODE_KEY, code) } catch { /* private mode */ }
 }
 
+export function forgetHostCode() {
+  try { sessionStorage.removeItem(HOST_CODE_KEY) } catch { /* private mode */ }
+  try { localStorage.removeItem(HOST_CODE_KEY) } catch { /* private mode */ }
+}
+
 type Listener = () => void
 type MsgHandler = (m: any) => void
 type CallHandler = (c: MediaConnection) => void
@@ -273,6 +279,8 @@ export class Link {
   guestStallRetrying = false
   peer: Peer | null = null
   conn: DataConnection | null = null
+  /** Extra phones on this laptop's code. The laptop that made the code is the manager. */
+  private members = new Map<string, { conn: DataConnection; name: string }>()
   private listeners = new Set<Listener>()
   private msgHandlers = new Set<MsgHandler>()
   private callHandlers = new Set<CallHandler>()
@@ -1487,7 +1495,12 @@ export class Link {
         try { c.close() } catch {}
         return
       }
-      if (this.conn && this.conn !== c) { try { this.conn.close() } catch {} }
+      if (this.conn?.open && this.conn !== c) {
+        const open = 1 + [...this.members.values()].filter((member) => member.conn.open).length
+        if (!hostAcceptsAnotherPhone(open)) { try { c.close() } catch {} ; return }
+        this.watchMember(c)
+        return
+      }
       if (!c.open) this.set({ status: 'connecting' })
       this.attach(c)
     })
@@ -2215,15 +2228,71 @@ export class Link {
     }
     if (c.open) onOpen(); else c.on('open', onOpen)
     c.on('data', (m: any) => {
-      if (c !== this.conn) return
+      if (c !== this.conn && !this.members.has(String(c.peer))) return
       this.dispatchPayload(m, c)
     })
     c.on('close', () => this.lost(c))
     c.on('error', () => this.lost(c))
   }
 
+  private watchMember(c: DataConnection) {
+    const remember = () => {
+      const id = String(c.peer || '')
+      if (!id || !c.open) return
+      this.members.set(id, { conn: c, name: this.members.get(id)?.name || 'Phone' })
+      try { c.send(this.helloMessage()) } catch {}
+      this.set({ status: 'connected', error: '' })
+    }
+    if (c.open) remember(); else c.on('open', remember)
+    c.on('data', (m: any) => {
+      if (!this.members.has(String(c.peer))) return
+      this.dispatchPayload(m, c)
+    })
+    c.on('close', () => this.lost(c))
+    c.on('error', () => this.lost(c))
+  }
+
+  private dropMember(id: string) {
+    this.members.delete(id)
+    this.set({ status: this.conn?.open ? 'connected' : this.status })
+  }
+
+  /** Phones currently on this code. The laptop that created the code can remove one. */
+  guestList(): { id: string; name: string }[] {
+    const out: { id: string; name: string }[] = []
+    if (this.conn?.open) out.push({ id: String(this.conn.peer), name: this.remoteName || 'Phone' })
+    for (const [id, member] of this.members) {
+      if (member.conn.open) out.push({ id, name: member.name || 'Phone' })
+    }
+    return out
+  }
+
+  removeGuest(id: string) {
+    if (this.role !== 'host') return
+    if (this.conn && String(this.conn.peer) === id) {
+      const next = [...this.members.values()].find((member) => member.conn.open)
+      try { this.conn.send({ t: 'bye' }) } catch {}
+      try { this.conn.close() } catch {}
+      if (next) {
+        this.members.delete(String(next.conn.peer))
+        this.conn = next.conn
+        this.remoteName = next.name
+        this.set({ status: 'connected', remoteName: next.name })
+        return
+      }
+      this.dropConn()
+      this.set({ status: 'waiting', remoteName: '' })
+      return
+    }
+    const member = this.members.get(id)
+    if (!member) return
+    try { member.conn.send({ t: 'bye' }) } catch {}
+    try { member.conn.close() } catch {}
+    this.dropMember(id)
+  }
+
   private dispatchPayload(m: any, c: DataConnection) {
-    if (c !== this.conn) return
+    if (c !== this.conn && !this.members.has(String(c.peer))) return
     if (!m || typeof m !== 'object') return
     const connOpen = !!c.open
     if (connOpen) {
@@ -2240,6 +2309,11 @@ export class Link {
     if (!this.rememberGuestLive()) return
     if (m.t === 'hello') {
       const remotePeerId = String(c.peer ?? '')
+      const member = this.members.get(remotePeerId)
+      if (member) {
+        member.name = String(m.name || member.name)
+        this.set({ status: this.status })
+      }
       this.remotePongCap = recordRemoteHelloPongCap(
         this.remotePongCapLedger,
         remotePeerId,
@@ -2253,6 +2327,11 @@ export class Link {
       return
     }
     if (m.t === 'bye') {
+      if (this.members.has(String(c.peer))) {
+        this.dropMember(String(c.peer))
+        try { c.close() } catch {}
+        return
+      }
       if (this.role === 'host') {
         this.hostEndedPairing = true
         this.ensureListenForceRunner().endUnverifiedForcing()
@@ -2517,6 +2596,10 @@ export class Link {
   }
 
   private lost(c: DataConnection) {
+    if (c.peer && this.members.has(String(c.peer)) && c !== this.conn) {
+      this.dropMember(String(c.peer))
+      return
+    }
     if (c === this.rememberHostAuth.authPending?.conn) {
       this.rememberHostAuth.clear()
       return
@@ -2722,6 +2805,10 @@ export class Link {
     const hostPen = this.rememberHostAuth.authPending?.conn === this.conn ? this.rememberHostAuth.authPending : null
     if (!shouldLinkSend(this.conn, guestPen || hostPen)) return
     try { this.conn!.send(m) } catch {}
+    for (const member of this.members.values()) {
+      if (!member.conn.open || member.conn === this.conn) continue
+      try { member.conn.send(m) } catch {}
+    }
   }
 
   call(stream: MediaStream, kind: string) {
@@ -2738,7 +2825,11 @@ export class Link {
   }
 
   disconnect() {
-    if (this.role === 'host') this.hostEndedPairing = true
+    if (this.role === 'host') {
+      this.hostEndedPairing = true
+      forgetHostCode()
+      void endPairSession(this.code)
+    }
     if (linkTeardownSendsBye('disconnect')) {
       try { this.conn?.send({ t: 'bye' }) } catch {}
     }

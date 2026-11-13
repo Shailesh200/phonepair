@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { CoreCtx, getFeatures } from './core/bus'
 import { ConnRelayNote, Logo, MoreMenu, StatusPill } from './core/ui'
+import { enablePush } from './features/session/client'
 import { copyText } from './core/util'
 import { QrCard } from './features/pairing/QrCard'
 import { useHostPairFlow } from './features/pairing/useHostPairFlow'
@@ -46,7 +47,7 @@ function Landing({ ctx, cardPhase }: { ctx: CoreCtx; cardPhase: ReturnType<typeo
     <div className="hero-fit">
       <header className="nav">
         <Logo />
-        <nav><a href="#how">How it works</a></nav>
+        <nav><a href="#how">How it works</a><SessionMenu ctx={ctx} onDisconnect={() => endPair(ctx)} /></nav>
       </header>
       <div className="landing-copy">
         <h1>Your phone.<br />On your laptop.</h1>
@@ -157,6 +158,25 @@ function StudioStage() {
   </div>
 }
 
+function Devices({ ctx }: { ctx: CoreCtx }) {
+  const [, setTick] = useState(0)
+  useEffect(() => ctx.link.subscribe(() => setTick((n) => n + 1)), [ctx.link])
+  if (ctx.role !== 'host' || typeof ctx.link.guestList !== 'function') return null
+  const guests = ctx.link.guestList()
+  if (!guests.length) return null
+  return <section className="card pad pp-awake" data-testid="devices">
+    <h3 className="h-row">Phones on this code</h3>
+    <ul className="pp-list">
+      {guests.map((guest) => (
+        <li key={guest.id} className="pp-list-row">
+          <span className="grow">{guest.name}</span>
+          <button type="button" className="linkbtn" data-testid="remove-phone" onClick={() => ctx.link.removeGuest(guest.id)}>Remove</button>
+        </li>
+      ))}
+    </ul>
+  </section>
+}
+
 function SessionMenu({ ctx, onDisconnect }: { ctx: CoreCtx; onDisconnect: () => void }) {
   const code = ctx.link.code
   const origin = typeof location === 'undefined' ? '' : location.origin
@@ -164,6 +184,7 @@ function SessionMenu({ ctx, onDisconnect }: { ctx: CoreCtx; onDisconnect: () => 
   return <MoreMenu label="Session" testId="session-menu" items={[
     { id: 'code', label: `Code ${code}`, onClick: () => { void copyText(code).then((ok) => ctx.toast(ok ? 'Code copied' : code)) } },
     { id: 'link', label: 'Copy join link', onClick: () => { void copyText(link).then((ok) => ctx.toast(ok ? 'Join link copied' : link)) } },
+    { id: 'notify', label: 'Notifications', onClick: () => { void enablePush(code, 'host', 'Laptop').then((on) => ctx.toast(on ? 'Notifications on' : 'Notifications stay off')) } },
     { id: 'saved', label: 'Saved phones', onClick: () => document.getElementById('saved-devices')?.scrollIntoView({ block: 'nearest' }) },
     { id: 'disconnect', label: 'Disconnect', onClick: onDisconnect },
   ]} />
@@ -186,6 +207,7 @@ function Dashboard({ ctx, waitingPhone, pairDifferent }: { ctx: CoreCtx; waiting
       </p>
     )}
     <KeepAwakeCard />
+    <Devices ctx={ctx} />
     <SavedPhonesPanel ctx={ctx} />
     <div className="grid">
       <div className="col dash-remote">{rest.filter((f) => f.laptopColumn === 'left').map(panel)}</div>

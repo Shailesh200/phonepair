@@ -188,14 +188,15 @@ button.card:hover,.tile:hover,.bigpick:hover,.drop:hover,.last:hover,.home-card:
 .laptop{min-height:100vh;min-height:100dvh}
 .hero-fit{
   box-sizing:border-box;
-  height:100dvh;min-height:640px;
+  height:auto;min-height:100dvh;
   padding:20px 56px 24px;
   display:grid;
   grid-template-columns:minmax(0,1fr) 400px;
-  grid-template-rows:auto auto auto;
+  grid-template-rows:auto auto auto auto;
   column-gap:32px;
-  align-content:center;
+  align-content:start;
 }
+.landing .pp-awake{grid-column:1 / -1;grid-row:4;width:min(720px,100%);margin:28px 0 0;position:relative;z-index:2}
 .nav{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:22px 40px;margin:0 auto}
 .hero-fit>.nav{grid-column:1 / -1;padding:0;max-width:none;margin:0;height:48px}
 .nav nav{display:flex;gap:26px;align-items:center;font-size:16px;font-weight:500;flex-wrap:wrap;justify-content:flex-end}
@@ -574,7 +575,6 @@ body:has(.pg.remote){
   color: var(--ink); font-size: var(--fs-14); font-weight: 650;
 }
 .pp-awake { margin: 0 auto 18px; width: min(720px, calc(100% - 32px)); }
-.landing .pp-awake { margin-top: 8px; }
 .pp-more { position: relative; }
 .pp-more-menu {
   position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; min-width: 180px;

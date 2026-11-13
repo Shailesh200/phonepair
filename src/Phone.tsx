@@ -4,6 +4,7 @@ import { Icon } from './core/icons'
 import type { Link } from './core/link'
 import { ConnRelayNote, Logo, MoreMenu } from './core/ui'
 import { copyText } from './core/util'
+import { enablePush } from './features/session/client'
 import { ago, download, fmtSize } from './core/util'
 import { files, type FileItem } from './features/files'
 import { CodeEntry } from './features/pairing/CodeEntry'
@@ -228,6 +229,7 @@ export function Phone({
               </button>
               <MoreMenu label="Session" testId="phone-menu" items={[
                 { id: 'link', label: 'Copy join link', onClick: () => { void copyText(`${location.origin}${joinPath(ctx.link.code)}`).then((ok) => ctx.toast(ok ? 'Join link copied' : ctx.link.code)) } },
+                { id: 'notify', label: 'Notifications', onClick: () => { void enablePush(ctx.link.code, 'guest', 'Phone').then((on) => ctx.toast(on ? 'Notifications on' : 'Notifications stay off')) } },
                 { id: 'saved', label: 'Saved laptops', onClick: () => document.getElementById('saved-laptops')?.scrollIntoView({ block: 'nearest' }) },
                 { id: 'disconnect', label: 'Disconnect', onClick: () => setDcIn(5) },
               ]} />
