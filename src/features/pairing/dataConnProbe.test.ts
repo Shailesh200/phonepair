@@ -22,6 +22,12 @@ import {
   connProbeBlockedByRecentTraffic,
   shouldArmPostRestoreStaleDataRebuild,
   shouldGuestInitiatePostRestoreStaleDataRebuild,
+  buildSignalRestoreNotice,
+  parseSignalRestoreNotice,
+  restoreSignalsCoalesce,
+  shouldSendHostSignalRestoreNotice,
+  SIGNAL_RESTORE_NOTICE,
+  RESTORE_SIGNAL_COALESCE_MS,
 } from './dataConnProbe.ts'
 
 describe('buildLinkHelloMessage', () => {
@@ -492,6 +498,20 @@ describe('post-restore stale data rebuild', () => {
       armedForRestore: restore,
       now: restore + 100,
     }), false)
+    assert.equal(shouldArmPostRestoreStaleDataRebuild({
+      connOpen: true,
+      restoreSignalAt: restore + 500,
+      connEstablishedAt: established,
+      armedForRestore: restore,
+      now: restore + 600,
+    }), false)
+    assert.equal(shouldArmPostRestoreStaleDataRebuild({
+      connOpen: true,
+      restoreSignalAt: restore + RESTORE_SIGNAL_COALESCE_MS,
+      connEstablishedAt: established,
+      armedForRestore: restore,
+      now: restore + RESTORE_SIGNAL_COALESCE_MS + 100,
+    }), true)
   })
 
   it('guest initiates on remember session', () => {
@@ -528,6 +548,62 @@ describe('post-restore stale data rebuild', () => {
       now,
       restoreSignalAt: now - 1000,
     }), false)
+  })
+
+  it('host restore notice arms guest rebuild path', () => {
+    const restore = 50_000
+    const established = 10_000
+    assert.equal(shouldSendHostSignalRestoreNotice({
+      role: 'host',
+      connOpen: true,
+      sessionPaired: true,
+      connEstablishedAt: established,
+      restoreSignalAt: restore,
+    }), true)
+    assert.equal(shouldSendHostSignalRestoreNotice({
+      role: 'guest',
+      connOpen: true,
+      sessionPaired: true,
+      connEstablishedAt: established,
+      restoreSignalAt: restore,
+    }), false)
+    assert.equal(shouldSendHostSignalRestoreNotice({
+      role: 'host',
+      connOpen: true,
+      sessionPaired: true,
+      connEstablishedAt: restore + 1,
+      restoreSignalAt: restore,
+    }), false)
+    const msg = buildSignalRestoreNotice(restore)
+    assert.equal(parseSignalRestoreNotice(msg), restore)
+    assert.equal(parseSignalRestoreNotice({ t: SIGNAL_RESTORE_NOTICE }), null)
+    assert.equal(parseSignalRestoreNotice({ t: 'clip:set', at: restore }), null)
+    assert.equal(shouldArmPostRestoreStaleDataRebuild({
+      connOpen: true,
+      restoreSignalAt: restore,
+      connEstablishedAt: established,
+      armedForRestore: null,
+      now: restore + 100,
+    }), true)
+  })
+
+  it('coalesces host notice and guest restore into one arm', () => {
+    const guestRestore = 10_000
+    const hostNotice = guestRestore + 800
+    assert.equal(restoreSignalsCoalesce(guestRestore, hostNotice), true)
+    assert.equal(shouldArmPostRestoreStaleDataRebuild({
+      connOpen: true,
+      restoreSignalAt: hostNotice,
+      connEstablishedAt: 1000,
+      armedForRestore: guestRestore,
+      now: hostNotice + 50,
+    }), false)
+  })
+
+  it('old peer ignores unknown restore payloads', () => {
+    assert.equal(parseSignalRestoreNotice(null), null)
+    assert.equal(parseSignalRestoreNotice({ t: 'hello' }), null)
+    assert.equal(parseSignalRestoreNotice({ t: SIGNAL_RESTORE_NOTICE, at: 'nope' }), null)
   })
 
 })

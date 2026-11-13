@@ -58,14 +58,18 @@ import {
   remotePongCapSeenForPeer,
   shouldMarkConnProbeEligible,
   POST_RESTORE_STALE_DATA_REBUILD_MS,
+  buildSignalRestoreNotice,
   connEstablishedBeforeRestore,
   connProbeBlockedByRecentTraffic,
   connProbeMayAbandonAfterFail,
   connProbeRetryDelayMs,
+  parseSignalRestoreNotice,
   planTickOpenConnTraffic,
+  restoreSignalsCoalesce,
   shouldArmPostRestoreStaleDataRebuild,
   shouldGuestInitiatePostRestoreStaleDataRebuild,
   shouldRunDataConnProbe,
+  shouldSendHostSignalRestoreNotice,
   shouldSendTickConnKeepalivePing,
   type RemotePongCapLedger,
 } from '../features/pairing/dataConnProbe'
@@ -75,6 +79,8 @@ import {
   ppDebugIncStalledWsKilled,
   ppDebugRecordProbePong,
   ppDebugIncStaleDataRebuild,
+  ppDebugIncHostRestoreNoticeRx,
+  ppDebugIncHostRestoreNoticeTx,
 } from '../features/pairing/ppDebugConnProbe'
 import {
   shouldKillFreshConnectingStalledAfterRestore,
@@ -533,8 +539,46 @@ export class Link {
       this.syncRemotePongCapFromLedger()
       try { this.conn.send(this.helloMessage()) } catch {}
     }
-    this.armPostRestoreStaleDataRebuild(at)
+    if (this.role === 'guest') {
+      this.armPostRestoreStaleDataRebuild(at)
+    } else if (this.role === 'host') {
+      this.maybeNotifyGuestHostSignalRestore(at)
+    }
     this.onDataConnBackSignal(at)
+  }
+
+  private maybeNotifyGuestHostSignalRestore(at: number) {
+    const c = this.conn
+    if (
+      !shouldSendHostSignalRestoreNotice({
+        role: this.role,
+        connOpen: !!c?.open,
+        sessionPaired: this.sessionPaired,
+        connEstablishedAt: this.connEstablishedAt,
+        restoreSignalAt: at,
+      })
+    ) {
+      return
+    }
+    try {
+      c!.send(buildSignalRestoreNotice(at))
+      ppDebugIncHostRestoreNoticeTx()
+    } catch {}
+  }
+
+  private ensureGuestRestoreClockForStaleRebuild(at: number) {
+    if (this.role !== 'guest') return
+    const prev = this.lastRestoreSignalAt
+    if (prev == null || !restoreSignalsCoalesce(prev, at)) {
+      this.lastRestoreSignalAt = at
+    }
+  }
+
+  private onPeerSignalRestoreNotice(at: number) {
+    if (this.role !== 'guest') return
+    ppDebugIncHostRestoreNoticeRx()
+    this.ensureGuestRestoreClockForStaleRebuild(at)
+    this.armPostRestoreStaleDataRebuild(at)
   }
 
   private armPostRestoreStaleDataRebuild(restoreAt: number) {
@@ -2210,6 +2254,11 @@ export class Link {
         return
       }
       if (m.t === 'pong') return
+      const restoreAt = parseSignalRestoreNotice(m)
+      if (restoreAt != null) {
+        this.onPeerSignalRestoreNotice(restoreAt)
+        return
+      }
     }
     if (!this.rememberGuestLive()) return
     if (m.t === 'hello') {
